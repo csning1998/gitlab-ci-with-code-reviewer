@@ -3,9 +3,7 @@ gemini-code-review:
   stage: review
   image: golang:1.26-alpine
   needs:
-    - job: go-fmt
-      optional: true
-    - job: go-build
+    - job: go-lint
       optional: true
   variables:
     GEMINI_MODEL: "gemini-3.5-flash"

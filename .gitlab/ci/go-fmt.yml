@@ -2,7 +2,7 @@
 go-fmt:
   stage: format
   image: golang:1.26-alpine
-  interruptible: true
+  interruptible: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:

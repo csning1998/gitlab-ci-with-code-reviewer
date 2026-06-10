@@ -1,6 +1,6 @@
 ---
 go-build:
-  stage: lint
+  stage: build
   image: golang:1.26-alpine
   needs:
     - job: go-fmt

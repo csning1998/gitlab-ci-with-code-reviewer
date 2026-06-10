@@ -1,6 +1,11 @@
 ---
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+
 stages:
   - format
+  - build
   - lint
   - review
 
