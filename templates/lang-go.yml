@@ -1,0 +1,72 @@
+---
+spec:
+  inputs:
+    go_image:
+      default: "golang:1.26-alpine"
+      description: "Go toolchain image for fmt and build."
+    golangci_image:
+      default: "golangci/golangci-lint:v2.12.2-alpine"
+      description: "golangci-lint image for the lint job."
+    go_dir:
+      default: "tools/ci"
+      description: "Directory containing the Go module to build and lint."
+    go_fmt_path:
+      default: "./tools"
+      description: "Path gofmt rewrites, relative to repo root."
+    go_globs:
+      type: array
+      default: ["tools/**/*.go", "tools/**/go.mod", "tools/**/go.sum"]
+      description: "rules:changes globs gating all Go jobs."
+    golangci_config:
+      default: "../../.gitlab/golangci.yml"
+      description: "golangci config path, relative to go_dir."
+---
+# interruptible:false keeps the auto-commit push alive through auto_cancel.
+go-fmt:
+  stage: format
+  image: "$[[ inputs.go_image ]]"
+  interruptible: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.go_globs ]]
+  before_script:
+    - apk add --no-cache git
+    - git config user.email "gitlab-ci@noreply"
+    - git config user.name "GitLab CI"
+    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+  script:
+    - gofmt -w $[[ inputs.go_fmt_path ]]
+    - |
+      if ! git diff --quiet; then
+        git add -A
+        git commit -m "style: gofmt"
+        git push origin HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
+      fi
+
+go-build:
+  stage: build
+  image: "$[[ inputs.go_image ]]"
+  needs:
+    - job: go-fmt
+      optional: true
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.go_globs ]]
+  script:
+    - cd $[[ inputs.go_dir ]]
+    - go build ./...
+
+go-lint:
+  stage: lint
+  image: "$[[ inputs.golangci_image ]]"
+  needs:
+    - job: go-build
+      optional: true
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.go_globs ]]
+  script:
+    - cd $[[ inputs.go_dir ]]
+    - golangci-lint run -c $[[ inputs.golangci_config ]] ./...

@@ -23,7 +23,13 @@ Below is the annotated diff for all changed files. Each file section starts with
 Each line is prefixed with its line number in the new file as [L   N].
 Removed lines are prefixed with [     ].
 
+A "=== Merge Request Intent ===" section may precede the diff with the author's
+title and description. Treat it as the stated goal: weigh whether the changes
+fulfil it, and flag diffs that contradict or fall short of it.
+
 Focus on: bugs, security vulnerabilities, performance issues, architectural problems, code quality.
+For Vue components: also check reactivity pitfalls, component lifecycle issues, prop validation, and XSS risks from v-html usage.
+For TypeScript: also check type safety, implicit any, and unsafe type assertions.
 For infrastructure files (HCL, YAML, Dockerfile): also check resource limits, security contexts, hardcoded secrets, and misconfigurations.
 
 Return ONLY a raw JSON array with no markdown fences or wrapper. Each element:
@@ -76,23 +82,24 @@ func (r *Reviewer) Run() error {
 		return nil
 	}
 
-	raw, err := r.llm.Review(promptTemplate + "\n\n" + combined)
+	raw, err := r.llm.Review(promptTemplate + "\n\n" + mrIntent(mr.Title, mr.Description) + combined)
 	if err != nil {
 		return fmt.Errorf("llm call failed: %w", err)
 	}
 
 	cleaned := strings.TrimSpace(raw)
-	if idx := strings.Index(cleaned, "["); idx != -1 {
-		cleaned = cleaned[idx:]
-	}
-	if idx := strings.LastIndex(cleaned, "]"); idx != -1 {
-		cleaned = cleaned[:idx+1]
-	}
-	cleaned = strings.TrimSpace(cleaned)
-
 	var rawComments []json.RawMessage
 	if err := json.Unmarshal([]byte(cleaned), &rawComments); err != nil {
-		return fmt.Errorf("parse llm response: %w (raw: %.200s)", err, cleaned)
+		if idx := strings.Index(cleaned, "["); idx != -1 {
+			cleaned = cleaned[idx:]
+		}
+		if idx := strings.LastIndex(cleaned, "]"); idx != -1 {
+			cleaned = cleaned[:idx+1]
+		}
+		cleaned = strings.TrimSpace(cleaned)
+		if err := json.Unmarshal([]byte(cleaned), &rawComments); err != nil {
+			return fmt.Errorf("parse llm response: %w (raw: %.200s)", err, cleaned)
+		}
 	}
 	if len(rawComments) == 0 {
 		fmt.Println("LGTM -- no issues found.")
@@ -161,6 +168,31 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 	}
 	fmt.Printf("  note: %s %s (HTTP %d)\n", file, label, status)
 	return true
+}
+
+// mrIntent renders the author's title and description as a context block the
+// LLM weighs the diff against. It returns "" when both are empty so the prompt
+// gains no dangling header.
+func mrIntent(title, description string) string {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if title == "" && description == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("=== Merge Request Intent ===\n")
+	if title != "" {
+		b.WriteString("Title: ")
+		b.WriteString(title)
+		b.WriteByte('\n')
+	}
+	if description != "" {
+		b.WriteString("Description:\n")
+		b.WriteString(description)
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
+	return b.String()
 }
 
 func buildBody(description, suggestion string, start, end int) string {

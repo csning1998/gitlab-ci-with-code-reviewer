@@ -22,8 +22,10 @@ type DiffRefs struct {
 }
 
 type MRChanges struct {
-	Changes  []Change `json:"changes"`
-	DiffRefs DiffRefs `json:"diff_refs"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Changes     []Change `json:"changes"`
+	DiffRefs    DiffRefs `json:"diff_refs"`
 }
 
 // Client talks to one merge request's GitLab API endpoints.
@@ -84,7 +86,9 @@ func (c *Client) FetchMR() (*MRChanges, error) {
 		return nil, fmt.Errorf("fetch MR detail: %w", err)
 	}
 	var detail struct {
-		DiffRefs DiffRefs `json:"diff_refs"`
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		DiffRefs    DiffRefs `json:"diff_refs"`
 	}
 	if err := json.Unmarshal(detailData, &detail); err != nil {
 		return nil, fmt.Errorf("parse MR detail: %w", err)
@@ -102,7 +106,12 @@ func (c *Client) FetchMR() (*MRChanges, error) {
 		return nil, fmt.Errorf("parse MR diffs: %w", err)
 	}
 
-	return &MRChanges{Changes: changes, DiffRefs: detail.DiffRefs}, nil
+	return &MRChanges{
+		Title:       detail.Title,
+		Description: detail.Description,
+		Changes:     changes,
+		DiffRefs:    detail.DiffRefs,
+	}, nil
 }
 
 func (c *Client) PostDiscussion(body string, position map[string]any) (int, error) {

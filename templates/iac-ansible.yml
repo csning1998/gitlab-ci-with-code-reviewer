@@ -1,0 +1,44 @@
+---
+spec:
+  inputs:
+    ansible_lint_image:
+      default: "pipelinecomponents/ansible-lint:0.79.33"
+      description: "ansible-lint image."
+    checkov_image:
+      default: "bridgecrew/checkov:3.3.0"
+      description: "Checkov image for the ansible-framework scan."
+    ansible_dir:
+      default: "ansible"
+      description: "Ansible directory linted and scanned."
+    ansible_globs:
+      type: array
+      default: ["ansible/**", "ansible.cfg"]
+      description: "rules:changes globs gating the ansible jobs."
+---
+ansible-lint:
+  stage: lint
+  image: "$[[ inputs.ansible_lint_image ]]"
+  allow_failure: true
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.ansible_globs ]]
+  script:
+    - cd $[[ inputs.ansible_dir ]]
+    - ansible-lint
+
+# Ansible findings are acknowledged debt: --soft-fail exits 0 until resolved.
+checkov-ansible:
+  stage: lint
+  image:
+    name: "$[[ inputs.checkov_image ]]"
+    entrypoint: [""]
+  needs: []
+  interruptible: true
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.ansible_globs ]]
+  script:
+    - checkov --directory $[[ inputs.ansible_dir ]] --framework ansible --compact --quiet --soft-fail

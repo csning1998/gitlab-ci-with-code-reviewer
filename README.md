@@ -164,5 +164,77 @@ Once configuration is complete, reviews integrate into the standard development 
 2. **Trigger a Review Manually**:
     - After the MR is created, a pipeline will appear under the **Pipelines** tab.
     - Two review jobs are available: `gemini-code-review` and `claude-code-review`. Both are paused by default and display a **Play** button.
-    - Clicking the **Play** button on either job triggers the GitLab Runner to spin up a Go container, compile and execute the reviewer binary against the MR diff, and post inline discussion comments to the MR timeline.
+    - Clicking the **Play** button on either job triggers the GitLab Runner to pull the prebuilt reviewer image, execute the bundled binary against the MR diff, and post inline discussion comments to the MR timeline.
     - Both jobs may be triggered independently within the same pipeline.
+
+## Section 5. Consuming the CI Template
+
+This repository is published as a GitLab CI/CD Catalog project on gitlab.com. Other projects consume its jobs through `include:component` rather than copying job files. Each component exposes typed `spec:inputs`, so per-project differences are passed as inputs instead of forked.
+
+### Step A. Prerequisites in the Consuming Project
+
+- Register the project runner and configure the CI/CD variables described in Section 2 and Section 3 (`GEMINI_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`). The reviewer image reads these at runtime; they are not baked into the image.
+- Format jobs auto-commit and push back to the source branch using `CI_JOB_TOKEN`. Enable this in **Settings > CI/CD > Token Access** (allow the job token to push to the repository).
+
+### Step B. Reference Components in `.gitlab-ci.yml`
+
+The component path format is `csning1998/gitlab-ci-with-code-reviewer/<component>@<version>`. **Pin `<version>` to a released tag. `core` is always required**; add only the language and IaC components the project needs. `core` requires the `reviewer_image` input (no default, so a floating tag cannot slip in); pin it to the same version as the component.
+
+```yaml
+include:
+    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
+      inputs:
+          reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
+    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-go@1.0.0
+```
+
+### Step C. Inject Inputs for Project-Specific Differences
+
+Override defaults only where the project diverges. Representative examples:
+
+```yaml
+include:
+    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
+      inputs:
+          reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
+
+    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
+      inputs:
+          ts_globs: ["frontend/**/*", "backend/**/*"]
+          frontend_dir: frontend
+          backend_dir: backend
+
+    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-terraform@1.0.0
+      inputs:
+          checkov_skip: "CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21"
+
+    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
+```
+
+Available components: `core`, `lang-go`, `lang-typescript`, `iac-terraform`, `iac-packer`, `iac-ansible`. The full input list for each is declared in the corresponding file under `templates/`.
+
+## Section 6. Replicating on a Self-Hosted GitLab Instance
+
+The CI/CD Catalog is instance-scoped. A self-hosted instance cannot `include:component` from the gitlab.com catalog, so the template is replicated inside the instance.
+
+1. **Mirror the component project**: Import `gitlab-ci-with-code-reviewer` into the self-hosted instance and enable it as a CI/CD Catalog project in **Settings > General > Visibility, project features, permissions > CI/CD Catalog project**.
+
+2. **Mirror the reviewer image**: Pull `registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:<tag>` and push it into the instance registry or Harbor. Pass the internal path through the `reviewer_image` input of the `core` component.
+
+3. **Adjust include refs**: Consuming projects on the instance reference the internal component path `<instance-namespace>/gitlab-ci-with-code-reviewer/<component>@<version>` instead of the gitlab.com path.
+
+4. **Cut a release on the instance**: Tag the mirrored project to publish its components to the instance catalog, mirroring the gitlab.com release process in Section 7.
+
+## Section 7. Versioning and Release
+
+A single semver tag drives both the reviewer image and the catalog publish, kept in lockstep so a consumer setting `reviewer_image` to `reviewer:X.Y.Z` matches `core@X.Y.Z`. `core` has no `reviewer_image` default, so consumers always pin it explicitly; no floating tag exists to drift.
+
+1. Push the semver tag. The `release` stage in `.gitlab-ci.yml` builds and pushes `reviewer:<tag>` (the pinned version only, no `:latest`), then creates a GitLab release that publishes the `templates/` components to the catalog.
+2. Verify the image is public under the project Container Registry and the components appear on the project's CI/CD Catalog page.
+
+### Planned Language Path Space (Not Yet Implemented)
+
+Two language components are reserved for future addition, following the same `core` input conventions:
+
+- `lang-python`: format and lint via `ruff` (or `black` + `flake8`), type check via `mypy`.
+- `lang-java`: build via `gradle` or `maven`, format and lint via `spotless` and `checkstyle`. The build tool choice drives the job structure and cache strategy.

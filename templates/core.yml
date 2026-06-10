@@ -1,0 +1,101 @@
+---
+spec:
+  inputs:
+    reviewer_image:
+      description: "Required; prebuilt reviewer image pinned to a version (no default, no floating tag)."
+    anthropic_model:
+      default: "claude-sonnet-4-6"
+      description: "Anthropic model id for the Claude reviewer."
+    gemini_model:
+      default: "gemini-3.5-flash"
+      description: "Gemini model id for the Gemini reviewer."
+    markdownlint_image:
+      default: "markdownlint/markdownlint:0.17.0"
+      description: "Ruby mdl image for Markdown linting."
+    yamllint_image:
+      default: "pipelinecomponents/yamllint:0.35.12"
+      description: "yamllint image for YAML linting."
+    max_description_chars:
+      type: number
+      default: 5000
+      description: "Max MR description length sent to the reviewer; the pipeline fails if exceeded."
+---
+# Only core declares stages and workflow; other components just add jobs.
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+
+stages:
+  - format
+  - build
+  - lint
+  - review
+
+# Rejects the MR before any review API call if the description is too long.
+check-mr-description:
+  stage: lint
+  image: "$[[ inputs.reviewer_image ]]"
+  interruptible: true
+  variables:
+    MAX_DESCRIPTION_CHARS: "$[[ inputs.max_description_chars ]]"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - mr-gate
+
+markdownlint:
+  stage: lint
+  image:
+    name: "$[[ inputs.markdownlint_image ]]"
+    entrypoint: [""]
+  allow_failure: true
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "**/*.md"
+  script:
+    - mdl .
+
+yamllint:
+  stage: lint
+  image: "$[[ inputs.yamllint_image ]]"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "**/*.yml"
+        - "**/*.yaml"
+  script:
+    - yamllint .
+
+# No hard needs, so the component fits any language set.
+claude-code-review:
+  stage: review
+  image: "$[[ inputs.reviewer_image ]]"
+  variables:
+    ANTHROPIC_MODEL: "$[[ inputs.anthropic_model ]]"
+    MAX_DESCRIPTION_CHARS: "$[[ inputs.max_description_chars ]]"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+  interruptible: true
+  script:
+    - claude-review
+
+gemini-code-review:
+  stage: review
+  image: "$[[ inputs.reviewer_image ]]"
+  variables:
+    GEMINI_MODEL: "$[[ inputs.gemini_model ]]"
+    MAX_DESCRIPTION_CHARS: "$[[ inputs.max_description_chars ]]"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+  interruptible: true
+  script:
+    - gemini-review

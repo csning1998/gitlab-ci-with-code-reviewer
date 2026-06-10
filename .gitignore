@@ -1,6 +1,7 @@
 
 # Environment Variables
 .env
+.claude
 
 # GitLab Runner project-local config (contains registration tokens)
 runner-config/

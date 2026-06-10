@@ -6,11 +6,18 @@ import (
 
 	"ci-tools/internal/anthropic"
 	"ci-tools/internal/config"
+	"ci-tools/internal/gate"
 	"ci-tools/internal/gitlab"
 	"ci-tools/internal/review"
 )
 
 func main() {
+	// Reject an over-long description before any GitLab or LLM API call.
+	if err := gate.CheckDescription(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
+
 	cfg := config.Load()
 	if cfg.ClaudeToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'CLAUDE_MR_REVIEWER' is missing.")
