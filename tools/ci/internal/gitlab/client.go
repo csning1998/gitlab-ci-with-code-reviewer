@@ -71,7 +71,7 @@ func (c *Client) send(method, url string, payload any) (status int, header http.
 	}()
 	data, _ = io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		return resp.StatusCode, resp.Header, data, fmt.Errorf("gitlab %s %s -> %d: %s", method, url, resp.StatusCode, data)
+		return resp.StatusCode, resp.Header, data, fmt.Errorf("gitlab %s %s status %d: %s", method, url, resp.StatusCode, data)
 	}
 	return resp.StatusCode, resp.Header, data, nil
 }

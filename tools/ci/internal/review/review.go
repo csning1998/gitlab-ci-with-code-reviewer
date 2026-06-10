@@ -104,7 +104,7 @@ func (r *Reviewer) Run() error {
 	for _, rc := range rawComments {
 		var c Comment
 		if err := json.Unmarshal(rc, &c); err != nil {
-			fmt.Printf("  -> skip: cannot parse comment (%v)\n", err)
+			fmt.Printf("  skip: cannot parse comment (%v)\n", err)
 			continue
 		}
 		if r.deliver(mr.DiffRefs, fileMeta, c) {
@@ -123,7 +123,7 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 	suggestion := strings.TrimSpace(c.Suggestion)
 
 	if c.StartLine == nil {
-		fmt.Println("  -> skip: missing start_line")
+		fmt.Println("  skip: missing start_line")
 		return false
 	}
 	start := *c.StartLine
@@ -132,7 +132,7 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 		end = *c.EndLine
 	}
 	if file == "" || description == "" {
-		fmt.Println("  -> skip: missing file or description")
+		fmt.Println("  skip: missing file or description")
 		return false
 	}
 
@@ -146,20 +146,20 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 		if pos := position(refs, file, info, start, end); pos != nil {
 			status, err := r.gitlab.PostDiscussion(body, pos)
 			if err == nil {
-				fmt.Printf("  -> Inline %s %s (HTTP %d)\n", file, label, status)
+				fmt.Printf("  inline: %s %s (HTTP %d)\n", file, label, status)
 				return true
 			}
-			fmt.Printf("  -> inline failed, falling back to note: %v\n", err)
+			fmt.Printf("  inline failed, falling back to note: %v\n", err)
 		}
 	}
 
 	fallback := fmt.Sprintf("### Code Review -- `%s` (%s)\n\n%s", file, label, body)
 	status, err := r.gitlab.PostNote(fallback)
 	if err != nil {
-		fmt.Printf("  -> note failed: %v\n", err)
+		fmt.Printf("  note failed: %v\n", err)
 		return false
 	}
-	fmt.Printf("  -> Note %s %s (HTTP %d)\n", file, label, status)
+	fmt.Printf("  note: %s %s (HTTP %d)\n", file, label, status)
 	return true
 }
 

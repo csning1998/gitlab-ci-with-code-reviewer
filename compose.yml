@@ -1,0 +1,12 @@
+---
+services:
+  gitlab-runner:
+    image: docker.io/gitlab/gitlab-runner:v19.0.1
+    container_name: gitlab-runner-gitlab-ci-with-code-reviewer
+    network_mode: "host"
+    restart: always
+    security_opt:
+      - label=disable
+    volumes:
+      - ./runner-config:/etc/gitlab-runner:z
+      - /run/user/${HOST_UID}/podman/podman.sock:/run/podman/podman.sock:z
