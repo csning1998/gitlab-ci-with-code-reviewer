@@ -1,0 +1,14 @@
+---
+stages:
+  - format
+  - lint
+  - review
+
+include:
+  - local: .gitlab/ci/go-fmt.yml
+  - local: .gitlab/ci/go-lint.yml
+  - local: .gitlab/ci/go-build.yml
+  - local: .gitlab/ci/yamllint.yml
+  - local: .gitlab/ci/markdownlint.yml
+  - local: .gitlab/ci/gemini-review.yml
+  - local: .gitlab/ci/claude-review.yml
