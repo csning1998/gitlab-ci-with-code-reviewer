@@ -27,6 +27,12 @@ resource "gitlab_branch_protection" "main" {
   allow_force_push = false
 }
 
+# Registers the project as a CI/CD Catalog resource so tagged releases publish the templates/ components.
+resource "gitlab_project_cicd_catalog" "this" {
+  project = gitlab_project.this.id
+  enabled = true
+}
+
 resource "gitlab_user_runner" "this" {
   runner_type = "project_type"
   project_id  = gitlab_project.this.id

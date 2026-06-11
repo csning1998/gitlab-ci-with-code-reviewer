@@ -11,7 +11,7 @@ check_interval = 0
   [runners.docker]
     image                        = "alpine:latest"
     host                         = "unix:///run/podman/podman.sock"
-    tls_verify                   = true
+    tls_verify                   = false # Podman unix socket speaks plain HTTP; TLS mode causes connection failure.
     disable_entrypoint_overwrite = false
     oom_kill_disable             = false
     disable_cache                = false
