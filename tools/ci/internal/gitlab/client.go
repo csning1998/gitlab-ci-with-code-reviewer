@@ -78,20 +78,42 @@ func (c *Client) send(method, url string, payload any) (status int, header http.
 	return resp.StatusCode, resp.Header, data, nil
 }
 
-// FetchMR fetches diff refs and the paginated diff list for the MR.
-// /changes was deprecated in GitLab 15.7; /diffs is the current endpoint.
-func (c *Client) FetchMR() (*MRChanges, error) {
-	_, _, detailData, err := c.send(http.MethodGet, c.mrURL, nil)
+type mrDetail struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	DiffRefs    DiffRefs `json:"diff_refs"`
+}
+
+// fetchDetail GETs the MR detail (title, description, diff refs) without diffs.
+func (c *Client) fetchDetail() (*mrDetail, error) {
+	_, _, data, err := c.send(http.MethodGet, c.mrURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch MR detail: %w", err)
 	}
-	var detail struct {
-		Title       string   `json:"title"`
-		Description string   `json:"description"`
-		DiffRefs    DiffRefs `json:"diff_refs"`
-	}
-	if err := json.Unmarshal(detailData, &detail); err != nil {
+	var d mrDetail
+	if err := json.Unmarshal(data, &d); err != nil {
 		return nil, fmt.Errorf("parse MR detail: %w", err)
+	}
+	return &d, nil
+}
+
+// FetchMRDescription returns only the MR description from the detail endpoint,
+// skipping the diff pages. The gate uses it to length-check the full, untruncated
+// description; CI_MERGE_REQUEST_DESCRIPTION caps at 2700 chars and cannot.
+func (c *Client) FetchMRDescription() (string, error) {
+	d, err := c.fetchDetail()
+	if err != nil {
+		return "", err
+	}
+	return d.Description, nil
+}
+
+// FetchMR fetches diff refs and the paginated diff list for the MR.
+// /changes was deprecated in GitLab 15.7; /diffs is the current endpoint.
+func (c *Client) FetchMR() (*MRChanges, error) {
+	detail, err := c.fetchDetail()
+	if err != nil {
+		return nil, err
 	}
 
 	_, diffsHeader, diffsData, err := c.send(http.MethodGet, c.mrURL+"/diffs?per_page=100", nil)

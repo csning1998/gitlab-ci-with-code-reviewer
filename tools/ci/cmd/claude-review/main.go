@@ -6,18 +6,10 @@ import (
 
 	"ci-tools/internal/anthropic"
 	"ci-tools/internal/config"
-	"ci-tools/internal/gate"
-	"ci-tools/internal/gitlab"
 	"ci-tools/internal/review"
 )
 
 func main() {
-	// Reject an over-long description before any GitLab or LLM API call.
-	if err := gate.CheckDescription(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
-	}
-
 	cfg := config.Load()
 	if cfg.ClaudeToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'CLAUDE_MR_REVIEWER' is missing.")
@@ -27,11 +19,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'CLAUDE_API_KEY' is missing.")
 		os.Exit(1)
 	}
-
-	gl := gitlab.New(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken)
-	ac := anthropic.New(cfg.AnthropicModel, cfg.AnthropicKey)
-
-	if err := review.New(gl, ac).Run(); err != nil {
+	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken,
+		anthropic.New(cfg.AnthropicModel, cfg.AnthropicKey)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ci-tools/internal/gate"
 	"ci-tools/internal/gitlab"
 )
 
@@ -24,8 +25,11 @@ Each line is prefixed with its line number in the new file as [L   N].
 Removed lines are prefixed with [     ].
 
 A "=== Merge Request Intent ===" section may precede the diff with the author's
-title and description. Treat it as the stated goal: weigh whether the changes
-fulfil it, and flag diffs that contradict or fall short of it.
+title and description. Use it to understand the author's intent and rationale.
+If the intent block explains a design decision or trade-off, treat that explanation
+as authoritative context; do not re-raise it as a concern unless the stated
+reasoning contains a factual error. Flag diffs that contradict or fall short of
+the stated goal only when the intent does not already address them.
 
 Focus on: bugs, security vulnerabilities, performance issues, architectural problems, code quality.
 For Vue components: also check reactivity pitfalls, component lifecycle issues, prop validation, and XSS risks from v-html usage.
@@ -63,7 +67,18 @@ func New(gl *gitlab.Client, llm LLMClient) *Reviewer {
 	return &Reviewer{gitlab: gl, llm: llm}
 }
 
+// RunOnMR is the shared entry point for all reviewer binaries. Each cmd supplies
+// its provider-specific LLM client; the GitLab wiring and run loop live here.
+func RunOnMR(apiURL, projectID, mriid, token string, llm LLMClient) error {
+	return New(gitlab.New(apiURL, projectID, mriid, token), llm).Run()
+}
+
 func (r *Reviewer) Run() error {
+	maxDesc, err := gate.MaxRunes()
+	if err != nil {
+		return err
+	}
+	// MaxRunes is checked before FetchMR so a misconfigured env var aborts early.
 	mr, err := r.gitlab.FetchMR()
 	if err != nil {
 		return fmt.Errorf("fetch MR changes: %w", err)
@@ -82,7 +97,7 @@ func (r *Reviewer) Run() error {
 		return nil
 	}
 
-	raw, err := r.llm.Review(promptTemplate + "\n\n" + mrIntent(mr.Title, mr.Description) + combined)
+	raw, err := r.llm.Review(promptTemplate + "\n\n" + mrIntent(mr.Title, mr.Description, maxDesc) + combined)
 	if err != nil {
 		return fmt.Errorf("llm call failed: %w", err)
 	}
@@ -172,12 +187,18 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 
 // mrIntent renders the author's title and description as a context block the
 // LLM weighs the diff against. It returns "" when both are empty so the prompt
-// gains no dangling header.
-func mrIntent(title, description string) string {
+// gains no dangling header. maxRunes is the gate's MAX_DESCRIPTION_CHARS, shared
+// so the truncation bound and the rejection threshold stay globally consistent.
+// The truncation guard is defence-in-depth for direct invocation without the gate.
+func mrIntent(title, description string, maxRunes int) string {
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
 	if title == "" && description == "" {
 		return ""
+	}
+	const truncMarker = "... [truncated]"
+	if r := []rune(description); len(r) > maxRunes {
+		description = string(r[:maxRunes-len([]rune(truncMarker))]) + truncMarker
 	}
 	var b strings.Builder
 	b.WriteString("=== Merge Request Intent ===\n")

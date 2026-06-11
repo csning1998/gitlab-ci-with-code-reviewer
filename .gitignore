@@ -15,3 +15,6 @@ terraform/*.tf.bak
 terraform.tfstate
 terraform.tfstate.*
 terraform.tfstate.backup
+
+## Miscellaneous
+merge-request.md
