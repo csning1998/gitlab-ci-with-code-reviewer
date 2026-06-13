@@ -8,7 +8,7 @@ runner-config/
 
 ## Terraform
 terraform/terraform.tfvars
-terraform/backend.hcl
+terraform/backend-auth.hcl
 terraform/*.tf.bak
 .terraform/
 .terraform.tfstate.lock.info
