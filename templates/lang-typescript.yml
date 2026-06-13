@@ -49,7 +49,7 @@ typescript-check-frontend:
   script:
     - cd $[[ inputs.frontend_dir ]]
     - bun install
-    - bunx vue-tsc -b
+    - bunx vue-tsc --noEmit
 
 typescript-check-backend:
   stage: lint
