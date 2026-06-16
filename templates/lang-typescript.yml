@@ -2,23 +2,23 @@
 spec:
   inputs:
     bun_image:
-      default: "oven/bun:1-alpine"
-      description: "Bun image for prettier and the TypeScript type check."
+      default: 'oven/bun:1-alpine'
+      description: 'Bun image for prettier and the TypeScript type check.'
     ts_globs:
       type: array
-      default: ["frontend/**/*", "backend/**/*"]
-      description: "rules:changes globs gating the type check."
+      default: ['frontend/**/*', 'backend/**/*', 'contracts/**/*']
+      description: 'rules:changes globs gating the type check and test jobs.'
     frontend_dir:
-      default: "frontend"
-      description: "Vue/frontend directory; checked with vue-tsc."
+      default: 'frontend'
+      description: 'Vue/frontend directory; checked with vue-tsc.'
     backend_dir:
-      default: "backend"
-      description: "Backend directory; checked with tsc --noEmit."
+      default: 'backend'
+      description: 'Backend directory; checked with tsc --noEmit.'
 ---
 # interruptible:false keeps the auto-commit push alive through auto_cancel.
 prettier-fmt:
   stage: format
-  image: "$[[ inputs.bun_image ]]"
+  image: '$[[ inputs.bun_image ]]'
   interruptible: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -52,7 +52,7 @@ bun-test:
 
 typescript-check-frontend:
   stage: lint
-  image: "$[[ inputs.bun_image ]]"
+  image: '$[[ inputs.bun_image ]]'
   interruptible: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -64,7 +64,7 @@ typescript-check-frontend:
 
 typescript-check-backend:
   stage: lint
-  image: "$[[ inputs.bun_image ]]"
+  image: '$[[ inputs.bun_image ]]'
   interruptible: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

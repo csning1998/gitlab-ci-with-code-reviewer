@@ -2,24 +2,24 @@
 spec:
   inputs:
     terraform_image:
-      default: "hashicorp/terraform:1.15"
-      description: "Terraform image for the fmt job."
+      default: 'hashicorp/terraform:1.15'
+      description: 'Terraform image for the fmt job.'
     checkov_image:
-      default: "bridgecrew/checkov:3.3.0"
-      description: "Checkov image for the terraform-framework scan."
+      default: 'bridgecrew/checkov:3.3.0'
+      description: 'Checkov image for the terraform-framework scan.'
     checkov_dir:
-      default: "terraform/"
-      description: "Directory Checkov scans with --framework terraform."
+      default: 'terraform/'
+      description: 'Directory Checkov scans with --framework terraform.'
     checkov_skip:
-      default: "CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4"
-      description: "Comma-separated check IDs to skip; tune per project."
+      default: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4'
+      description: 'Comma-separated check IDs to skip; tune per project.'
 ---
 # interruptible:false keeps the auto-commit push alive through auto_cancel.
 terraform-fmt:
   stage: format
   image:
-    name: "$[[ inputs.terraform_image ]]"
-    entrypoint: [""]
+    name: '$[[ inputs.terraform_image ]]'
+    entrypoint: ['']
   interruptible: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -40,18 +40,18 @@ terraform-fmt:
 checkov-terraform:
   stage: lint
   image:
-    name: "$[[ inputs.checkov_image ]]"
-    entrypoint: [""]
+    name: '$[[ inputs.checkov_image ]]'
+    entrypoint: ['']
   needs: []
   interruptible: true
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
-        - "**/*.tf"
-        - "**/*.hcl"
-        - "**/*.tfvars"
-        - "**/*.tofu"
+        - '**/*.tf'
+        - '**/*.hcl'
+        - '**/*.tfvars'
+        - '**/*.tofu'
   script:
     - checkov --directory $[[ inputs.checkov_dir ]] --framework terraform --compact --quiet
       --skip-check $[[ inputs.checkov_skip ]]

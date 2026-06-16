@@ -2,22 +2,22 @@
 spec:
   inputs:
     packer_image:
-      default: "hashicorp/packer:1.15"
-      description: "Packer image for the fmt job."
+      default: 'hashicorp/packer:1.15'
+      description: 'Packer image for the fmt job.'
     packer_dir:
-      default: "packer/"
-      description: "Directory packer fmt rewrites recursively."
+      default: 'packer/'
+      description: 'Directory packer fmt rewrites recursively.'
     packer_globs:
       type: array
-      default: ["packer/**/*.hcl"]
-      description: "rules:changes globs gating the fmt job."
+      default: ['packer/**/*.hcl']
+      description: 'rules:changes globs gating the fmt job.'
 ---
 # interruptible:false keeps the auto-commit push alive through auto_cancel.
 packer-fmt:
   stage: format
   image:
-    name: "$[[ inputs.packer_image ]]"
-    entrypoint: [""]
+    name: '$[[ inputs.packer_image ]]'
+    entrypoint: ['']
   interruptible: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
