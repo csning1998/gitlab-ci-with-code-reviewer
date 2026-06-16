@@ -43,11 +43,22 @@ bun-test:
   stage: test
   image: '$[[ inputs.bun_image ]]'
   interruptible: true
+  cache:
+    key:
+      files:
+        - bun.lock
+    paths:
+      - node_modules/
+  needs:
+    - job: typescript-check-frontend
+      optional: true
+    - job: typescript-check-backend
+      optional: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.ts_globs ]]
   script:
-    - bun install
+    - bun install --frozen-lockfile
     - bun run --filter '*' test
 
 typescript-check-frontend:
