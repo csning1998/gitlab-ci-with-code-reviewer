@@ -29,6 +29,7 @@ stages:
   - format
   - build
   - lint
+  - test
   - review
 
 # Rejects the MR before any review API call if the description is too long.

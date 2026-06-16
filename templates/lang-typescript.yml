@@ -39,6 +39,17 @@ prettier-fmt:
 
 # Frontend and backend are separate jobs so both type errors surface in one run
 # instead of the backend check being skipped when the frontend check fails.
+bun-test:
+  stage: test
+  image: '$[[ inputs.bun_image ]]'
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.ts_globs ]]
+  script:
+    - bun install
+    - bun run --filter '*' test
+
 typescript-check-frontend:
   stage: lint
   image: "$[[ inputs.bun_image ]]"
