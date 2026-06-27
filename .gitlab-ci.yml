@@ -13,7 +13,7 @@ include:
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     inputs:
-      reviewer_image: "registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:edge"
+      reviewer_image: 'registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:edge'
   - local: templates/lang-go.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -27,10 +27,10 @@ build-reviewer-image:
   image: quay.io/buildah/stable:v1.43.0
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: "$CI_COMMIT_TAG"
+    - if: '$CI_COMMIT_TAG'
   variables:
     STORAGE_DRIVER: vfs
-    IMAGE: "$CI_REGISTRY_IMAGE/reviewer"
+    IMAGE: '$CI_REGISTRY_IMAGE/reviewer'
   script:
     - buildah login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     - buildah build -t "$IMAGE:build" -f tools/ci/Dockerfile tools/ci
@@ -49,9 +49,9 @@ publish-catalog:
   needs:
     - job: build-reviewer-image
   rules:
-    - if: "$CI_COMMIT_TAG"
+    - if: '$CI_COMMIT_TAG'
   script:
     - echo "Publishing templates/ components for $CI_COMMIT_TAG to the CI/CD Catalog."
   release:
-    tag_name: "$CI_COMMIT_TAG"
-    description: "CI template release $CI_COMMIT_TAG"
+    tag_name: '$CI_COMMIT_TAG'
+    description: 'CI template release $CI_COMMIT_TAG'
