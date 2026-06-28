@@ -1,0 +1,32 @@
+[tool.ruff]
+# Specify the target Python version
+target-version = "py311"
+
+# Exclude directories that do not require checking
+exclude = [".git", ".venv", "venv", "__pycache__"]
+
+# Limit line length to 80 characters per Google Style Guide
+line-length = 80
+
+[tool.ruff.lint]
+# Enable rule sets for Google Python Style Guide alignment
+# E, W: pycodestyle (PEP 8 basic styling)
+# F: pyflakes (static error detection)
+# I: isort (import sorting)
+# D: pydocstyle (docstring checks)
+select = ["E", "W", "F", "I", "D"]
+
+# Ignore rules that are not strictly enforced
+ignore = [
+    "D100", # Missing docstring in public module
+    "D104", # Missing docstring in public package
+]
+
+[tool.ruff.lint.pydocstyle]
+# Enforce Google style docstrings
+convention = "google"
+
+[tool.ruff.lint.isort]
+# Google Style: single line imports ordered alphabetically
+force-single-line = true
+lines-after-imports = 2

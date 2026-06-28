@@ -8,14 +8,30 @@
     "arrowParens": "always",
     "overrides": [
         {
-            "files": ["*.vue"],
+            "files": [
+                "*.vue"
+            ],
             "options": {
                 "printWidth": 80
             }
         },
         {
-            "files": ["*.tf", "*.yaml", "*.yml", "*.sh"],
+            "files": [
+                "*.tf",
+                "*.yaml",
+                "*.yml",
+                "*.sh"
+            ],
             "options": {
+                "tabWidth": 2
+            }
+        },
+        {
+            "files": [
+                ".gitlab-ci.yml"
+            ],
+            "options": {
+                "singleQuote": false,
                 "tabWidth": 2
             }
         }

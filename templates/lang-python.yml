@@ -1,0 +1,122 @@
+---
+spec:
+  inputs:
+    package_manager:
+      default: 'pip'
+      options: ['pip', 'uv']
+      description: 'Package manager to use: pip or uv.'
+    python_image:
+      default: 'python:3.11-alpine'
+      description: 'Python image. For uv, use ghcr.io/astral-sh/uv:alpine.'
+    python_globs:
+      type: array
+      default: ['**/*.py']
+      description: 'Rules:changes globs gating python check and test jobs.'
+    python_test_cmd:
+      default: 'pytest'
+      description: 'Command to run Python tests.'
+    test_stage:
+      default: 'test'
+      description: 'Stage for the python-test job.'
+---
+# Note: The consuming project must declare stages corresponding to the stages
+# used by this component (default: format, lint, and test).
+
+# Base configuration for Python pipeline jobs
+.python-base:
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.python_globs ]]
+
+# Shared Git setup for format auto-commit
+.git-setup:
+  before_script:
+    - apk add --no-cache git
+    - git config user.email "gitlab-ci@noreply"
+    - git config user.name "GitLab CI"
+    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+# Shared logic to commit and push styling formatting changes
+.ruff-fmt-commit:
+  script:
+    - |
+      if ! git diff --quiet; then
+        git add -A
+        git commit -m "style: ruff format and autofix"
+        git push origin HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
+      fi
+
+python-fmt:
+  extends: .python-base
+  stage: format
+  image: '$[[ inputs.python_image ]]'
+  interruptible: false # Do not auto-cancel format jobs to ensure git push completes
+  before_script:
+    - !reference [.git-setup, before_script]
+    - |
+      if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
+        if ! command -v uv >/dev/null 2>&1; then
+          pip install uv
+        fi
+      else
+        pip install ruff
+      fi
+  script:
+    - |
+      if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
+        uvx ruff format .
+        uvx ruff check --fix . || true
+      else
+        ruff format .
+        ruff check --fix . || true
+      fi
+    - !reference [.ruff-fmt-commit, script]
+
+python-lint:
+  extends: .python-base
+  stage: lint
+  image: '$[[ inputs.python_image ]]'
+  before_script:
+    - |
+      if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
+        if ! command -v uv >/dev/null 2>&1; then
+          pip install uv
+        fi
+      else
+        pip install ruff
+      fi
+  script:
+    - |
+      if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
+        uvx ruff check .
+      else
+        ruff check .
+      fi
+
+python-test:
+  extends: .python-base
+  stage: '$[[ inputs.test_stage ]]'
+  image: '$[[ inputs.python_image ]]'
+  before_script:
+    - |
+      if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
+        if ! command -v uv >/dev/null 2>&1; then
+          pip install uv
+        fi
+        if [ -f "pyproject.toml" ]; then
+          uv pip install . --system
+        elif [ -f "requirements.txt" ]; then
+          uv pip install -r requirements.txt --system
+        fi
+        uv pip install pytest pytest-asyncio httpx requests pydantic --system
+      else
+        if [ -f "pyproject.toml" ]; then
+          pip install .
+        elif [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+        fi
+        pip install pytest pytest-asyncio httpx requests pydantic
+      fi
+  script:
+    - $[[ inputs.python_test_cmd ]]
