@@ -65,7 +65,7 @@ Navigate to **Settings > CI/CD**, expand **Variables**, and select **Add variabl
 
 Configure all variables with the following settings:
 
-- **Mask variable (Recommand)** and **Hidden variable**: Enabled to prevent credentials from being exposed in pipeline logs.
+- **Mask variable (Recommended)** and **Hidden variable**: Enabled to prevent credentials from being exposed in pipeline logs.
 - **Protect variable**: Disabled to allow variables to be accessed by pipelines running on unprotected feature branches.
 
 | Variable             | Value                                                |
@@ -158,7 +158,7 @@ Create the following configurations manually in the `terraform/` directory. Refe
 
 After setup is complete, code reviews integrate into the standard development workflow.
 
-1. **Create an Merge Request**:
+1. **Create a Merge Request**:
     - Push the development branch and open an MR targeting the default branch.
 
 2. **Trigger a Review Manually**:
