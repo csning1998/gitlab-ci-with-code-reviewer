@@ -8,7 +8,7 @@ spec:
       description: 'Claude model id for the Claude reviewer. Leave empty to disable the job.'
     gemini_model:
       default: ''
-      description: 'Model id accepted through the Gemini API generateContent endpoint, including Gemma; leave empty to disable the job.'
+      description: 'Gemini model id for the Gemini reviewer, including Gemma. Leave empty to disable the job.'
     markdownlint_image:
       default: 'markdownlint/markdownlint:0.17.0'
       description: 'Ruby mdl image for Markdown linting.'
