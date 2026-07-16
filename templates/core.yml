@@ -80,7 +80,7 @@ claude-code-review:
     CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && "$[[ inputs.claude_model ]]" != ""'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CLAUDE_MODEL != ""'
       when: manual
       allow_failure: true
   interruptible: true
@@ -94,7 +94,7 @@ gemini-code-review:
     GEMINI_MODEL: '$[[ inputs.gemini_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && "$[[ inputs.gemini_model ]]" != ""'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $GEMINI_MODEL != ""'
       when: manual
       allow_failure: true
   interruptible: true
