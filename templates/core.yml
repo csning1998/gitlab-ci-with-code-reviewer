@@ -3,12 +3,12 @@ spec:
   inputs:
     reviewer_image:
       description: 'Required; prebuilt reviewer image pinned to a version (no default, no floating tag).'
-    anthropic_model:
-      default: 'claude-sonnet-4-6'
-      description: 'Anthropic model id for the Claude reviewer.'
+    claude_model:
+      default: ''
+      description: 'Claude model id for the Claude reviewer. Leave empty to disable the job.'
     gemini_model:
-      default: 'gemini-3.5-flash'
-      description: 'Gemini model id for the Gemini reviewer.'
+      default: ''
+      description: 'Gemini model id for the Gemini reviewer, including Gemma. Leave empty to disable the job.'
     markdownlint_image:
       default: 'markdownlint/markdownlint:0.17.0'
       description: 'Ruby mdl image for Markdown linting.'
@@ -77,10 +77,10 @@ claude-code-review:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
   variables:
-    ANTHROPIC_MODEL: '$[[ inputs.anthropic_model ]]'
+    CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CLAUDE_MODEL != ""'
       when: manual
       allow_failure: true
   interruptible: true
@@ -94,7 +94,7 @@ gemini-code-review:
     GEMINI_MODEL: '$[[ inputs.gemini_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $GEMINI_MODEL != ""'
       when: manual
       allow_failure: true
   interruptible: true

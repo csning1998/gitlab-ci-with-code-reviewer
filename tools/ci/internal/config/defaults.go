@@ -1,6 +1,6 @@
 package config
 
 const (
-	defaultGeminiModel    = "gemini-3.5-flash"
-	defaultAnthropicModel = "claude-sonnet-4-6"
+	defaultGeminiModel = "gemini-3.5-flash"
+	defaultClaudeModel = "claude-sonnet-4-6"
 )

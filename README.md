@@ -4,69 +4,69 @@
 
 ### Option 1. Google AI Studio Setup Process
 
-The primary objective on the Google platform is to acquire model access credentials and verify model access permissions.
+The primary objective is to acquire model credentials and verify access permissions on the Google AI Studio platform.
 
 1. **Create an API Key**:
-    - Log in to the Google AI Studio platform.
-    - Click **Get API key** in the upper-left corner or navigation bar.
-    - Select **Create API key** and choose the Google Cloud project associated with the account.
-    - Once the system generates the key, copy the string completely and store it securely.
+    - Log in to Google AI Studio.
+    - Navigate to and select **Get API key** in the sidebar or navigation menu.
+    - Select **Create API key** and choose the appropriate Google Cloud project.
+    - Copy the generated API key and store it securely.
 
 2. **Verify Model Quota and Availability**:
-    - In the model selection list on the right side of the platform, verify that the account is currently able to call the designated model under the free tier (e.g., `gemini-3.5-flash`).
-    - Ensure that the model quota is not restricted within the region and project (the limit must be greater than `0`).
+    - Verify model access by checking that the designated model (e.g., `gemini-3.5-flash`) is available in the model selection menu.
+    - Ensure that the model quota for the associated region and project is active (non-zero).
 
 ### Option 2. Anthropic Console Setup Process
 
-The primary objective on the Anthropic platform is to acquire API credentials for Claude model access.
+The primary objective is to acquire API credentials for Claude models on the Anthropic Console.
 
 1. **Create an API Key**:
     - Log in to the Anthropic Console.
-    - Navigate to **API Keys** and click **Create Key**.
-    - Copy the generated key string immediately and store it securely (it will not be displayed again).
+    - Navigate to **API Keys** and select **Create Key**.
+    - Copy the generated key string and store it securely. The key will not be displayed again.
 
 2. **Verify Model Access**:
-    - Confirm that the account has access to the designated model (e.g., `claude-sonnet-4-6`) and that the usage tier permits API calls.
+    - Verify that the account has access to the designated model (e.g., `claude-sonnet-4-6`) and that the usage tier allows API calls.
 
 ## Section 2. GitLab Setup Process
 
-The workflow on the GitLab platform consists of two parts:
+The setup workflow on GitLab consists of two parts:
 
-1. Generating one or more access tokens that permit the pipeline to read MR changes and post review comments.
-2. Injecting all credentials into the project CI/CD environment variables.
+1. Generating access tokens to authorize the pipeline to read Merge Request (MR) diffs and post review discussions.
+2. Registering the credentials as project CI/CD variables.
 
 ### Step A. Generate a GitLab Access Token
 
-This token enables the Go binary in the pipeline to read Merge Request (MR) diffs and post inline discussion threads.
+This token authorizes the pipeline binary to retrieve MR diffs and write inline discussion comments.
 
-- Navigate to the GitLab project page and select **Settings > Access Tokens** (alternatively, click the user avatar to access **User Settings > Access Tokens** for a user-scoped token).
-- Click **Add new token**, configure the token name, and select an expiration date.
-- Under **Select scopes**, check **`api`** (Classic PAT with full API access is required; fine-grained PATs do not expose the Merge Request Create permission needed to post inline discussion threads).
-- After clicking create, **the generated token string must be copied immediately**, it will not be displayed again after leaving the page.
+- Navigate to the GitLab project and select **Settings > Access Tokens** (or **User Settings > Access Tokens** for a user-scoped personal access token).
+- Select **Add new token**, configure the name, and specify an expiration date.
+- Under **Select scopes**, enable **`api`** (Classic Personal Access Token (PAT) with full API access is required; fine-grained PATs do not expose the MR Create permission needed to post inline discussion threads).
+- Copy the generated token string immediately upon creation, as it will not be displayed again.
 
 ### Step B. Add Reviewer Variables at Settings > Access Tokens
 
-Navigate to **Settings > Access Tokens** and create the following project access tokens. Set the role to **Reporter** and check the **`api`** and **`read_api`** scopes.
+Navigate to **Settings > Access Tokens** and create project access tokens with the **Reporter** role and the **`api`** and **`read_api`** scopes.
 
 | Variable             | Role            |
 | -------------------- | --------------- |
 | `GEMINI_MR_REVIEWER` | GitLab Reviewer |
 | `CLAUDE_MR_REVIEWER` | GitLab Reviewer |
 
-Copy each generated token string immediately. It will not be displayed again after leaving the page.
+Copy each generated token string immediately. The values are non-retrievable after leaving the page.
 
-After creation, verify that the token's active scopes show only **`api`** and **`read_api`**. Tokens auto-generated through GitLab AI features or MCP integrations carry additional scopes (`mcp`, `ai_workflows`) that restrict the privilege level and will cause a `403 insufficient_scope` error when the pipeline calls the GitLab API.
+Ensure that the active scopes for the tokens are strictly restricted to **`api`** and **`read_api`**. Tokens generated through other integrations or containing additional scopes (such as `mcp` or `ai_workflows`) may trigger a `403 Forbidden` API error during pipeline execution.
 
 ### Step C. Configure CI/CD Environment Variables at Settings > CI/CD
 
-Complete **Section 3** first to obtain `GEMINI_API_KEY` and `CLAUDE_API_KEY` before proceeding with this step.
+Ensure that the API keys from **Section 1** are obtained before configuring these variables.
 
-Navigate to **Settings > CI/CD**, expand the **Variables** section, and click **Add variable** for each entry below.
+Navigate to **Settings > CI/CD**, expand **Variables**, and select **Add variable** for each entry in the table below.
 
-All variables require the same flag configuration:
+Configure all variables with the following settings:
 
-- **[Required] Mask variable** and **Hidden variable**: Prevents values from being printed in plaintext in pipeline logs.
-- **[Must Not Be Checked] Protect variable**: If checked, the variable is restricted to protected branches only, blocking pipelines triggered from MR source branches.
+- **Mask variable (Recommended)** and **Hidden variable**: Enabled to prevent credentials from being exposed in pipeline logs.
+- **Protect variable**: Disabled to allow variables to be accessed by pipelines running on unprotected feature branches.
 
 | Variable             | Value                                                |
 | -------------------- | ---------------------------------------------------- |
@@ -77,19 +77,19 @@ All variables require the same flag configuration:
 
 ## Section 3. Runner Setup
 
-The project runner is provisioned via Terraform. It registers a project-scoped runner and writes the runner daemon configuration to the host machine.
+The project runner is provisioned via Terraform, which registers the runner with GitLab and writes the configuration to the host.
 
 ### Step A. Generate Terraform Management Token
 
 Navigate to the GitLab user avatar and select **User Settings > Access Tokens**.
 
-- Click **Add new token**, set a token name and expiration date.
-- Under **Select scopes**, check **`api`**.
-- Click **Create personal access token** and copy the generated string immediately. It will not be displayed again.
+- Select **Add new token**, and configure a name and expiration date.
+- Under **Select scopes**, enable the **`api`** scope.
+- Select **Create personal access token** and copy the generated string. The PAT will not be displayed again.
 
-The token owner must hold the **Owner** role on the target GitLab project. For projects in the user's personal namespace, this requirement is satisfied by default.
+The token owner must possess the **Owner** role on the target GitLab project. This permission is default for projects within a personal namespace.
 
-This token is referenced in both `backend.hcl` (`password`) and `terraform.tfvars` (`gitlab_token`).
+This token is referenced as `password` in `backend.hcl` and as `gitlab_token` in `terraform.tfvars`.
 
 ### Step B. Prerequisites
 
@@ -99,7 +99,7 @@ This token is referenced in both `backend.hcl` (`password`) and `terraform.tfvar
 
 ### Step C. Configure Terraform Files
 
-Both files are gitignored and must be created manually. Use `terraform/terraform.tfvars.example` as a reference.
+Create the following configurations manually in the `terraform/` directory. Refer to `terraform/terraform.tfvars.example` for the template.
 
 - For **`terraform/backend.hcl`**: Stores the Terraform HTTP backend credentials for remote state.
     - **`address`**: `https://gitlab.com/api/v4/projects/<PROJECT_ID>/terraform/state/default`
@@ -111,7 +111,7 @@ Both files are gitignored and must be created manually. Use `terraform/terraform
     - **`unlock_method`**: `DELETE`
     - **`retry_wait_min`**: `5`
 
-    The `<PROJECT_ID>` is found in **Settings > General** on the GitLab project page.
+    The `<PROJECT_ID>` value is located under **Settings > General** on the GitLab project page.
 
 - For **`terraform/terraform.tfvars`**:
     - **`gitlab_token`**: The User PAT generated in Step A.
@@ -120,19 +120,19 @@ Both files are gitignored and must be created manually. Use `terraform/terraform
 
 ### Step D. Provision with Terraform
 
-1. Initialize the backend. The `-backend-config` flag loads the gitignored `backend.hcl` which holds the state address and credentials.
+1. **Initialize the Backend**: Execute initialization using the `-backend-config` flag to load the gitignored `backend.hcl` file, which contains the remote state address and credentials.
 
     ```bash
     terraform init -backend-config=backend.hcl
     ```
 
-2. Import the existing GitLab project into Terraform state. This step is required on the first run because the project already exists; without it, `apply` would attempt to create a duplicate.
+2. **Import the Existing Project**: Import the target GitLab project into the Terraform state. This operation is required during the initial execution because the project already exists; omitting this step will cause the subsequent apply execution to attempt a duplicate project creation.
 
     ```bash
     terraform import gitlab_project.this <PROJECT_ID>
     ```
 
-3. Apply the configuration. This registers the project runner on GitLab and writes the runner token to `~/.config/gitlab-runner/config.toml` on the host.
+3. **Apply the Configuration**: Apply the Terraform configuration to register the project runner on GitLab. This step automatically writes the generated runner token to `~/.config/gitlab-runner/config.toml` on the host machine.
 
     ```bash
     terraform apply -auto-approve
@@ -140,15 +140,15 @@ Both files are gitignored and must be created manually. Use `terraform/terraform
 
 ### Step E. Start the Runner Service
 
-1. Copy `.env.example` to `.env` and fill in the two variables:
-    - **`UHOME`**: Absolute path to the user home directory. Obtain with `echo $HOME`.
-    - **`HOST_UID`**: Numeric UID of the host user. Required to resolve the rootless Podman socket at `/run/user/<HOST_UID>/podman/podman.sock`. Obtain with `id -u`.
+1. **Configure Environment Variables**: Copy `.env.example` to `.env` and configure the following variables:
+    - **`UHOME`**: The absolute path to the user home directory (retrieve via `echo $HOME`).
+    - **`HOST_UID`**: The numeric UID of the host user (retrieve via `id -u`), which is required to resolve the rootless Podman socket at `/run/user/<HOST_UID>/podman/podman.sock`.
 
     ```bash
     cp .env.example .env
     ```
 
-2. Start the runner container:
+2. **Start the Runner Container**: Start the runner service in the background using Podman Compose:
 
     ```bash
     podman compose up -d
@@ -156,29 +156,29 @@ Both files are gitignored and must be created manually. Use `terraform/terraform
 
 ## Section 4. Triggering Workflow
 
-Once configuration is complete, reviews integrate into the standard development workflow.
+After setup is complete, code reviews integrate into the standard development workflow.
 
 1. **Create a Merge Request**:
-    - Push a feature branch to the remote repository and open a Merge Request targeting `main` from the GitLab web interface.
+    - Push the development branch and open an MR targeting the default branch.
 
 2. **Trigger a Review Manually**:
     - After the MR is created, a pipeline will appear under the **Pipelines** tab.
-    - Two review jobs are available: `gemini-code-review` and `claude-code-review`. Both are paused by default and display a **Play** button.
-    - Clicking the **Play** button on either job triggers the GitLab Runner to pull the prebuilt reviewer image, execute the bundled binary against the MR diff, and post inline discussion comments to the MR timeline.
-    - Both jobs may be triggered independently within the same pipeline.
+    - The review jobs (`gemini-code-review` and `claude-code-review`) appear based on model configurations in the `core` component (refer to Section 5, Step C). Jobs are paused by default.
+    - Selecting the manual play trigger executes the review binary against the MR diff and publishes comments to the discussion timeline.
+    - If multiple model providers are configured, jobs can be executed independently.
 
 ## Section 5. Consuming the CI Template
 
-This repository is published as a GitLab CI/CD Catalog project on gitlab.com. Other projects consume its jobs through `include:component` rather than copying job files. Each component exposes typed `spec:inputs`, so per-project differences are passed as inputs instead of forked.
+This project is published as a GitLab CI/CD Catalog component. Consuming projects integrate these jobs via `include:component`, passing configuration options through `inputs` to avoid template customization or forking.
 
 ### Step A. Prerequisites in the Consuming Project
 
-- Register the project runner and configure the CI/CD variables described in Section 2 and Section 3 (`GEMINI_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`). The reviewer image reads these at runtime; they are not baked into the image.
-- Format jobs auto-commit and push back to the source branch using `CI_JOB_TOKEN`. Enable this in **Settings > CI/CD > Token Access** (allow the job token to push to the repository).
+- Ensure the runner is registered and project-level variables (e.g. `GEMINI_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`) are configured. These are read dynamically at runtime.
+- Authorize the `CI_JOB_TOKEN` to write to the repository under **Settings > CI/CD > Token Access** if jobs are required to auto-commit and push changes back to the source branch.
 
 ### Step B. Reference Components in `.gitlab-ci.yml`
 
-The component path format is `csning1998/gitlab-ci-with-code-reviewer/<component>@<version>`. **Pin `<version>` to a released tag. `core` is always required**; add only the language and IaC components the project needs. `core` requires the `reviewer_image` input (no default, so a floating tag cannot slip in); pin it to the same version as the component.
+Components are referenced using the path `gitlab.com/csning1998/gitlab-ci-with-code-reviewer/<component>@<version>`. The `<version>` must be pinned to a specific release tag. The `core` component is mandatory and requires the `reviewer_image` input to be explicitly defined.
 
 ```yaml
 include:
@@ -190,51 +190,51 @@ include:
 
 ### Step C. Inject Inputs for Project-Specific Differences
 
-Override defaults only where the project diverges. Representative examples:
+Configure inputs to override default settings. Users may verify and specify the latest released version number for the component and container image. The variables `claude_model` and `gemini_model` default to empty strings; configuring a model activates its corresponding review pipeline. Representative examples:
 
 ```yaml
 include:
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
       inputs:
           reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
+          claude_model: claude-sonnet-4-6
+          gemini_model: gemini-3.5-flash
+          model_k: model_v
 
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
       inputs:
-          ts_globs: ["frontend/**/*", "backend/**/*"]
+          ts_globs: ['frontend/**/*', 'backend/**/*']
           frontend_dir: frontend
           backend_dir: backend
 
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-terraform@1.0.0
       inputs:
-          checkov_skip: "CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21"
+          checkov_skip: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21'
 
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
 ```
 
-Available components: `core`, `lang-go`, `lang-typescript`, `iac-terraform`, `iac-packer`, `iac-ansible`. The full input list for each is declared in the corresponding file under `templates/`.
+Available components include `core`, `lang-go`, `lang-typescript`, `iac-terraform`, `iac-packer`, and `iac-ansible`. The full input schemas are defined in the respective files under `templates/`.
 
 ## Section 6. Replicating on a Self-Hosted GitLab Instance
 
-The CI/CD Catalog is instance-scoped. A self-hosted instance cannot `include:component` from the gitlab.com catalog, so the template is replicated inside the instance.
+The CI/CD Catalog is instance-scoped. Because a self-hosted instance cannot resolve or include components directly from the gitlab.com catalog, the template components must be replicated within the local instance.
 
-1. **Mirror the component project**: Import `gitlab-ci-with-code-reviewer` into the self-hosted instance and enable it as a CI/CD Catalog project in **Settings > General > Visibility, project features, permissions > CI/CD Catalog project**.
-
-2. **Mirror the reviewer image**: Pull `registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:<tag>` and push it into the instance registry or Harbor. Pass the internal path through the `reviewer_image` input of the `core` component.
-
-3. **Adjust include refs**: Consuming projects on the instance reference the internal component path `<instance-namespace>/gitlab-ci-with-code-reviewer/<component>@<version>` instead of the gitlab.com path.
-
-4. **Cut a release on the instance**: Tag the mirrored project to publish its components to the instance catalog, mirroring the gitlab.com release process in Section 7.
+1. **Mirror Repository**: Import the `gitlab-ci-with-code-reviewer` repository into the self-hosted instance and enable it as a CI/CD Catalog project under **Settings > General > Visibility, project features, permissions > CI/CD Catalog project**.
+2. **Mirror Container Image**: Pull the container image `registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:<tag>` and push it into the local instance registry or Harbor. Pass this internal image path to the `reviewer_image` input of the `core` component.
+3. **Update Component References**: Configure consuming projects on the self-hosted instance to reference the local component path `<instance-namespace>/gitlab-ci-with-code-reviewer/<component>@<version>` instead of the gitlab.com path.
+4. **Publish Catalog Release**: Tag the mirrored project to publish its components to the instance catalog, replicating the release workflow documented in Section 7.
 
 ## Section 7. Versioning and Release
 
-A single semver tag drives both the reviewer image and the catalog publish, kept in lockstep so a consumer setting `reviewer_image` to `reviewer:X.Y.Z` matches `core@X.Y.Z`. `core` has no `reviewer_image` default, so consumers always pin it explicitly; no floating tag exists to drift.
+A unified Semantic Versioning (SemVer) tag aligns the container image releases with the catalog components, ensuring that a consumer configuring `reviewer_image` to `reviewer:X.Y.Z` matches `core@X.Y.Z`. The `core` component does not specify a default for `reviewer_image` to ensure consumers explicitly pin version numbers, thereby preventing configuration drift.
 
-1. Push the semver tag. The `release` stage in `.gitlab-ci.yml` builds and pushes `reviewer:<tag>` (the pinned version only, no `:latest`), then creates a GitLab release that publishes the `templates/` components to the catalog.
-2. Verify the image is public under the project Container Registry and the components appear on the project's CI/CD Catalog page.
+1. **Push Version Tag**: Push the SemVer tag. The `release` stage in `.gitlab-ci.yml` builds and pushes `reviewer:<tag>` (releasing only the pinned version tag with no `:latest` tag), then creates a GitLab release that publishes the components located under `templates/` to the catalog.
+2. **Verify Deployment**: Confirm the generated image is publicly accessible under the project Container Registry and the components are displayed on the project's CI/CD Catalog page.
 
 ### Planned Language Path Space (Not Yet Implemented)
 
-Two language components are reserved for future addition, following the same `core` input conventions:
+Two language components are reserved for future addition, following the same `core` component input conventions:
 
-- `lang-python`: format and lint via `ruff` (or `black` + `flake8`), type check via `mypy`.
-- `lang-java`: build via `gradle` or `maven`, format and lint via `spotless` and `checkstyle`. The build tool choice drives the job structure and cache strategy.
+- `lang-python`: Code formatting and linting (via `ruff` or a combination of `black` and `flake8`), and type checking (via `mypy`).
+- `lang-java`: Build execution (via `gradle` or `maven`), and formatting and linting checks (via `spotless` and `checkstyle`). The choice of build tool dictates the job structure and caching strategy.

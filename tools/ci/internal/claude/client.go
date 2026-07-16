@@ -1,4 +1,4 @@
-package anthropic
+package claude
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-// Client calls the Anthropic Messages API for a fixed model.
+// Client calls the Claude Messages API for a fixed model.
 type Client struct {
 	client sdk.Client
 	model  sdk.Model
@@ -23,7 +23,7 @@ func New(model, apiKey string) *Client {
 	}
 }
 
-func (c *Client) Name() string { return "Anthropic" }
+func (c *Client) Name() string { return "Claude" }
 
 // Review sends the prompt and returns the concatenated text of all content blocks.
 func (c *Client) Review(prompt string) (string, error) {
@@ -37,7 +37,7 @@ func (c *Client) Review(prompt string) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("anthropic api: %w", err)
+		return "", fmt.Errorf("claude api: %w", err)
 	}
 	var sb strings.Builder
 	for _, block := range resp.Content {
