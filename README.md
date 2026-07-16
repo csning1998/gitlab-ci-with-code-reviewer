@@ -198,6 +198,8 @@ include:
       inputs:
           reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
           claude_model: claude-sonnet-4-6
+          gemini_model: gemini-3.5-flash
+          model_k: model_v
 
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
       inputs:
