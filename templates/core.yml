@@ -3,9 +3,9 @@ spec:
   inputs:
     reviewer_image:
       description: 'Required; prebuilt reviewer image pinned to a version (no default, no floating tag).'
-    anthropic_model:
+    claude_model:
       default: ''
-      description: 'Anthropic model id for the Claude reviewer. Leave empty to disable the job.'
+      description: 'Claude model id for the Claude reviewer. Leave empty to disable the job.'
     gemini_model:
       default: ''
       description: 'Gemini model id for the Gemini reviewer. Leave empty to disable the job.'
@@ -77,10 +77,10 @@ claude-code-review:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
   variables:
-    ANTHROPIC_MODEL: '$[[ inputs.anthropic_model ]]'
+    CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && "$[[ inputs.anthropic_model ]]" != ""'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && "$[[ inputs.claude_model ]]" != ""'
       when: manual
       allow_failure: true
   interruptible: true

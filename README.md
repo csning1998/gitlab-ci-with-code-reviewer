@@ -190,14 +190,14 @@ include:
 
 ### Step C. Inject Inputs for Project-Specific Differences
 
-Configure inputs to override default settings. Users may verify and specify the latest released version number for the component and container image. The variables `anthropic_model` and `gemini_model` default to empty strings; configuring a model activates its corresponding review pipeline. Representative examples:
+Configure inputs to override default settings. Users may verify and specify the latest released version number for the component and container image. The variables `claude_model` and `gemini_model` default to empty strings; configuring a model activates its corresponding review pipeline. Representative examples:
 
 ```yaml
 include:
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
       inputs:
           reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
-          anthropic_model: claude-sonnet-4-6
+          claude_model: claude-sonnet-4-6
 
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
       inputs:
