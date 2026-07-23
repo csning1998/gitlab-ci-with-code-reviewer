@@ -19,8 +19,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'CLAUDE_API_KEY' is missing.")
 		os.Exit(1)
 	}
+	notify := review.NotifyConfig{
+		SlackWebhookURL: cfg.SlackWebhookURL,
+		ProjectURL:      cfg.ProjectURL,
+		ProjectName:     cfg.ProjectName,
+		MRIID:           cfg.MRIID,
+	}
 	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken,
-		claude.New(cfg.ClaudeModel, cfg.ClaudeKey)); err != nil {
+		claude.New(cfg.ClaudeModel, cfg.ClaudeKey), notify); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
