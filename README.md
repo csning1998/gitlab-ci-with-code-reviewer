@@ -68,12 +68,13 @@ Configure all variables with the following settings:
 - **Mask variable (Recommended)** and **Hidden variable**: Enabled to prevent credentials from being exposed in pipeline logs.
 - **Protect variable**: Disabled to allow variables to be accessed by pipelines running on unprotected feature branches.
 
-| Variable             | Value                                                |
-| -------------------- | ---------------------------------------------------- |
-| `GEMINI_MR_REVIEWER` | Token string generated at Step B                     |
-| `CLAUDE_MR_REVIEWER` | Token string generated at Step B                     |
-| `GEMINI_API_KEY`     | API key from Google AI Studio (Section 3, Option 1)  |
-| `CLAUDE_API_KEY`     | API key from Anthropic Console (Section 3, Option 2) |
+| Variable                  | Value                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `GEMINI_MR_REVIEWER`      | Token string generated at Step B                                                           |
+| `CLAUDE_MR_REVIEWER`      | Token string generated at Step B                                                           |
+| `GEMINI_API_KEY`          | API key from Google AI Studio (Section 3, Option 1)                                        |
+| `CLAUDE_API_KEY`          | API key from Anthropic Console (Section 3, Option 2)                                       |
+| `SLACK_REVIEW_WEBHOOK_URL` | Optional. Slack Incoming Webhook URL. When unset, the review jobs skip the Slack notification step entirely; no other required variable depends on it. |
 
 ## Section 3. Runner Setup
 
