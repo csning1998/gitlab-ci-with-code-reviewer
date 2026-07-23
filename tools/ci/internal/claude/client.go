@@ -10,7 +10,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-// Client calls the Claude Messages API for a fixed model.
+// Client encapsulates Anthropic Messages API operations for a configured model.
 type Client struct {
 	client sdk.Client
 	model  sdk.Model
@@ -25,7 +25,8 @@ func New(model, apiKey string) *Client {
 
 func (c *Client) Name() string { return "Claude" }
 
-// Review sends the prompt and returns the concatenated text of all content blocks.
+// Review submits the prompt to the Claude Messages API using a 3-minute execution timeout guard
+// to prevent indefinite process hanging in CI runner nodes, aggregating all returned text content blocks.
 func (c *Client) Review(prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()

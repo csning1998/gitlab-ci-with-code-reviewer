@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// Notify posts text to a Slack Incoming Webhook. The channel field is
-// deliberately omitted: Slack has bound each Incoming Webhook to a single
-// channel since 2018, so a channel override in the payload is silently ignored.
+// Notify posts text messages to a Slack Incoming Webhook endpoint.
+// The JSON payload intentionally omits the channel field, as Slack Incoming Webhooks have been statically bound
+// to pre-configured target channels since 2018, rendering payload channel overrides ineffective.
 func Notify(webhookURL, text string) error {
 	body, err := json.Marshal(map[string]string{"text": text})
 	if err != nil {

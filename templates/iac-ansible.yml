@@ -28,7 +28,7 @@ ansible-lint:
     - cd $[[ inputs.ansible_dir ]]
     - ansible-lint
 
-# Ansible findings are acknowledged debt: --soft-fail exits 0 until resolved.
+# Checkov Ansible scan failures execute with --soft-fail to treat findings as non-blocking technical debt.
 checkov-ansible:
   stage: lint
   image:

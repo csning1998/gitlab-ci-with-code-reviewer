@@ -21,7 +21,7 @@ spec:
       default: '../../.gitlab/golangci.yml'
       description: 'golangci config path, relative to go_dir.'
 ---
-# interruptible:false keeps the auto-commit push alive through auto_cancel.
+# Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
 go-fmt:
   stage: format
   image: '$[[ inputs.go_image ]]'

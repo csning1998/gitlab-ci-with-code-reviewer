@@ -10,12 +10,14 @@ import (
 	"time"
 )
 
+// redactedString enforces credential masking by overriding fmt.Stringer to return [REDACTED],
+// preventing sensitive API keys from appearing in diagnostic logs while preserving raw value retrieval for HTTP headers.
 type redactedString string
 
 func (redactedString) String() string  { return "[REDACTED]" }
 func (s redactedString) value() string { return string(s) }
 
-// Client calls the Gemini generateContent endpoint for a fixed model.
+// Client manages HTTP interactions with the Gemini generateContent REST endpoint for a configured model.
 type Client struct {
 	url    string
 	apiKey redactedString
@@ -35,7 +37,8 @@ func New(model, apiKey string) *Client {
 
 func (c *Client) Name() string { return "Gemini" }
 
-// Review sends the prompt and returns the concatenated text of the first candidate.
+// Review submits the prompt payload to the Gemini API, enforcing JSON structured response configuration
+// and aggregating returned candidate text parts.
 func (c *Client) Review(prompt string) (result string, err error) {
 	payload := map[string]any{
 		"contents":         []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": prompt}}}},

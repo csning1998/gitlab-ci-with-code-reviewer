@@ -10,7 +10,7 @@ import (
 	"ci-tools/internal/slack"
 )
 
-// LLMClient is the interface any language model client must satisfy.
+// LLMClient defines the interface for language model client integrations.
 type LLMClient interface {
 	Name() string
 	Review(prompt string) (string, error)
@@ -48,8 +48,8 @@ Return ONLY a raw JSON array with no markdown fences or wrapper. Each element:
 
 If there are no significant issues across all files, return an empty array: []`
 
-// Comment is one LLM finding. Missing or null JSON fields decode to the zero
-// value (empty string, nil pointer), so a null suggestion can never crash here.
+// Comment represents a single code review finding emitted by an LLM provider.
+// Pointer types for line numbers safely accommodate null or missing JSON attributes during unmarshaling.
 type Comment struct {
 	File        string `json:"file"`
 	StartLine   *int   `json:"start_line"`
@@ -58,8 +58,8 @@ type Comment struct {
 	Suggestion  string `json:"suggestion"`
 }
 
-// NotifyConfig configures the optional Slack summary posted when Run() finishes
-// posting comments. An empty SlackWebhookURL disables the notification entirely.
+// NotifyConfig contains configuration parameters for post-review Slack summary webhooks.
+// An empty SlackWebhookURL disables notification dispatch.
 type NotifyConfig struct {
 	SlackWebhookURL string
 	ProjectURL      string
@@ -67,7 +67,7 @@ type NotifyConfig struct {
 	MRIID           string
 }
 
-// Reviewer orchestrates a single MR review using the injected API clients.
+// Reviewer orchestrates merge request evaluation workflow across GitLab API and LLM provider interfaces.
 type Reviewer struct {
 	gitlab *gitlab.Client
 	llm    LLMClient
@@ -78,8 +78,8 @@ func New(gl *gitlab.Client, llm LLMClient, notify NotifyConfig) *Reviewer {
 	return &Reviewer{gitlab: gl, llm: llm, notify: notify}
 }
 
-// RunOnMR is the shared entry point for all reviewer binaries. Each cmd supplies
-// its provider-specific LLM client; the GitLab wiring and run loop live here.
+// RunOnMR serves as the common execution entrypoint for reviewer executables,
+// encapsulating client initialization and execution workflow.
 func RunOnMR(apiURL, projectID, mriid, token string, llm LLMClient, notify NotifyConfig) error {
 	return New(gitlab.New(apiURL, projectID, mriid, token), llm, notify).Run()
 }
@@ -89,7 +89,7 @@ func (r *Reviewer) Run() error {
 	if err != nil {
 		return err
 	}
-	// MaxRunes is checked before FetchMR so a misconfigured env var aborts early.
+	// Validate MAX_DESCRIPTION_CHARS prior to fetching MR details to fail early on configuration errors.
 	mr, err := r.gitlab.FetchMR()
 	if err != nil {
 		return fmt.Errorf("fetch MR changes: %w", err)
@@ -149,8 +149,8 @@ func (r *Reviewer) Run() error {
 	return nil
 }
 
-// notifySlack posts a one-line summary to the configured Slack Incoming Webhook.
-// A failed post is logged, not returned, so a Slack outage never fails the job.
+// notifySlack dispatches a review summary to Slack.
+// Delivery failures are logged without returning an error to prevent external notification outages from failing CI jobs.
 func (r *Reviewer) notifySlack(posted, skipped int) {
 	if r.notify.SlackWebhookURL == "" {
 		return
@@ -163,8 +163,8 @@ func (r *Reviewer) notifySlack(posted, skipped int) {
 	}
 }
 
-// deliver posts one comment, preferring an inline discussion and falling back to
-// a plain note. It is self-contained, so one bad comment never aborts the run.
+// deliver posts a single review finding, attempting inline discussion placement
+// before falling back to a general merge request note if line-anchoring is unavailable.
 func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c Comment) bool {
 	file := strings.TrimSpace(c.File)
 	description := strings.TrimSpace(c.Description)
@@ -211,11 +211,8 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 	return true
 }
 
-// mrIntent renders the author's title and description as a context block the
-// LLM weighs the diff against. It returns "" when both are empty so the prompt
-// gains no dangling header. maxRunes is the gate's MAX_DESCRIPTION_CHARS, shared
-// so the truncation bound and the rejection threshold stay globally consistent.
-// The truncation guard is defence-in-depth for direct invocation without the gate.
+// mrIntent formats merge request title and description into an authoritative intent context block.
+// Descriptions exceeding maxRunes are truncated with a notification marker as a defense-in-depth measure.
 func mrIntent(title, description string, maxRunes int) string {
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
@@ -282,8 +279,8 @@ func position(refs gitlab.DiffRefs, file string, info fileInfo, start, end int) 
 	return pos
 }
 
-// buildCombinedDiff assembles the annotated diff sent to the LLM and the per-file
-// line maps used to anchor inline comments.
+// buildCombinedDiff constructs the annotated diff payload for LLM prompt evaluation
+// and generates per-file line index mappings for inline discussion placement.
 func buildCombinedDiff(changes []gitlab.Change, llmName string) (string, map[string]fileInfo, int) {
 	fileMeta := map[string]fileInfo{}
 	var sections []string

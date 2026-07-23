@@ -15,7 +15,7 @@ spec:
       default: 'backend'
       description: 'Backend directory; checked with tsc --noEmit.'
 ---
-# interruptible:false keeps the auto-commit push alive through auto_cancel.
+# Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
 prettier-fmt:
   stage: format
   image: '$[[ inputs.bun_image ]]'
@@ -37,8 +37,7 @@ prettier-fmt:
         git push origin HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
       fi
 
-# Frontend and backend are separate jobs so both type errors surface in one run
-# instead of the backend check being skipped when the frontend check fails.
+# Frontend and backend checks run as parallel jobs to ensure type errors across both targets surface in a single pipeline run.
 bun-test:
   stage: test
   image: '$[[ inputs.bun_image ]]'

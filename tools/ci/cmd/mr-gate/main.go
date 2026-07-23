@@ -11,7 +11,8 @@ import (
 
 func main() {
 	cfg := config.Load()
-	// Either reviewer token can read the MR detail; the gate is provider-agnostic.
+	// Either reviewer token provides sufficient authorization to query merge request metadata.
+	// The gate operation is provider-agnostic to enable early execution before initializing LLM reviewer contexts.
 	token := cfg.ClaudeToken
 	if token == "" {
 		token = cfg.GeminiToken

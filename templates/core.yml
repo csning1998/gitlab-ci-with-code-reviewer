@@ -20,7 +20,7 @@ spec:
       default: 5000
       description: 'Max MR description length sent to the reviewer; the pipeline fails if exceeded.'
 ---
-# Only core declares stages and workflow; other components just add jobs.
+# core.yml declares master pipeline stages and workflow auto-cancel rules; language components attach jobs to these stages.
 workflow:
   auto_cancel:
     on_new_commit: interruptible
@@ -32,7 +32,7 @@ stages:
   - test
   - review
 
-# Rejects the MR before any review API call if the description is too long.
+# Rejects merge requests exceeding description character bounds prior to invoking LLM reviewer endpoints.
 check-mr-description:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
@@ -72,7 +72,7 @@ yamllint:
   script:
     - yamllint .
 
-# No hard needs, so the component fits any language set.
+# Omit explicit job dependencies (needs) to maintain compatibility across varying language component inclusions.
 claude-code-review:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
