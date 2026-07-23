@@ -7,7 +7,6 @@ import (
 
 	"ci-tools/internal/gate"
 	"ci-tools/internal/gitlab"
-	"ci-tools/internal/slack"
 )
 
 // LLMClient defines the interface for language model client integrations.
@@ -58,30 +57,20 @@ type Comment struct {
 	Suggestion  string `json:"suggestion"`
 }
 
-// NotifyConfig contains configuration parameters for post-review Slack summary webhooks.
-// An empty SlackWebhookURL disables notification dispatch.
-type NotifyConfig struct {
-	SlackWebhookURL string
-	ProjectURL      string
-	ProjectName     string
-	MRIID           string
-}
-
 // Reviewer orchestrates merge request evaluation workflow across GitLab API and LLM provider interfaces.
 type Reviewer struct {
 	gitlab *gitlab.Client
 	llm    LLMClient
-	notify NotifyConfig
 }
 
-func New(gl *gitlab.Client, llm LLMClient, notify NotifyConfig) *Reviewer {
-	return &Reviewer{gitlab: gl, llm: llm, notify: notify}
+func New(gl *gitlab.Client, llm LLMClient) *Reviewer {
+	return &Reviewer{gitlab: gl, llm: llm}
 }
 
 // RunOnMR serves as the common execution entrypoint for reviewer executables,
 // encapsulating client initialization and execution workflow.
-func RunOnMR(apiURL, projectID, mriid, token string, llm LLMClient, notify NotifyConfig) error {
-	return New(gitlab.New(apiURL, projectID, mriid, token), llm, notify).Run()
+func RunOnMR(apiURL, projectID, mriid, token string, llm LLMClient) error {
+	return New(gitlab.New(apiURL, projectID, mriid, token), llm).Run()
 }
 
 func (r *Reviewer) Run() error {
@@ -145,22 +134,7 @@ func (r *Reviewer) Run() error {
 		}
 	}
 	fmt.Printf("\nDone: %d comment(s) posted, %d file(s) skipped.\n", posted, skipped)
-	r.notifySlack(posted, skipped)
 	return nil
-}
-
-// notifySlack dispatches a review summary to Slack.
-// Delivery failures are logged without returning an error to prevent external notification outages from failing CI jobs.
-func (r *Reviewer) notifySlack(posted, skipped int) {
-	if r.notify.SlackWebhookURL == "" {
-		return
-	}
-	mrURL := fmt.Sprintf("%s/-/merge_requests/%s", r.notify.ProjectURL, r.notify.MRIID)
-	text := fmt.Sprintf("[%s] MR !%s in %s -- %d comment(s) posted, %d file(s) skipped. %s",
-		r.llm.Name(), r.notify.MRIID, r.notify.ProjectName, posted, skipped, mrURL)
-	if err := slack.Notify(r.notify.SlackWebhookURL, text); err != nil {
-		fmt.Printf("Slack notify failed: %v\n", err)
-	}
 }
 
 // deliver posts a single review finding, attempting inline discussion placement

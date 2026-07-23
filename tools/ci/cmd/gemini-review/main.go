@@ -22,14 +22,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'GEMINI_API_KEY' is missing.")
 		os.Exit(1)
 	}
-	notify := review.NotifyConfig{
-		SlackWebhookURL: cfg.SlackWebhookURL,
-		ProjectURL:      cfg.ProjectURL,
-		ProjectName:     cfg.ProjectName,
-		MRIID:           cfg.MRIID,
-	}
 	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.GeminiToken,
-		gemini.New(cfg.GeminiModel, cfg.GeminiKey), notify); err != nil {
+		gemini.New(cfg.GeminiModel, cfg.GeminiKey)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
