@@ -19,6 +19,12 @@ spec:
       type: number
       default: 5000
       description: 'Max MR description length sent to the reviewer; the pipeline fails if exceeded.'
+    enable_commitlint:
+      type: boolean
+      default: true
+      description: >-
+        Enforces Conventional Commit format validation across the Merge Request commit range.
+        Disabling this setting is recommended for repositories lacking a dedicated Continuous Integration pipeline.
 ---
 # core.yml declares master pipeline stages and workflow auto-cancel rules; language components attach jobs to these stages.
 workflow:
@@ -31,6 +37,7 @@ stages:
   - lint
   - test
   - review
+  - deploy
 
 # Rejects merge requests exceeding description character bounds prior to invoking LLM reviewer endpoints.
 check-mr-description:
@@ -43,6 +50,20 @@ check-mr-description:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
     - mr-gate
+
+commitlint:
+  stage: lint
+  image: '$[[ inputs.reviewer_image ]]'
+  interruptible: true
+  needs: []
+  variables:
+    GIT_DEPTH: 0
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $[[ inputs.enable_commitlint ]] == "true"'
+  script:
+    - |
+      commitlint --config /etc/commitlint/commitlint.config.cjs \
+      --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to "$CI_COMMIT_SHA"
 
 markdownlint:
   stage: lint
