@@ -12,7 +12,7 @@ spec:
       default: ['packer/**/*.hcl']
       description: 'rules:changes globs gating the fmt job.'
 ---
-# interruptible:false keeps the auto-commit push alive through auto_cancel.
+# Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
 packer-fmt:
   stage: format
   image:

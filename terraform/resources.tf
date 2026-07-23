@@ -9,7 +9,7 @@ resource "gitlab_project" "this" {
 
   # MR Workflow
   remove_source_branch_after_merge         = true
-  ci_push_repository_for_job_token_allowed = true # required by prettier-fmt auto-commit
+  ci_push_repository_for_job_token_allowed = true # Enables job token git push access required by formatting auto-commit tasks
 
   # Features
   issues_access_level    = "enabled"
@@ -28,7 +28,7 @@ resource "gitlab_branch_protection" "main" {
   allow_force_push = false
 }
 
-# Registers the project as a CI/CD Catalog resource so tagged releases publish the templates/ components.
+# Registers the repository in the GitLab CI/CD Catalog to enable publication of template components upon tagged releases.
 resource "gitlab_project_cicd_catalog" "this" {
   project = gitlab_project.this.id
   enabled = true

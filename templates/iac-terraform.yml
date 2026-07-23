@@ -14,7 +14,7 @@ spec:
       default: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4'
       description: 'Comma-separated check IDs to skip; tune per project.'
 ---
-# interruptible:false keeps the auto-commit push alive through auto_cancel.
+# Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
 terraform-fmt:
   stage: format
   image:

@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+// File extensions and filenames excluded from LLM code reviews to optimize prompt token limits
+// and prevent noise from auto-generated lockfiles, compiled binaries, and minified assets.
 var skipExtensions = map[string]bool{
 	".lock": true, ".sum": true, ".min.js": true, ".min.css": true,
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".ico": true,
@@ -42,7 +44,8 @@ type fileInfo struct {
 
 var hunkRe = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 
-// parseDiff turns a unified diff into annotated lines carrying their new/old line numbers.
+// parseDiff parses a unified diff string into indexed diffLine structures containing line numbers
+// for both new and old file revisions.
 func parseDiff(diff string) []diffLine {
 	var result []diffLine
 	var newLine, oldLine *int
@@ -68,7 +71,7 @@ func parseDiff(diff string) []diffLine {
 			result = append(result, diffLine{oldLine: &ol, prefix: "-", content: line[1:]})
 			*oldLine++
 		case strings.HasPrefix(line, "\\"):
-			// "\ No newline at end of file" marker, ignore.
+			// Ignore unified diff EOF marker indicating absence of a trailing newline.
 		default:
 			nl, ol := *newLine, *oldLine
 			content := ""
@@ -83,7 +86,8 @@ func parseDiff(diff string) []diffLine {
 	return result
 }
 
-// annotateDiff renders parsed lines with their new-file line numbers for the prompt.
+// annotateDiff formats diff lines with explicit line tags ([L N] for additions/context, [ ] for deletions)
+// to establish unambiguous line reference targets for LLM response evaluation.
 func annotateDiff(lines []diffLine) string {
 	out := make([]string, 0, len(lines))
 	for _, l := range lines {

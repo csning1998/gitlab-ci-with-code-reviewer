@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Config holds the environment the CI tools run with.
+// Config aggregates environment configuration for CI tool executables.
 type Config struct {
 	APIURL      string
 	ProjectID   string
@@ -19,8 +19,9 @@ type Config struct {
 	ClaudeKey   string
 }
 
-// Load reads environment variables. Common CI variables are required; provider
-// keys are optional here and validated by each cmd binary.
+// Load populates Config from process environment variables.
+// Essential GitLab CI variables trigger immediate failure if missing, whereas provider keys
+// are deferred to individual command binaries to accommodate modular job execution.
 func Load() Config {
 	return Config{
 		APIURL:      require("CI_API_V4_URL", ""),

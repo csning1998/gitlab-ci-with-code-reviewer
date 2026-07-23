@@ -28,7 +28,7 @@ type MRChanges struct {
 	DiffRefs    DiffRefs `json:"diff_refs"`
 }
 
-// Client talks to one merge request's GitLab API endpoints.
+// Client provides scoped access to GitLab API endpoints for a target merge request.
 type Client struct {
 	mrURL string
 	token string
@@ -43,7 +43,7 @@ func New(apiURL, projectID, mrIID, token string) *Client {
 	}
 }
 
-// send is the single place HTTP errors are turned into Go errors.
+// send executes HTTP operations and serves as the single point of conversion for HTTP error status codes into Go errors.
 func (c *Client) send(method, url string, payload any) (status int, header http.Header, data []byte, err error) {
 	var reader io.Reader
 	if payload != nil {
@@ -97,9 +97,8 @@ func (c *Client) fetchDetail() (*mrDetail, error) {
 	return &d, nil
 }
 
-// FetchMRDescription returns only the MR description from the detail endpoint,
-// skipping the diff pages. The gate uses it to length-check the full, untruncated
-// description; CI_MERGE_REQUEST_DESCRIPTION caps at 2700 chars and cannot.
+// FetchMRDescription retrieves the merge request description from the detail endpoint without downloading diff payloads,
+// enabling full-length validation while bypassing the 2700 character environment variable truncation limit.
 func (c *Client) FetchMRDescription() (string, error) {
 	d, err := c.fetchDetail()
 	if err != nil {
@@ -108,8 +107,8 @@ func (c *Client) FetchMRDescription() (string, error) {
 	return d.Description, nil
 }
 
-// FetchMR fetches diff refs and the paginated diff list for the MR.
-// /changes was deprecated in GitLab 15.7; /diffs is the current endpoint.
+// FetchMR queries merge request metadata and paginated file diffs using the /diffs endpoint,
+// which supersedes the legacy /changes endpoint deprecated in GitLab 15.7.
 func (c *Client) FetchMR() (*MRChanges, error) {
 	detail, err := c.fetchDetail()
 	if err != nil {

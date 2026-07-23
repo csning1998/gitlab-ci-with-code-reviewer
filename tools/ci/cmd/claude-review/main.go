@@ -1,3 +1,6 @@
+// Binary entrypoint for Claude code review operations.
+// Executable binaries are isolated per provider to maintain distinct execution footprints
+// and enforce independent environment validation within dedicated CI pipeline jobs.
 package main
 
 import (

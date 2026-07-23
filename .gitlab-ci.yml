@@ -7,8 +7,7 @@ stages:
   - release
 
 include:
-  # reviewer_image points at the :edge image this pipeline builds, so self-review
-  # works before merge or tag.
+  # reviewer_image references the :edge tag image built by this pipeline to support pre-merge self-review.
   - local: templates/core.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -23,7 +22,7 @@ include:
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# MR pushes :edge (self-review needs it pre-merge); a semver tag pushes the version.
+# Merge request events publish to the :edge container tag, whereas semver git tags produce versioned release images.
 build-reviewer-image:
   stage: build
   image: quay.io/buildah/stable:v1.43.0
