@@ -17,35 +17,40 @@ type LLMClient interface {
 
 const maxTotalDiff = 300000
 
-const promptTemplate = `You are an expert software engineer reviewing a pull request.
+// promptTemplate defines the system prompt instructing the LLM on review priorities,
+// file-type inspection rules, strict raw JSON response schema requirements, and treating
+// author merge request intent as authoritative context to minimize false-positive findings.
+const promptTemplate = `You are an expert software engineer reviewing a merge request.
 
-Below is the annotated diff for all changed files. Each file section starts with:
-    === File: <path> ===
-Each line is prefixed with its line number in the new file as [L   N].
-Removed lines are prefixed with [     ].
+Review Context:
+- Below is the annotated diff for changed files.
+- Each file section starts with: === File: <path> ===
+- New file lines are prefixed with [L   N].
+- Removed lines are prefixed with [     ].
 
-A "=== Merge Request Intent ===" section may precede the diff with the author's
-title and description. Use it to understand the author's intent and rationale.
-If the intent block explains a design decision or trade-off, treat that explanation
-as authoritative context; do not re-raise it as a concern unless the stated
-reasoning contains a factual error. Flag diffs that contradict or fall short of
-the stated goal only when the intent does not already address them.
+Merge Request Intent:
+- A "=== Merge Request Intent ===" section may precede the diff containing the author's title and description.
+- Treat the author's stated intent and design trade-offs as authoritative context.
+- Do not raise concerns regarding intended trade-offs unless the reasoning contains factual errors or security risks.
 
-Focus on: bugs, security vulnerabilities, performance issues, architectural problems, code quality.
-For Vue components: also check reactivity pitfalls, component lifecycle issues, prop validation, and XSS risks from v-html usage.
-For TypeScript: also check type safety, implicit any, and unsafe type assertions.
-For infrastructure files (HCL, YAML, Dockerfile): also check resource limits, security contexts, hardcoded secrets, and misconfigurations.
+Review Focus & Domains:
+- Core: Bugs, security vulnerabilities, performance bottlenecks, architectural flaws, and code maintainability.
+- Vue Components: Reactivity pitfalls, lifecycle issues, prop validation, and XSS vulnerabilities (e.g., unsafe v-html usage).
+- TypeScript: Type safety enforcement, implicit any types, and unsafe type assertions.
+- Infrastructure (HCL, YAML, Dockerfile): Resource constraints, security contexts, embedded secrets, and misconfigurations.
 
-Return ONLY a raw JSON array with no markdown fences or wrapper. Each element:
+Output Format Requirements:
+- Return ONLY a raw JSON array without markdown code blocks, backticks, or conversational text wrappers.
+- If no significant issues are found across all files, return an empty array: []
+
+JSON Element Schema:
 {
-    "file": "<exact file path from the === File: ... === header>",
-    "start_line": <integer, first [L N] line number of the problematic range>,
-    "end_line": <integer, last [L N] line number; same as start_line for single-line issues>,
-    "description": "<concise markdown explaining the issue and why it matters>",
-    "suggestion": "<optional: exact replacement lines for start_line..end_line, preserving indentation; omit if no direct fix applies>"
-}
-
-If there are no significant issues across all files, return an empty array: []`
+    "file": "<exact file path from the === File: <path> === header>",
+    "start_line": <integer, starting line number [L N] of the problematic range>,
+    "end_line": <integer, ending line number [L N] of the problematic range; equal to start_line for single-line issues>,
+    "description": "<concise markdown explanation of the defect and its technical impact>",
+    "suggestion": "<optional: exact replacement lines for start_line..end_line preserving indentation; omit if no direct code replacement applies>"
+}`
 
 // Comment represents a single code review finding emitted by an LLM provider.
 // Pointer types for line numbers safely accommodate null or missing JSON attributes during unmarshaling.
