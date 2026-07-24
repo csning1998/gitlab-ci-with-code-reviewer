@@ -12,36 +12,44 @@ import (
 
 // Client encapsulates Anthropic Messages API operations for a configured model.
 type Client struct {
-	client sdk.Client
-	model  sdk.Model
+	client    sdk.Client
+	model     sdk.Model
+	maxTokens int64
 }
 
-func New(model, apiKey string) *Client {
+func New(model, apiKey string, maxTokens int) *Client {
 	return &Client{
-		client: sdk.NewClient(option.WithAPIKey(apiKey)),
-		model:  sdk.Model(model),
+		client:    sdk.NewClient(option.WithAPIKey(apiKey)),
+		model:     sdk.Model(model),
+		maxTokens: int64(maxTokens),
 	}
 }
 
 func (c *Client) Name() string { return "Claude" }
 
-// Review submits the prompt to the Claude Messages API using a 3-minute execution timeout guard
-// to prevent indefinite process hanging in CI runner nodes, aggregating all returned text content blocks.
+// Review executes a streaming request to the Claude Messages API with a 3-minute timeout guard,
+// mitigating HTTP request timeouts on large review payloads.
 func (c *Client) Review(prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	resp, err := c.client.Messages.New(ctx, sdk.MessageNewParams{
+	stream := c.client.Messages.NewStreaming(ctx, sdk.MessageNewParams{
 		Model:     c.model,
-		MaxTokens: 16384,
+		MaxTokens: c.maxTokens,
 		Messages: []sdk.MessageParam{
 			sdk.NewUserMessage(sdk.NewTextBlock(prompt)),
 		},
 	})
-	if err != nil {
+	message := sdk.Message{}
+	for stream.Next() {
+		if err := message.Accumulate(stream.Current()); err != nil {
+			return "", fmt.Errorf("claude api: accumulate stream event: %w", err)
+		}
+	}
+	if err := stream.Err(); err != nil {
 		return "", fmt.Errorf("claude api: %w", err)
 	}
 	var sb strings.Builder
-	for _, block := range resp.Content {
+	for _, block := range message.Content {
 		if t, ok := block.AsAny().(sdk.TextBlock); ok {
 			sb.WriteString(t.Text)
 		}

@@ -46,7 +46,7 @@ This token authorizes the pipeline binary to retrieve MR diffs and write inline 
 
 ### Step B. Add Reviewer Variables at Settings > Access Tokens
 
-Navigate to **Settings > Access Tokens** and create project access tokens with the **Reporter** role and the **`api`** and **`read_api`** scopes.
+Navigate to **Settings > Access Tokens** and create project access tokens with the **Developer** role and the **`api`** and **`read_api`** scopes. Reporter is insufficient because updating MR labels requires Developer access.
 
 | Variable             | Role            |
 | -------------------- | --------------- |

@@ -51,3 +51,30 @@ resource "local_file" "runner_config" {
   })
   file_permission = "0600"
 }
+
+# Assigns developer access level to grant write permissions for updating merge request labels
+# and creating inline discussions, as reporter access limits operations to read-only queries and notes.
+resource "gitlab_project_access_token" "claude_mr_reviewer" {
+  project      = gitlab_project.this.id
+  name         = "Claude MR Reviewer"
+  access_level = "developer"
+  scopes       = ["api", "read_api"]
+  expires_at   = "2027-07-24"
+}
+
+resource "gitlab_project_variable" "claude_mr_reviewer" {
+  project   = gitlab_project.this.id
+  key       = "CLAUDE_MR_REVIEWER"
+  value     = gitlab_project_access_token.claude_mr_reviewer.token
+  masked    = true
+  protected = false
+}
+
+resource "gitlab_project_label" "this" {
+  for_each = local.project_labels
+
+  project     = gitlab_project.this.id
+  name        = each.key
+  color       = each.value.color
+  description = each.value.description
+}

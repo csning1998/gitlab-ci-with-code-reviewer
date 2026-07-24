@@ -8,7 +8,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/claude-review ./cmd/claude-review \
     && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/gemini-review ./cmd/gemini-review \
-    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/mr-gate ./cmd/mr-gate
+    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/mr-gate ./cmd/mr-gate \
+    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/mr-labeler ./cmd/mr-labeler
 
 FROM alpine:3.24
 # ca-certificates provides root TLS certificates required for secure HTTPS communication with
@@ -22,4 +23,5 @@ ENV NODE_PATH=/usr/local/lib/node_modules
 COPY --from=build /out/claude-review /usr/local/bin/claude-review
 COPY --from=build /out/gemini-review /usr/local/bin/gemini-review
 COPY --from=build /out/mr-gate /usr/local/bin/mr-gate
+COPY --from=build /out/mr-labeler /usr/local/bin/mr-labeler
 COPY commitlint.config.cjs /etc/commitlint/commitlint.config.cjs

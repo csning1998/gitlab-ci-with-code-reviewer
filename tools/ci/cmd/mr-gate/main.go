@@ -11,13 +11,7 @@ import (
 
 func main() {
 	cfg := config.Load()
-	// Either reviewer token provides sufficient authorization to query merge request metadata.
-	// The gate operation is provider-agnostic to enable early execution before initializing LLM reviewer contexts.
-	token := cfg.ClaudeToken
-	if token == "" {
-		token = cfg.GeminiToken
-	}
-	if token == "" {
+	if cfg.GitLabToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: need CLAUDE_MR_REVIEWER or GEMINI_MR_REVIEWER to read the MR description.")
 		os.Exit(1)
 	}
@@ -28,7 +22,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	desc, err := gitlab.New(cfg.APIURL, cfg.ProjectID, cfg.MRIID, token).FetchMRDescription()
+	desc, err := gitlab.New(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.GitLabToken).FetchMRDescription()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)

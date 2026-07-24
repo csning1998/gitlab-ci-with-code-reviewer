@@ -19,6 +19,12 @@ spec:
       type: number
       default: 5000
       description: 'Max MR description length sent to the reviewer; the pipeline fails if exceeded.'
+    claude_max_tokens:
+      type: number
+      default: 16384
+      description: >-
+        Max output tokens for the Claude Messages API request; raise this if large diffs
+        truncate the JSON response.
     enable_commitlint:
       type: boolean
       default: true
@@ -50,6 +56,18 @@ check-mr-description:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
     - mr-gate
+
+# Applies deterministic labels (type::*, breaking-change, area::*) independent of whether the
+# manually-triggered LLM review jobs below run in this pipeline.
+mr-labeler:
+  stage: lint
+  image: '$[[ inputs.reviewer_image ]]'
+  interruptible: true
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - mr-labeler
 
 commitlint:
   stage: lint
@@ -100,6 +118,7 @@ claude-code-review:
   variables:
     CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
+    CLAUDE_MAX_TOKENS: '$[[ inputs.claude_max_tokens ]]'
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CLAUDE_MODEL != ""'
       when: manual

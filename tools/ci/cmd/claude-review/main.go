@@ -23,7 +23,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken,
-		claude.New(cfg.ClaudeModel, cfg.ClaudeKey)); err != nil {
+		claude.New(cfg.ClaudeModel, cfg.ClaudeKey, cfg.ClaudeMaxTokens)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

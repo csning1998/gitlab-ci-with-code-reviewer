@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -142,5 +143,12 @@ func (c *Client) PostDiscussion(body string, position map[string]any) (int, erro
 
 func (c *Client) PostNote(body string) (int, error) {
 	status, _, _, err := c.send(http.MethodPost, c.mrURL+"/notes", map[string]any{"body": body})
+	return status, err
+}
+
+// AddLabels appends the given labels to the merge request without removing any existing label,
+// via the add_labels parameter, which GitLab's API accepts as a comma-separated string.
+func (c *Client) AddLabels(labels []string) (int, error) {
+	status, _, _, err := c.send(http.MethodPut, c.mrURL, map[string]any{"add_labels": strings.Join(labels, ",")})
 	return status, err
 }

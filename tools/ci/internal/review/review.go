@@ -3,6 +3,7 @@ package review
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"ci-tools/internal/gate"
@@ -49,7 +50,8 @@ JSON Element Schema:
     "start_line": <integer, starting line number [L N] of the problematic range>,
     "end_line": <integer, ending line number [L N] of the problematic range; equal to start_line for single-line issues>,
     "description": "<concise markdown explanation of the defect and its technical impact>",
-    "suggestion": "<optional: exact replacement lines for start_line..end_line preserving indentation; omit if no direct code replacement applies>"
+    "suggestion": "<optional: exact replacement lines for start_line..end_line preserving indentation; omit if no direct code replacement applies>",
+    "security": <boolean, true only if this specific finding is a security vulnerability; omit or false otherwise>
 }`
 
 // Comment represents a single code review finding emitted by an LLM provider.
@@ -60,6 +62,7 @@ type Comment struct {
 	EndLine     *int   `json:"end_line"`
 	Description string `json:"description"`
 	Suggestion  string `json:"suggestion"`
+	Security    bool   `json:"security"`
 }
 
 // Reviewer orchestrates merge request evaluation workflow across GitLab API and LLM provider interfaces.
@@ -102,24 +105,14 @@ func (r *Reviewer) Run() error {
 		return nil
 	}
 
-	raw, err := r.llm.Review(promptTemplate + "\n\n" + mrIntent(mr.Title, mr.Description, maxDesc) + combined)
+	raw, err := r.llm.Review(promptTemplate + "\n\n" + formatMRIntent(mr.Title, mr.Description, maxDesc) + combined)
 	if err != nil {
 		return fmt.Errorf("llm call failed: %w", err)
 	}
 
-	cleaned := strings.TrimSpace(raw)
-	var rawComments []json.RawMessage
-	if err := json.Unmarshal([]byte(cleaned), &rawComments); err != nil {
-		if idx := strings.Index(cleaned, "["); idx != -1 {
-			cleaned = cleaned[idx:]
-		}
-		if idx := strings.LastIndex(cleaned, "]"); idx != -1 {
-			cleaned = cleaned[:idx+1]
-		}
-		cleaned = strings.TrimSpace(cleaned)
-		if err := json.Unmarshal([]byte(cleaned), &rawComments); err != nil {
-			return fmt.Errorf("parse llm response: %w (raw: %.200s)", err, cleaned)
-		}
+	rawComments, err := extractJSONArray(raw)
+	if err != nil {
+		return err
 	}
 	if len(rawComments) == 0 {
 		fmt.Println("LGTM -- no issues found.")
@@ -127,19 +120,52 @@ func (r *Reviewer) Run() error {
 	}
 
 	fmt.Printf("LLM returned %d comment(s). Posting ...\n", len(rawComments))
-	posted := 0
+	posted, foundSecurity := 0, false
 	for _, rc := range rawComments {
 		var c Comment
 		if err := json.Unmarshal(rc, &c); err != nil {
 			fmt.Printf("  skip: cannot parse comment (%v)\n", err)
 			continue
 		}
+		if c.Security {
+			foundSecurity = true
+		}
 		if r.deliver(mr.DiffRefs, fileMeta, c) {
 			posted++
 		}
 	}
 	fmt.Printf("\nDone: %d comment(s) posted, %d file(s) skipped.\n", posted, skipped)
+
+	// Deterministic labels (type::*, breaking-change, area::*) are the mr-labeler binary's
+	// responsibility; only the LLM-derived security signal is applied here, since it depends
+	// on this run's findings.
+	if foundSecurity {
+		if _, err := r.gitlab.AddLabels([]string{"security"}); err != nil {
+			fmt.Printf("label assignment failed: %v\n", err)
+		}
+	}
 	return nil
+}
+
+var trailingCommaRe = regexp.MustCompile(`,(\s*[\]}])`)
+
+// extractJSONArray parses the LLM output into a JSON array, tolerating markdown code fences
+// and surrounding conversational prose by attempting JSON decoding from candidate array start positions.
+func extractJSONArray(raw string) ([]json.RawMessage, error) {
+	cleaned := trailingCommaRe.ReplaceAllString(strings.TrimSpace(raw), "$1")
+	var arr []json.RawMessage
+	if err := json.Unmarshal([]byte(cleaned), &arr); err == nil {
+		return arr, nil
+	}
+	for i := 0; i < len(cleaned); i++ {
+		if cleaned[i] != '[' {
+			continue
+		}
+		if err := json.NewDecoder(strings.NewReader(cleaned[i:])).Decode(&arr); err == nil {
+			return arr, nil
+		}
+	}
+	return nil, fmt.Errorf("parse llm response: no valid JSON array found (raw: %.200s)", cleaned)
 }
 
 // deliver posts a single review finding, attempting inline discussion placement
@@ -170,7 +196,7 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 	}
 
 	if info, ok := fileMeta[file]; ok {
-		if pos := position(refs, file, info, start, end); pos != nil {
+		if pos := buildPosition(refs, file, info, start, end); pos != nil {
 			status, err := r.gitlab.PostDiscussion(body, pos)
 			if err == nil {
 				fmt.Printf("  inline: %s %s (HTTP %d)\n", file, label, status)
@@ -190,9 +216,9 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 	return true
 }
 
-// mrIntent formats merge request title and description into an authoritative intent context block.
+// formatMRIntent formats merge request title and description into an authoritative intent context block.
 // Descriptions exceeding maxRunes are truncated with a notification marker as a defense-in-depth measure.
-func mrIntent(title, description string, maxRunes int) string {
+func formatMRIntent(title, description string, maxRunes int) string {
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
 	if title == "" && description == "" {
@@ -226,7 +252,7 @@ func buildBody(description, suggestion string, start, end int) string {
 	return fmt.Sprintf("%s\n\n```%s\n%s\n```", description, header, suggestion)
 }
 
-func position(refs gitlab.DiffRefs, file string, info fileInfo, start, end int) map[string]any {
+func buildPosition(refs gitlab.DiffRefs, file string, info fileInfo, start, end int) map[string]any {
 	if _, ok := info.lines[end]; !ok {
 		if _, ok2 := info.lines[start]; ok2 {
 			end = start
