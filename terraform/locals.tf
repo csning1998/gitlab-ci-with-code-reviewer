@@ -47,4 +47,7 @@ locals {
     "help wanted"      = { color = "#22c55e", description = "Requests additional assistance to resolve the specified issue." }
     "issue"            = { color = "#64748b", description = "Denotes general issue tracking without specific category assignment." }
   }
+
+  # Runner tag routing the sonarqube-scan job onto the dedicated runner joined to sonarqube-ci-net.
+  sonarqube_runner_tag = "sonarqube-network"
 }

@@ -1,0 +1,4 @@
+# False positive exception for CVE-2026-39822 (Go stdlib os.Root symlink traversal vulnerability) which
+# originates from a vendored tsc binary included via a peerDependency of commitlint's unused TypeScript config loader.
+# The binary cannot be pruned via standard npm dependency flags.
+CVE-2026-39822

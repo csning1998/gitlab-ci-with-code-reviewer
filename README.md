@@ -216,6 +216,8 @@ include:
 
 Available components include `core`, `lang-go`, `lang-typescript`, `iac-terraform`, `iac-packer`, and `iac-ansible`. The full input schemas are defined in the respective files under `templates/`.
 
+The `core` component additionally runs a `gitleaks` secret-detection job on every Merge Request unconditionally, and a `sonarqube-scan` job gated behind the `enable_sonarqube` input (`type: boolean`, default `false`). Enabling `enable_sonarqube` requires a self-hosted SonarQube instance and the `SONAR_HOST_URL`/`SONAR_TOKEN` CI/CD variables to be present in the consuming project or an inherited group.
+
 ## Section 6. Replicating on a Self-Hosted GitLab Instance
 
 The CI/CD Catalog is instance-scoped. Because a self-hosted instance cannot resolve or include components directly from the gitlab.com catalog, the template components must be replicated within the local instance.

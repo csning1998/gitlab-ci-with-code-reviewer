@@ -39,3 +39,20 @@ variable "runner_tag_list" {
   type        = list(string)
   default     = ["podman", "local"]
 }
+
+variable "vault_address" {
+  description = "URL of the self-hosted Vault instance, reachable from the machine running terraform apply."
+  type        = string
+  default     = "https://127.0.0.1:8222"
+}
+
+variable "vault_token" {
+  description = "Authenticates the vault provider against the self-hosted Vault instance."
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_ca_cert_path" {
+  description = "Absolute path to the self-hosted Vault instance's CA certificate, from csning1998-lab-meta-provision's vault/tls directory."
+  type        = string
+}

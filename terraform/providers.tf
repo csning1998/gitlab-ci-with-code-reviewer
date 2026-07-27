@@ -1,6 +1,6 @@
 
 terraform {
-  required_version = ">= 1.8.0"
+  required_version = ">= 1.10.0"
   required_providers {
     gitlab = {
       source  = "gitlabhq/gitlab"
@@ -9,6 +9,10 @@ terraform {
     local = {
       source  = "hashicorp/local"
       version = "2.9.0"
+    }
+    vault = {
+      source  = "hashicorp/vault"
+      version = "5.5.0"
     }
   }
 
@@ -24,4 +28,10 @@ terraform {
 
 provider "gitlab" {
   token = var.gitlab_token
+}
+
+provider "vault" {
+  address      = var.vault_address
+  ca_cert_file = var.vault_ca_cert_path
+  token        = var.vault_token
 }

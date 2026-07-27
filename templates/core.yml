@@ -31,6 +31,24 @@ spec:
       description: >-
         Enforces Conventional Commit format validation across the Merge Request commit range.
         Disabling this setting is recommended for repositories lacking a dedicated Continuous Integration pipeline.
+    gitleaks_image:
+      default: 'docker.io/zricethezav/gitleaks:v8.30.1'
+      description: 'gitleaks image for Merge Request diff-range secret detection.'
+    enable_sonarqube:
+      type: boolean
+      default: false
+      description: >-
+        Runs a SonarQube Scanner CLI analysis against the self-hosted SonarQube instance.
+        This requires SONAR_HOST_URL and SONAR_TOKEN to be available as CI/CD variables.
+    sonar_scanner_image:
+      default: 'docker.io/sonarsource/sonar-scanner-cli:12.1.0.3225_8.0.1'
+      description: 'sonar-scanner-cli image for the SonarQube analysis job.'
+    sonar_scanner_tags:
+      type: array
+      default: []
+      description: >-
+        Runner tags required to schedule sonarqube-scan onto a runner with network access
+        to the SonarQube instance. Leave empty when the default runner already has that access.
 ---
 # core.yml declares master pipeline stages and workflow auto-cancel rules; language components attach jobs to these stages.
 workflow:
@@ -41,6 +59,7 @@ stages:
   - format
   - build
   - lint
+  - security
   - test
   - review
   - deploy
@@ -82,6 +101,37 @@ commitlint:
     - |
       commitlint --config /etc/commitlint/commitlint.config.cjs \
       --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to "$CI_COMMIT_SHA"
+
+gitleaks:
+  stage: security
+  image:
+    name: '$[[ inputs.gitleaks_image ]]'
+    entrypoint: ['']
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - gitleaks detect --log-opts="$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA" --redact -v
+
+sonarqube-scan:
+  stage: security
+  image:
+    name: '$[[ inputs.sonar_scanner_image ]]'
+    entrypoint: ['']
+  needs: []
+  interruptible: true
+  allow_failure: true
+  tags: $[[ inputs.sonar_scanner_tags ]]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $[[ inputs.enable_sonarqube ]]'
+  script:
+    - >-
+      sonar-scanner
+      -Dsonar.host.url="$SONAR_HOST_URL"
+      -Dsonar.token="$SONAR_TOKEN"
+      -Dsonar.projectKey="${SONAR_PROJECT_KEY:-$CI_PROJECT_PATH_SLUG}"
+      -Dsonar.qualitygate.wait=true
 
 markdownlint:
   stage: lint

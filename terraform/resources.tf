@@ -42,12 +42,26 @@ resource "gitlab_user_runner" "this" {
   locked      = true
 }
 
+# Provisions a dedicated runner for SonarQube analysis jobs. Configured with isolated tag filtering
+# to scope container network exposure (sonarqube-ci-net) exclusively to sonarqube-scan jobs,
+# preventing default pipeline jobs from accessing the network.
+resource "gitlab_user_runner" "sonarqube" {
+  runner_type = "project_type"
+  project_id  = gitlab_project.this.id
+  description = "${var.runner_description}-sonarqube"
+  tag_list    = [local.sonarqube_runner_tag]
+  untagged    = false
+  locked      = true
+}
+
 resource "local_file" "runner_config" {
   filename = "${path.module}/../runner-config/config.toml"
   content = templatefile("${path.module}/templates/config.toml.tftpl", {
-    runner_name  = var.runner_description
-    runner_token = gitlab_user_runner.this.token
-    runner_tags  = var.runner_tag_list
+    runner_name            = var.runner_description
+    runner_token           = gitlab_user_runner.this.token
+    runner_tags            = var.runner_tag_list
+    sonarqube_runner_name  = gitlab_user_runner.sonarqube.description
+    sonarqube_runner_token = gitlab_user_runner.sonarqube.token
   })
   file_permission = "0600"
 }
@@ -66,6 +80,23 @@ resource "gitlab_project_variable" "claude_mr_reviewer" {
   project   = gitlab_project.this.id
   key       = "CLAUDE_MR_REVIEWER"
   value     = gitlab_project_access_token.claude_mr_reviewer.token
+  masked    = true
+  protected = false
+}
+
+# Declared at project level rather than inherited from a group.
+resource "gitlab_project_variable" "sonar_host_url" {
+  project   = gitlab_project.this.id
+  key       = "SONAR_HOST_URL"
+  value     = "http://sonarqube:9000"
+  masked    = false
+  protected = false
+}
+
+resource "gitlab_project_variable" "sonar_token" {
+  project   = gitlab_project.this.id
+  key       = "SONAR_TOKEN"
+  value     = data.vault_kv_secret_v2.sonar_token.data["token"]
   masked    = true
   protected = false
 }
