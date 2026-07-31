@@ -6,7 +6,7 @@ This document records an architectural decision that remains deferred. No implem
 
 ## Section 2. Current Architecture
 
-Each repository consuming `gitlab-ci-with-code-reviewer` supplies its own `CLAUDE_API_KEY` and `GEMINI_API_KEY` CI/CD variable, read by `internal/config.Load()` and passed to the respective provider client. The Gemini keys are provisioned through Terraform in `csning1998-lab-governance/layers/40-provider-api-keys`, using the `hashicorp/google` provider's `google_apikeys_key` resource, one key per repository, each restricted to `generativelanguage.googleapis.com` under the shared Google Cloud project `gen-lang-client-0531142873`. Claude keys have no equivalent automation; each must be created manually in the Claude Console.
+Each repository consuming `gitlab-ci-with-code-reviewer` supplies its own `CLAUDE_API_KEY` and `GEMINI_API_KEY` CI/CD variable, read by `internal/config.Load()` and passed to the respective provider client. The Gemini keys are provisioned through Terraform in `csning1998-lab/platform/layers/40-provider-api-keys`, using the `hashicorp/google` provider's `google_apikeys_key` resource, one key per repository, each restricted to `generativelanguage.googleapis.com` under the shared Google Cloud project `gen-lang-client-0531142873`. Claude keys have no equivalent automation; each must be created manually in the Claude Console.
 
 ## Section 3. Considered Alternative
 
@@ -47,7 +47,7 @@ Adopting WIF requires: registering one GitLab CI federation issuer (one-time, no
 
 ## Section 5. Recommendation
 
-Static `CLAUDE_API_KEY` provisioning SHOULD be retained for the present scale (seven repositories), using manually created Console keys stored in the shared Vault instance described in `csning1998-lab-governance`. Workload Identity Federation is technically feasible and architecturally preferable at larger scale, since it removes static Anthropic credentials from CI/CD variables, Terraform state, and Vault entirely, but its implementation cost spans both the Terraform layer and the reviewer's Go codebase and is out of scope for the current provisioning work.
+Static `CLAUDE_API_KEY` provisioning SHOULD be retained for the present scale (seven repositories), using manually created Console keys stored in the shared Vault instance described in `csning1998-lab/platform`. Workload Identity Federation is technically feasible and architecturally preferable at larger scale, since it removes static Anthropic credentials from CI/CD variables, Terraform state, and Vault entirely, but its implementation cost spans both the Terraform layer and the reviewer's Go codebase and is out of scope for the current provisioning work.
 
 ## Section 6. Prerequisites Before Implementation
 

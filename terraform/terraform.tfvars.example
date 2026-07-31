@@ -1,8 +1,8 @@
 
 gitlab_token       = "<YOUR_GITLAB_PERSONAL_ACCESS_TOKEN>"
 vault_address      = "https://127.0.0.1:8222"
-vault_token        = "" # Root or sufficiently-privileged Vault token; matches VAULT_TOKEN in csning1998-lab-governance's .env.
-vault_ca_cert_path = "" # Absolute path to csning1998-lab-governance/vault/tls/ca.pem on this machine.
+vault_token        = "" # Root or sufficiently-privileged Vault token; matches VAULT_TOKEN in csning1998-lab/platform's .env.
+vault_ca_cert_path = "" # Absolute path to csning1998-lab/platform/vault/tls/ca.pem on this machine.
 
 runner_description = "local-podman-runner"
 runner_tag_list    = ["podman", "local"]
