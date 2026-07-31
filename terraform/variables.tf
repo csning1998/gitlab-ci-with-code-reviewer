@@ -53,6 +53,6 @@ variable "vault_token" {
 }
 
 variable "vault_ca_cert_path" {
-  description = "Absolute path to the self-hosted Vault instance's CA certificate, from csning1998-lab-meta-provision's vault/tls directory."
+  description = "Absolute path to the self-hosted Vault instance's CA certificate, from csning1998-lab-governance's vault/tls directory."
   type        = string
 }
