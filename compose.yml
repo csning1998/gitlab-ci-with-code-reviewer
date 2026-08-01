@@ -5,8 +5,10 @@ services:
     container_name: gitlab-runner-gitlab-ci-with-code-reviewer
     network_mode: "host"
     restart: always
+    # Reaching the rootless podman socket requires the connectto permission that the
+    # gitlab_runner_podman policy module grants exclusively to this SELinux type.
     security_opt:
-      - label=disable
+      - label=type:container_engine_t
     volumes:
-      - ./runner-config:/etc/gitlab-runner:z
-      - /run/user/${HOST_UID}/podman/podman.sock:/run/podman/podman.sock:z
+      - ./runner-config:/etc/gitlab-runner
+      - /run/user/${HOST_UID}/podman/podman.sock:/run/podman/podman.sock

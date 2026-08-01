@@ -16,5 +16,9 @@ terraform.tfstate
 terraform.tfstate.*
 terraform.tfstate.backup
 
+## SELinux
+selinux/*.mod
+selinux/*.pp
+
 ## Miscellaneous
 merge-request.md
