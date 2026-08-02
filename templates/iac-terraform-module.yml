@@ -9,6 +9,7 @@ spec:
     module_name:
       default: '$CI_PROJECT_NAME'
       description: 'Terraform Module Registry module name.'
+      regex: '^[a-zA-Z0-9_-]+$'
     module_system:
       default: 'local'
       description: 'Terraform Module Registry system (provider) identifier, e.g. gitlab.'
@@ -18,8 +19,10 @@ spec:
 ---
 # Packages inputs.module_dir and uploads it to this project's GitLab Terraform Module Registry
 # on tag push, replicating the upload step of GitLab's own Terraform/Module-Base.gitlab-ci.yml
-# hidden job without depending on that template's stage declarations.
-terraform-module-deploy:
+# hidden job without depending on that template's stage declarations. Embeds inputs.module_name
+# into the job identifier to guarantee unique job definitions across multiple component
+# inclusions within the same pipeline, preventing definition collisions.
+terraform-module-deploy-$[[ inputs.module_name ]]:
   stage: deploy
   image: '$[[ inputs.curl_image ]]'
   interruptible: false

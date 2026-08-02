@@ -1,6 +1,6 @@
 
 locals {
-  # Defines project-level labels mirroring the governance schema in csning1998-lab-meta-provision.
+  # Defines project-level labels mirroring the governance schema in csning1998-lab/meta-platform.
   # Explicit project declaration is required because user namespace repositories do not inherit group-level labels.
   project_labels = {
     # Scoped labels under the 'type::' prefix MUST specify the primary category of change. These labels are mutually exclusive within an Issue or Merge Request scope.

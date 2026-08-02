@@ -73,6 +73,7 @@ publish-catalog:
   image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0
   needs:
     - job: build-reviewer-image
+    - job: trivy-image-scan
   rules:
     - if: "$CI_COMMIT_TAG"
   script:

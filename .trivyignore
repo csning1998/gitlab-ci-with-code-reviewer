@@ -2,3 +2,8 @@
 # originates from a vendored tsc binary included via a peerDependency of commitlint's unused TypeScript config loader.
 # The binary cannot be pruned via standard npm dependency flags.
 CVE-2026-39822
+
+# CVE-2026-56852 affects golang.org/x/text v0.38.0, vendored inside the same tsc binary described above.
+# The upstream fix ships in v0.39.0. This exception expires 2026-11-02 to force reassessment once
+# commitlint upgrades its bundled TypeScript package.
+CVE-2026-56852 exp:2026-11-02
