@@ -9,6 +9,7 @@ spec:
     module_name:
       default: '$CI_PROJECT_NAME'
       description: 'Terraform Module Registry module name.'
+      regex: '^[a-zA-Z0-9_-]+$'
     module_system:
       default: 'local'
       description: 'Terraform Module Registry system (provider) identifier, e.g. gitlab.'
