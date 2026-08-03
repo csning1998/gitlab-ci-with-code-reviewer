@@ -104,8 +104,7 @@ auto-tag:
         LATEST_TAG="0.0.0"
       fi
       SUBJECT=$(git log -1 --format=%s "$CI_COMMIT_SHA")
-      BODY=$(git log -1 --format=%b "$CI_COMMIT_SHA")
-      RESULT=$(mr-semver-resolver --latest "$LATEST_TAG" --subject "$SUBJECT" --body "$BODY")
+      RESULT=$(mr-semver-resolver --latest "$LATEST_TAG" --subject "$SUBJECT")
 
       if [ "$RESULT" = "NONE" ]; then
         echo "Commit subject '${SUBJECT}' does not trigger a release. Skipping."

@@ -23,11 +23,13 @@ var (
 	typeSubjectPattern     = regexp.MustCompile(`^([a-z]+)(\([^)]+\))?!?:`)
 )
 
-// DetermineBump classifies a commit subject and body into a target version bump level.
-// Exclamation markers (`!`) in the header and `BREAKING CHANGE` footers in the body take
-// precedence over default type-based bump logic.
-func DetermineBump(subject, body string) Bump {
-	if breakingSubjectPattern.MatchString(subject) || strings.Contains(body, "BREAKING CHANGE") {
+// DetermineBump categorizes a commit subject line into a target Semantic Versioning increment level.
+// Analysis is restricted strictly to the subject line, as squash-merge automation populates the commit body
+// from merge request descriptions, rendering the body an unreliable semantic indicator.
+// Consequently, an exclamation mark (`!`) appended to the commit type or scope within the subject line
+// constitutes the sole mechanism by which a major version bump is designated.
+func DetermineBump(subject string) Bump {
+	if breakingSubjectPattern.MatchString(subject) {
 		return BumpMajor
 	}
 

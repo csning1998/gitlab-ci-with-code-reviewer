@@ -6,27 +6,30 @@ func TestDetermineBump(t *testing.T) {
 	cases := []struct {
 		name    string
 		subject string
-		body    string
 		want    Bump
 	}{
-		{"feat", "feat(modules): add kvm-provisioning and vault-provisioning module packages", "", BumpMinor},
-		{"feat with no scope", "feat: add retry logic", "", BumpMinor},
-		{"fix", "fix(ci): resolve module publish job collisions", "", BumpPatch},
-		{"perf", "perf(reviewer): reduce token usage", "", BumpPatch},
-		{"ci type yields no release", "ci(release): add automated semver tagging", "", BumpNone},
-		{"refactor type yields no release", "refactor(ci): consolidate includes", "", BumpNone},
-		{"chore type yields no release", "chore: bump dependency", "", BumpNone},
-		{"feat with exclamation mark", "feat(api)!: change auth flow", "", BumpMajor},
-		{"fix with breaking change footer", "fix(core): patch bug", "BREAKING CHANGE: removes legacy input", BumpMajor},
-		{"fix with exclamation mark and scope", "fix(api)!: remove deprecated field", "", BumpMajor},
-		{"subject without a Conventional Commit header", "bump go.mod dependencies", "", BumpNone},
+		{"feat", "feat(modules): add kvm-provisioning and vault-provisioning module packages", BumpMinor},
+		{"feat with no scope", "feat: add retry logic", BumpMinor},
+		{"fix", "fix(ci): resolve module publish job collisions", BumpPatch},
+		{"perf", "perf(reviewer): reduce token usage", BumpPatch},
+		{"ci type yields no release", "ci(release): add automated semver tagging", BumpNone},
+		{"refactor type yields no release", "refactor(ci): consolidate includes", BumpNone},
+		{"chore type yields no release", "chore: bump dependency", BumpNone},
+		{"feat with exclamation mark", "feat(api)!: change auth flow", BumpMajor},
+		{"fix with exclamation mark and scope", "fix(api)!: remove deprecated field", BumpMajor},
+		{"subject without a Conventional Commit header", "bump go.mod dependencies", BumpNone},
+		{
+			"a subject merely describing the convention in prose does not itself trigger a major bump",
+			"ci: add automated Semantic Version tagging",
+			BumpNone,
+		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := DetermineBump(c.subject, c.body)
+			got := DetermineBump(c.subject)
 			if got != c.want {
-				t.Errorf("DetermineBump(%q, %q) = %q, want %q", c.subject, c.body, got, c.want)
+				t.Errorf("DetermineBump(%q) = %q, want %q", c.subject, got, c.want)
 			}
 		})
 	}

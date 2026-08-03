@@ -13,22 +13,21 @@ func TestRun(t *testing.T) {
 		name       string
 		latest     string
 		subject    string
-		body       string
 		wantCode   int
 		wantStdout string
 		wantStderr string
 	}{
-		{"missing latest", "", "fix: x", "", 1, "", "--latest and --subject are required"},
-		{"missing subject", "1.4.2", "", "", 1, "", "--latest and --subject are required"},
-		{"feat triggers minor bump", "1.4.2", "feat(x): y", "", 0, "1.5.0", ""},
-		{"ci type yields no release", "1.4.2", "ci(release): add automated semver tagging", "", 0, "NONE", ""},
-		{"malformed latest surfaces an error", "bogus", "fix: x", "", 1, "", "is not in MAJOR.MINOR.PATCH form"},
+		{"missing latest", "", "fix: x", 1, "", "--latest and --subject are required"},
+		{"missing subject", "1.4.2", "", 1, "", "--latest and --subject are required"},
+		{"feat triggers minor bump", "1.4.2", "feat(x): y", 0, "1.5.0", ""},
+		{"ci type yields no release", "1.4.2", "ci(release): add automated semver tagging", 0, "NONE", ""},
+		{"malformed latest surfaces an error", "bogus", "fix: x", 1, "", "is not in MAJOR.MINOR.PATCH form"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := run(c.latest, c.subject, c.body, &stdout, &stderr)
+			code := run(c.latest, c.subject, &stdout, &stderr)
 
 			if code != c.wantCode {
 				t.Errorf("run(...) code = %d, want %d", code, c.wantCode)
