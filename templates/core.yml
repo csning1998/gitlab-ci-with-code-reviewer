@@ -49,6 +49,11 @@ spec:
       description: >-
         Runner tags required to schedule sonarqube-scan onto a runner with network access
         to the SonarQube instance. Leave empty when the default runner already has that access.
+    sonar_go_coverage_path:
+      default: ''
+      description: >-
+        Path to a go test -coverprofile report, relative to the repository root. Leave empty
+        when no Go coverage report exists; the corresponding sonar-scanner property is omitted.
 ---
 # core.yml declares master pipeline stages and workflow auto-cancel rules; language components attach jobs to these stages.
 workflow:
@@ -119,19 +124,30 @@ sonarqube-scan:
   image:
     name: '$[[ inputs.sonar_scanner_image ]]'
     entrypoint: ['']
-  needs: []
+  needs:
+    - job: go-test
+      optional: true
   interruptible: true
   allow_failure: true
+  variables:
+    GIT_DEPTH: '0'
   tags: $[[ inputs.sonar_scanner_tags ]]
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $[[ inputs.enable_sonarqube ]]'
   script:
-    - >-
-      sonar-scanner
-      -Dsonar.host.url="$SONAR_HOST_URL"
-      -Dsonar.token="$SONAR_TOKEN"
-      -Dsonar.projectKey="${SONAR_PROJECT_KEY:-$CI_PROJECT_PATH_SLUG}"
-      -Dsonar.qualitygate.wait=true
+    - |
+      GO_COVERAGE_ARG=""
+      if [ -n "$[[ inputs.sonar_go_coverage_path ]]" ] && [ -f "$[[ inputs.sonar_go_coverage_path ]]" ]; then
+        GO_COVERAGE_ARG="-Dsonar.go.coverage.reportPaths=$[[ inputs.sonar_go_coverage_path ]]"
+      fi
+      sonar-scanner \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.token="$SONAR_TOKEN" \
+        -Dsonar.projectKey="${SONAR_PROJECT_KEY:-$CI_PROJECT_PATH_SLUG}" \
+        -Dsonar.qualitygate.wait=true \
+        -Dsonar.tests=. \
+        -Dsonar.test.inclusions="**/*_test.go" \
+        $GO_COVERAGE_ARG
 
 markdownlint:
   stage: lint

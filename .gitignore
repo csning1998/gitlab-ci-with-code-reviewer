@@ -20,5 +20,9 @@ terraform.tfstate.backup
 selinux/*.mod
 selinux/*.pp
 
+## Go
+tools/ci/coverage.out
+tools/ci/coverage.raw.out
+
 ## Miscellaneous
 merge-request.md

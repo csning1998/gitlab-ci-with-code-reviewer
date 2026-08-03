@@ -18,6 +18,7 @@ include:
       gemini_model: "gemini-3.6-flash" # or `gemma-4-31b-it`
       enable_sonarqube: true
       sonar_scanner_tags: ["sonarqube-network"]
+      sonar_go_coverage_path: "tools/ci/coverage.out"
   - local: templates/lang-go.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -81,3 +82,36 @@ publish-catalog:
   release:
     tag_name: "$CI_COMMIT_TAG"
     description: "CI template release $CI_COMMIT_TAG"
+
+# Automatically calculates and pushes a new Semantic Version tag derived from Conventional Commit
+# headers on squash-merge commits. Replaces manual tagging procedures, eliminating tag detachment
+# caused by commit hash reassignments during GitLab squash-and-merge operations.
+auto-tag:
+  stage: release
+  image: "$CI_REGISTRY_IMAGE/reviewer:edge"
+  needs:
+    - job: build-reviewer-image
+    - job: trivy-image-scan
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - |
+      if ! LATEST_TAG=$(git describe --tags --abbrev=0 "${CI_COMMIT_SHA}^" 2>/tmp/describe-error.log); then
+        echo "WARNING: git describe failed against ${CI_COMMIT_SHA}^, defaulting to 0.0.0. Reason:"
+        cat /tmp/describe-error.log
+        LATEST_TAG="0.0.0"
+      fi
+      SUBJECT=$(git log -1 --format=%s "$CI_COMMIT_SHA")
+      BODY=$(git log -1 --format=%b "$CI_COMMIT_SHA")
+      RESULT=$(mr-semver-resolver --latest "$LATEST_TAG" --subject "$SUBJECT" --body "$BODY")
+
+      if [ "$RESULT" = "NONE" ]; then
+        echo "Commit subject '${SUBJECT}' does not trigger a release. Skipping."
+        exit 0
+      fi
+
+      echo "Bumping ${LATEST_TAG} to ${RESULT} for ${CI_COMMIT_SHA}."
+      git tag "$RESULT" "$CI_COMMIT_SHA"
+      git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "$RESULT"

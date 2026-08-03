@@ -33,7 +33,9 @@ go-fmt:
     - apk add --no-cache git
     - git config user.email "gitlab-ci@noreply"
     - git config user.name "GitLab CI"
-    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - |
+      REMOTE_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      git remote add origin "$REMOTE_URL" 2>/dev/null || git remote set-url origin "$REMOTE_URL"
   script:
     - gofmt -w $[[ inputs.go_fmt_path ]]
     - |
@@ -56,6 +58,24 @@ go-build:
   script:
     - cd $[[ inputs.go_dir ]]
     - go build ./...
+
+go-test:
+  stage: build
+  image: '$[[ inputs.go_image ]]'
+  needs:
+    - job: go-build
+      optional: true
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.go_globs ]]
+  script:
+    - cd $[[ inputs.go_dir ]]
+    - go test -coverprofile=coverage.out ./...
+  artifacts:
+    paths:
+      - $[[ inputs.go_dir ]]/coverage.out
+    expire_in: 1 day
 
 go-lint:
   stage: lint
