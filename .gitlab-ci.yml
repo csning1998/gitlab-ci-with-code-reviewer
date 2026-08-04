@@ -25,6 +25,12 @@ include:
   - local: templates/iac-terraform.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  - local: templates/auto-tag.yml
+    rules:
+      - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    inputs:
+      reviewer_image: "$CI_REGISTRY_IMAGE/reviewer:edge"
+      stage: release
 
 # Merge request events publish to the :edge container tag, whereas semver git tags produce versioned release images.
 build-reviewer-image:
@@ -82,38 +88,3 @@ publish-catalog:
   release:
     tag_name: "$CI_COMMIT_TAG"
     description: "CI template release $CI_COMMIT_TAG"
-
-# Automatically calculates and pushes a new Semantic Version tag derived from Conventional Commit
-# headers on squash-merge commits. Replaces manual tagging procedures, eliminating tag detachment
-# caused by commit hash reassignments during GitLab squash-and-merge operations.
-auto-tag:
-  stage: release
-  image: "$CI_REGISTRY_IMAGE/reviewer:edge"
-  needs:
-    - job: build-reviewer-image
-    - job: trivy-image-scan
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-  variables:
-    GIT_DEPTH: "0"
-  script:
-    - |
-      if ! LATEST_TAG=$(git describe --tags --abbrev=0 "${CI_COMMIT_SHA}^" 2>/tmp/describe-error.log); then
-        echo "WARNING: git describe failed against ${CI_COMMIT_SHA}^, defaulting to 0.0.0. Reason:"
-        cat /tmp/describe-error.log
-        LATEST_TAG="0.0.0"
-      fi
-      SUBJECT=$(git log -1 --format=%s "$CI_COMMIT_SHA")
-      RESULT=$(mr-semver-resolver --latest "$LATEST_TAG" --subject "$SUBJECT")
-
-      if [ "$RESULT" = "NONE" ]; then
-        echo "Commit subject '${SUBJECT}' does not trigger a release. Skipping."
-        exit 0
-      fi
-
-      echo "Bumping ${LATEST_TAG} to ${RESULT} for ${CI_COMMIT_SHA}."
-      git-tag-pusher \
-        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
-        --tag "$RESULT" \
-        --sha "$CI_COMMIT_SHA" \
-        --username "gitlab-ci-token"
