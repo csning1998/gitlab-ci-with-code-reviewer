@@ -85,8 +85,8 @@ fmt:prepare-pusher:
     expire_in: 1 hour
 
 # Enforces maximum merge request description character limits prior to LLM review invocation.
-security:mr-gate:
-  stage: security
+misc:mr-gate:
+  stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
   variables:
