@@ -17,8 +17,8 @@ import (
 	"ci-tools/internal/versiontag"
 )
 
-// commitSubject extracts the initial line of the commit message corresponding to the specified commit hash.
-func commitSubject(repo *git.Repository, sha string) (string, error) {
+// resolveCommitSubject extracts the initial line of the commit message corresponding to the specified commit hash.
+func resolveCommitSubject(repo *git.Repository, sha string) (string, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve commit %q: %w", sha, err)
@@ -27,8 +27,8 @@ func commitSubject(repo *git.Repository, sha string) (string, error) {
 	return subject, nil
 }
 
-// parentSHA returns the first parent commit hash of sha. Returns false if sha is a root commit.
-func parentSHA(repo *git.Repository, sha string) (string, bool, error) {
+// resolveFirstParentSHA returns the first parent commit hash of sha. Returns false if sha is a root commit.
+func resolveFirstParentSHA(repo *git.Repository, sha string) (string, bool, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return "", false, fmt.Errorf("failed to resolve commit %q: %w", sha, err)
@@ -39,9 +39,9 @@ func parentSHA(repo *git.Repository, sha string) (string, bool, error) {
 	return commit.ParentHashes[0].String(), true, nil
 }
 
-// run evaluates modules in configPath and pushes warranted tags for sha. Execution logic is
+// executeAutoTag evaluates modules in configPath and pushes warranted tags for sha. Execution logic is
 // separated from CLI flags and process exit for unit testing.
-func run(repoPath, configPath, sha, remoteURL, username, password string, stdout, stderr io.Writer) int {
+func executeAutoTag(repoPath, configPath, sha, remoteURL, username, password string, stdout, stderr io.Writer) int {
 	if sha == "" || remoteURL == "" || username == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --sha, --remote-url, and --username are required.")
 		return 1
@@ -63,14 +63,14 @@ func run(repoPath, configPath, sha, remoteURL, username, password string, stdout
 		return 1
 	}
 
-	subject, err := commitSubject(repo, sha)
+	subject, err := resolveCommitSubject(repo, sha)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
 	bump := semver.DetermineBump(subject)
 
-	parent, hasParent, err := parentSHA(repo, sha)
+	parent, hasParent, err := resolveFirstParentSHA(repo, sha)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
@@ -85,7 +85,7 @@ func run(repoPath, configPath, sha, remoteURL, username, password string, stdout
 		// Root commits have no parent tree to diff against, so all modules are treated as changed.
 		changed := true
 		if hasParent {
-			changed, err = versiontag.DirChanged(repo, parent, sha, mod.Dir)
+			changed, err = versiontag.DetectDirectoryTreeChanges(repo, parent, sha, mod.Dir)
 			if err != nil {
 				_, _ = fmt.Fprintln(stderr, "Error:", err)
 				return 1
@@ -137,5 +137,5 @@ func main() {
 	username := flag.String("username", "", "HTTP basic auth username for the push")
 	flag.Parse()
 
-	os.Exit(run(*repo, *config, *sha, *remoteURL, *username, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeAutoTag(*repo, *config, *sha, *remoteURL, *username, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
 }

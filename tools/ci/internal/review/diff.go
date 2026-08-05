@@ -105,7 +105,9 @@ func annotateDiff(lines []diffLine) string {
 	return strings.Join(out, "\n")
 }
 
-func shouldSkip(path string) bool {
+// matchesReviewExclusion reports whether path is omitted from LLM review
+// (lock files, binaries, and generated artifacts).
+func matchesReviewExclusion(path string) bool {
 	base := filepath.Base(path)
 	ext := strings.ToLower(filepath.Ext(path))
 	return skipFilenames[base] || skipExtensions[ext]

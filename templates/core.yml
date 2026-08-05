@@ -25,6 +25,12 @@ spec:
       description: >-
         Max output tokens for the Claude Messages API request; raise this if large diffs
         truncate the JSON response.
+    claude_timeout_minutes:
+      type: number
+      default: 10
+      description: >-
+        Timeout, in minutes, for the Claude Messages API request; raise this if large diffs
+        exceed the deadline before the response completes.
     enable_commitlint:
       type: boolean
       default: true
@@ -200,6 +206,7 @@ review:claude-code:
     CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
     CLAUDE_MAX_TOKENS: '$[[ inputs.claude_max_tokens ]]'
+    CLAUDE_TIMEOUT_MINUTES: '$[[ inputs.claude_timeout_minutes ]]'
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CLAUDE_MODEL != ""'
       when: manual

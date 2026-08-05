@@ -10,13 +10,13 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := config.LoadEnvFile()
 	if cfg.GitLabToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: need CLAUDE_MR_REVIEWER or GEMINI_MR_REVIEWER to read the MR description.")
 		os.Exit(1)
 	}
 
-	max, err := gate.MaxRunes()
+	max, err := gate.ResolveDescriptionRuneLimit()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
@@ -28,7 +28,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := gate.CheckLength(desc, max); err != nil {
+	if err := gate.ValidateDescriptionLength(desc, max); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}

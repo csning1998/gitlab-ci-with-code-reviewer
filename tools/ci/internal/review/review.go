@@ -75,14 +75,14 @@ func New(gl *gitlab.Client, llm LLMClient) *Reviewer {
 	return &Reviewer{gitlab: gl, llm: llm}
 }
 
-// RunOnMR serves as the common execution entrypoint for reviewer executables,
+// ExecuteCodeReview serves as the common execution entrypoint for reviewer executables,
 // encapsulating client initialization and execution workflow.
-func RunOnMR(apiURL, projectID, mriid, token string, llm LLMClient) error {
-	return New(gitlab.New(apiURL, projectID, mriid, token), llm).Run()
+func ExecuteCodeReview(apiURL, projectID, mriid, token string, llm LLMClient) error {
+	return New(gitlab.New(apiURL, projectID, mriid, token), llm).Execute()
 }
 
-func (r *Reviewer) Run() error {
-	maxDesc, err := gate.MaxRunes()
+func (r *Reviewer) Execute() error {
+	maxDesc, err := gate.ResolveDescriptionRuneLimit()
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (r *Reviewer) Run() error {
 		if c.Security {
 			foundSecurity = true
 		}
-		if r.deliver(mr.DiffRefs, fileMeta, c) {
+		if r.postReviewComments(mr.DiffRefs, fileMeta, c) {
 			posted++
 		}
 	}
@@ -168,9 +168,9 @@ func extractJSONArray(raw string) ([]json.RawMessage, error) {
 	return nil, fmt.Errorf("parse llm response: no valid JSON array found (raw: %.200s)", cleaned)
 }
 
-// deliver posts a single review finding, attempting inline discussion placement
+// postReviewComments posts a single review finding, attempting inline discussion placement
 // before falling back to a general merge request note if line-anchoring is unavailable.
-func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c Comment) bool {
+func (r *Reviewer) postReviewComments(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c Comment) bool {
 	file := strings.TrimSpace(c.File)
 	description := strings.TrimSpace(c.Description)
 	suggestion := strings.TrimSpace(c.Suggestion)
@@ -189,7 +189,7 @@ func (r *Reviewer) deliver(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c
 		return false
 	}
 
-	body := buildBody(description, suggestion, start, end)
+	body := buildCommentBody(description, suggestion, start, end)
 	label := fmt.Sprintf("L%d", start)
 	if start != end {
 		label = fmt.Sprintf("L%d-%d", start, end)
@@ -226,7 +226,15 @@ func formatMRIntent(title, description string, maxRunes int) string {
 	}
 	const truncMarker = "... [truncated]"
 	if r := []rune(description); len(r) > maxRunes {
-		description = string(r[:maxRunes-len([]rune(truncMarker))]) + truncMarker
+		// Keep the marker within the budget when maxRunes is shorter than the marker.
+		// A negative keep length would panic on the slice and leave the gate unprotected.
+		markerRunes := []rune(truncMarker)
+		keep := maxRunes - len(markerRunes)
+		if keep < 0 {
+			description = string(markerRunes[:maxRunes])
+		} else {
+			description = string(r[:keep]) + truncMarker
+		}
 	}
 	var b strings.Builder
 	b.WriteString("=== Merge Request Intent ===\n")
@@ -244,7 +252,7 @@ func formatMRIntent(title, description string, maxRunes int) string {
 	return b.String()
 }
 
-func buildBody(description, suggestion string, start, end int) string {
+func buildCommentBody(description, suggestion string, start, end int) string {
 	if suggestion == "" {
 		return description
 	}
@@ -305,7 +313,7 @@ func buildCombinedDiff(changes []gitlab.Change, llmName string) (string, map[str
 		}
 
 		switch {
-		case shouldSkip(newPath):
+		case matchesReviewExclusion(newPath):
 			fmt.Printf("Skip %s (lock/binary/generated)\n", newPath)
 			skipped++
 			continue

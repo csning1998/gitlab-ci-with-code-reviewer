@@ -92,57 +92,57 @@ func seedRemoteBranch(t *testing.T, remoteDir, branch string) {
 	}
 }
 
-func TestHasChanges_Clean(t *testing.T) {
+func TestDetectWorktreeModifications_Clean(t *testing.T) {
 	dir, _ := newRepoWithCommit(t)
 
-	changed, err := HasChanges(dir)
+	changed, err := DetectWorktreeModifications(dir)
 	if err != nil {
-		t.Fatalf("HasChanges(...) returned an unexpected error: %v", err)
+		t.Fatalf("DetectWorktreeModifications(...) returned an unexpected error: %v", err)
 	}
 	if changed {
-		t.Error("HasChanges(...) = true, want false on a clean working tree")
+		t.Error("DetectWorktreeModifications(...) = true, want false on a clean working tree")
 	}
 }
 
-func TestHasChanges_ModifiedTrackedFile(t *testing.T) {
+func TestDetectWorktreeModifications_ModifiedTrackedFile(t *testing.T) {
 	dir, _ := newRepoWithCommit(t)
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(...) failed: %v", err)
 	}
 
-	changed, err := HasChanges(dir)
+	changed, err := DetectWorktreeModifications(dir)
 	if err != nil {
-		t.Fatalf("HasChanges(...) returned an unexpected error: %v", err)
+		t.Fatalf("DetectWorktreeModifications(...) returned an unexpected error: %v", err)
 	}
 	if !changed {
-		t.Error("HasChanges(...) = false, want true after modifying a tracked file")
+		t.Error("DetectWorktreeModifications(...) = false, want true after modifying a tracked file")
 	}
 }
 
-func TestHasChanges_MissingRepo(t *testing.T) {
-	if _, err := HasChanges(t.TempDir()); err == nil {
-		t.Error("HasChanges(...) on a non-repository succeeded unexpectedly; expected an error")
+func TestDetectWorktreeModifications_MissingRepo(t *testing.T) {
+	if _, err := DetectWorktreeModifications(t.TempDir()); err == nil {
+		t.Error("DetectWorktreeModifications(...) on a non-repository succeeded unexpectedly; expected an error")
 	}
 }
 
-func TestHasChanges_UntrackedFile(t *testing.T) {
+func TestDetectWorktreeModifications_UntrackedFile(t *testing.T) {
 	dir, _ := newRepoWithCommit(t)
 	if err := os.WriteFile(filepath.Join(dir, "new.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(...) failed: %v", err)
 	}
 
-	// HasChanges evaluates working tree status matching git status insteaf of git diff;
+	// DetectWorktreeModifications evaluates working tree status matching git status insteaf of git diff;
 	// unstaged and untracked files mark the tree as modified.
-	changed, err := HasChanges(dir)
+	changed, err := DetectWorktreeModifications(dir)
 	if err != nil {
-		t.Fatalf("HasChanges(...) returned an unexpected error: %v", err)
+		t.Fatalf("DetectWorktreeModifications(...) returned an unexpected error: %v", err)
 	}
 	if !changed {
-		t.Error("HasChanges(...) = false, want true with an untracked file present")
+		t.Error("DetectWorktreeModifications(...) = false, want true with an untracked file present")
 	}
 }
 
-func TestHasChanges_StagedButUncommitted(t *testing.T) {
+func TestDetectWorktreeModifications_StagedButUncommitted(t *testing.T) {
 	dir, _ := newRepoWithCommit(t)
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(...) failed: %v", err)
@@ -159,38 +159,38 @@ func TestHasChanges_StagedButUncommitted(t *testing.T) {
 		t.Fatalf("Add(main.go) failed: %v", err)
 	}
 
-	changed, err := HasChanges(dir)
+	changed, err := DetectWorktreeModifications(dir)
 	if err != nil {
-		t.Fatalf("HasChanges(...) returned an unexpected error: %v", err)
+		t.Fatalf("DetectWorktreeModifications(...) returned an unexpected error: %v", err)
 	}
 	if !changed {
-		t.Error("HasChanges(...) = false, want true for a staged but uncommitted change")
+		t.Error("DetectWorktreeModifications(...) = false, want true for a staged but uncommitted change")
 	}
 }
 
-func TestHasChanges_DeletedTrackedFile(t *testing.T) {
+func TestDetectWorktreeModifications_DeletedTrackedFile(t *testing.T) {
 	dir, _ := newRepoWithCommit(t)
 	if err := os.Remove(filepath.Join(dir, "main.go")); err != nil {
 		t.Fatalf("Remove(...) failed: %v", err)
 	}
 
-	changed, err := HasChanges(dir)
+	changed, err := DetectWorktreeModifications(dir)
 	if err != nil {
-		t.Fatalf("HasChanges(...) returned an unexpected error: %v", err)
+		t.Fatalf("DetectWorktreeModifications(...) returned an unexpected error: %v", err)
 	}
 	if !changed {
-		t.Error("HasChanges(...) = false, want true after deleting a tracked file")
+		t.Error("DetectWorktreeModifications(...) = false, want true after deleting a tracked file")
 	}
 }
 
-func TestHasChanges_BareRepository(t *testing.T) {
+func TestDetectWorktreeModifications_BareRepository(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := git.PlainInit(dir, true); err != nil {
 		t.Fatalf("PlainInit(%q, bare) failed: %v", dir, err)
 	}
 
-	if _, err := HasChanges(dir); err == nil {
-		t.Error("HasChanges(...) on a bare repository succeeded unexpectedly; expected an error")
+	if _, err := DetectWorktreeModifications(dir); err == nil {
+		t.Error("DetectWorktreeModifications(...) on a bare repository succeeded unexpectedly; expected an error")
 	}
 }
 
@@ -209,12 +209,12 @@ func TestCommitAndPush_Success(t *testing.T) {
 		t.Fatalf("CommitAndPush(...) returned an unexpected error: %v", err)
 	}
 
-	changed, err := HasChanges(sourceDir)
+	changed, err := DetectWorktreeModifications(sourceDir)
 	if err != nil {
-		t.Fatalf("HasChanges(...) returned an unexpected error: %v", err)
+		t.Fatalf("DetectWorktreeModifications(...) returned an unexpected error: %v", err)
 	}
 	if changed {
-		t.Error("HasChanges(...) = true after CommitAndPush, want false; the working tree should have been committed")
+		t.Error("DetectWorktreeModifications(...) = true after CommitAndPush, want false; the working tree should have been committed")
 	}
 
 	remote, err := git.PlainOpen(remoteDir)

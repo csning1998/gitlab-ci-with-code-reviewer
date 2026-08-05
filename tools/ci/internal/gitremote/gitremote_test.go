@@ -7,15 +7,15 @@ import (
 	"github.com/go-git/go-git/v5/config"
 )
 
-func TestSet_NoExistingRemote(t *testing.T) {
+func TestConfigureOriginRemoteURL_NoExistingRemote(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
 	}
 
-	remote, err := Set(repo, "https://example.invalid/repo.git")
+	remote, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/repo.git")
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 	if remote.Config().Name != Name {
 		t.Errorf("remote name = %q, want %q", remote.Config().Name, Name)
@@ -25,7 +25,7 @@ func TestSet_NoExistingRemote(t *testing.T) {
 	}
 }
 
-func TestSet_EmptyURLAccepted(t *testing.T) {
+func TestConfigureOriginRemoteURL_EmptyURLAccepted(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
@@ -33,24 +33,24 @@ func TestSet_EmptyURLAccepted(t *testing.T) {
 
 	// RemoteConfig.Validate rejects nil or empty URL slices, not empty URL strings.
 	// Set persists empty URL inputs without validation error.
-	remote, err := Set(repo, "")
+	remote, err := ConfigureOriginRemoteURL(repo, "")
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 	if len(remote.Config().URLs) != 1 || remote.Config().URLs[0] != "" {
 		t.Errorf("remote URLs = %v, want a single empty-string URL", remote.Config().URLs)
 	}
 }
 
-func TestSet_PopulatesDefaultFetchRefSpec(t *testing.T) {
+func TestConfigureOriginRemoteURL_PopulatesDefaultFetchRefSpec(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
 	}
 
-	remote, err := Set(repo, "https://example.invalid/repo.git")
+	remote, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/repo.git")
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 
 	wantRefSpec := config.RefSpec("+refs/heads/*:refs/remotes/" + Name + "/*")
@@ -59,7 +59,7 @@ func TestSet_PopulatesDefaultFetchRefSpec(t *testing.T) {
 	}
 }
 
-func TestSet_ReplacesCustomFetchRefSpecOnExistingRemote(t *testing.T) {
+func TestConfigureOriginRemoteURL_ReplacesCustomFetchRefSpecOnExistingRemote(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
@@ -73,9 +73,9 @@ func TestSet_ReplacesCustomFetchRefSpecOnExistingRemote(t *testing.T) {
 		t.Fatalf("failed to seed pre-existing origin remote configuration: %v", err)
 	}
 
-	remote, err := Set(repo, "https://example.invalid/replacement.git")
+	remote, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/replacement.git")
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 
 	// Set consistently constructs a new RemoteConfig instance lacking Fetch entries;
@@ -86,7 +86,7 @@ func TestSet_ReplacesCustomFetchRefSpecOnExistingRemote(t *testing.T) {
 	}
 }
 
-func TestSet_LeavesOtherRemotesUntouched(t *testing.T) {
+func TestConfigureOriginRemoteURL_LeavesOtherRemotesUntouched(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
@@ -98,8 +98,8 @@ func TestSet_LeavesOtherRemotesUntouched(t *testing.T) {
 		t.Fatalf("failed to seed pre-existing upstream remote configuration: %v", err)
 	}
 
-	if _, err := Set(repo, "https://example.invalid/repo.git"); err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+	if _, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/repo.git"); err != nil {
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 
 	upstream, err := repo.Remote("upstream")
@@ -111,18 +111,18 @@ func TestSet_LeavesOtherRemotesUntouched(t *testing.T) {
 	}
 }
 
-func TestSet_CalledTwice_LastWriteWins(t *testing.T) {
+func TestConfigureOriginRemoteURL_CalledTwice_LastWriteWins(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
 	}
 
-	if _, err := Set(repo, "https://example.invalid/first.git"); err != nil {
-		t.Fatalf("first Set(...) returned an unexpected error: %v", err)
+	if _, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/first.git"); err != nil {
+		t.Fatalf("first ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
-	remote, err := Set(repo, "https://example.invalid/second.git")
+	remote, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/second.git")
 	if err != nil {
-		t.Fatalf("second Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("second ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 
 	if remote.Config().URLs[0] != "https://example.invalid/second.git" {
@@ -137,16 +137,16 @@ func TestSet_CalledTwice_LastWriteWins(t *testing.T) {
 	}
 }
 
-func TestSet_URLWithEmbeddedCredentials(t *testing.T) {
+func TestConfigureOriginRemoteURL_URLWithEmbeddedCredentials(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
 	}
 
 	credentialURL := "https://gitlab-ci-token:secret-token@example.invalid/repo.git"
-	remote, err := Set(repo, credentialURL)
+	remote, err := ConfigureOriginRemoteURL(repo, credentialURL)
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 
 	// Set executes neither URL sanitization nor credential extraction;
@@ -156,22 +156,22 @@ func TestSet_URLWithEmbeddedCredentials(t *testing.T) {
 	}
 }
 
-func TestSet_BareRepository(t *testing.T) {
+func TestConfigureOriginRemoteURL_BareRepository(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("PlainInit(..., bare) failed: %v", err)
 	}
 
-	remote, err := Set(repo, "https://example.invalid/repo.git")
+	remote, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/repo.git")
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 	if remote.Config().URLs[0] != "https://example.invalid/repo.git" {
 		t.Errorf("remote URL = %q, want the configured URL", remote.Config().URLs[0])
 	}
 }
 
-func TestSet_OverwritesExistingRemote(t *testing.T) {
+func TestConfigureOriginRemoteURL_OverwritesExistingRemote(t *testing.T) {
 	repo, err := git.PlainInit(t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("PlainInit(...) failed: %v", err)
@@ -183,9 +183,9 @@ func TestSet_OverwritesExistingRemote(t *testing.T) {
 		t.Fatalf("failed to seed pre-existing origin remote configuration: %v", err)
 	}
 
-	remote, err := Set(repo, "https://example.invalid/replacement.git")
+	remote, err := ConfigureOriginRemoteURL(repo, "https://example.invalid/replacement.git")
 	if err != nil {
-		t.Fatalf("Set(...) returned an unexpected error: %v", err)
+		t.Fatalf("ConfigureOriginRemoteURL(...) returned an unexpected error: %v", err)
 	}
 	if remote.Config().URLs[0] != "https://example.invalid/replacement.git" {
 		t.Errorf("remote URL = %q, want the replacement URL", remote.Config().URLs[0])
