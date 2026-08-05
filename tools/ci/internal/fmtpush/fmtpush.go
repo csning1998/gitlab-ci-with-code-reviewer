@@ -1,4 +1,4 @@
-// Package fmtpush stages, commits, and pushes code formatting changes to a merge request source branch.
+// Package fmtpush stages, commits, and pushes formatting revisions to a remote merge request branch.
 package fmtpush
 
 import (
@@ -12,8 +12,7 @@ import (
 	"ci-tools/internal/gitremote"
 )
 
-// HasChanges checks if the repository at repoPath has uncommitted changes or untracked files
-// using working tree status (matching git status).
+// HasChanges reports whether the repository working tree contains dirty state or untracked files.
 func HasChanges(repoPath string) (bool, error) {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
@@ -30,9 +29,9 @@ func HasChanges(repoPath string) (bool, error) {
 	return !status.IsClean(), nil
 }
 
-// CommitAndPush stages every change in the working tree at repoPath, commits it as message
-// authored by "GitLab CI", and pushes the resulting commit to branch on the remote identified by
-// remoteURL, using username and password as HTTP basic authentication credentials.
+// CommitAndPush stages working tree modifications, creates a commit from local HEAD with message,
+// and pushes to branch on remoteURL using basic authentication.
+// Non-fast-forward pushes fail directly without attempting content merges.
 func CommitAndPush(repoPath, message, branch, remoteURL, username, password string) error {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {

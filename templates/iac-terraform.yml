@@ -13,6 +13,10 @@ spec:
     checkov_skip:
       default: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4'
       description: 'Comma-separated check IDs to skip; tune per project.'
+    terraform_globs:
+      type: array
+      default: ['**/*.tf', '**/*.hcl', '**/*.tfvars', '**/*.tofu']
+      description: 'rules:changes globs gating the fmt and checkov jobs.'
 ---
 # Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
 terraform-fmt:
@@ -26,6 +30,7 @@ terraform-fmt:
       artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.terraform_globs ]]
   script:
     - terraform fmt -recursive
     - |
@@ -42,11 +47,7 @@ checkov-terraform:
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - '**/*.tf'
-        - '**/*.hcl'
-        - '**/*.tfvars'
-        - '**/*.tofu'
+      changes: $[[ inputs.terraform_globs ]]
   script:
     - checkov --directory $[[ inputs.checkov_dir ]] --framework terraform --compact --quiet
       --skip-check $[[ inputs.checkov_skip ]]
