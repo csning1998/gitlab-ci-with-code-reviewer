@@ -89,7 +89,9 @@ auto-tag:
             continue
           fi
 
-          if ! LATEST_TAG=$(git describe --tags --abbrev=0 --match "${MODULE_NAME}-*" "${CI_COMMIT_SHA}^" 2>/tmp/describe-error.log); then
+          DESCRIBE_MATCH="${MODULE_NAME}-*"
+          LATEST_TAG=$(git describe --tags --abbrev=0 --match "$DESCRIBE_MATCH" "${CI_COMMIT_SHA}^" 2>/tmp/describe.log)
+          if [ $? -ne 0 ]; then
             echo "WARNING: no prior tag matching ${MODULE_NAME}-*, defaulting to 0.0.0."
             LATEST_TAG="${MODULE_NAME}-0.0.0"
           fi
