@@ -1,9 +1,5 @@
-// Package versiontag parses a repository-local module declaration to derive, for each module,
-// the current semantic version and the directory modification state between two specified commits.
-// This implementation supersedes the comma-separated modules and v_prefix CI/CD component inputs,
-// the encoding of which cannot express per-module tag separators, version prefixes, or coexisting
-// prefixed and unprefixed tag schemes within a single repository—three requirements identified through
-// a cross-ecosystem survey of Git tagging conventions.
+// Package versiontag parses repository module configuration files to determine
+// module semantic version tags and directory modification status between commits.
 package versiontag
 
 import (
@@ -19,11 +15,9 @@ import (
 	"ci-tools/internal/semver"
 )
 
-// Module specifies an independently versioned artifact within a repository. Dir represents the path,
-// relative to the repository root, within which file modifications trigger version incrementation;
-// "." designates repository-wide scope. TagPrefix explicitly defines the prefix prepended to the
-// resolved version string; when set to nil, this field defaults to "<Name>-" for non-empty Name
-// attributes, or an empty string when Name remains unspecified.
+// Module defines a versioned directory scope within a repository. Dir is the root-relative
+// path where file changes trigger version increments ("." for repository root). TagPrefix
+// is prepended to tag names; if nil, it defaults to "<Name>-" for named modules or "" if empty.
 type Module struct {
 	Name      string  `yaml:"name"`
 	Dir       string  `yaml:"dir"`
@@ -69,13 +63,9 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// LatestTag determines the highest semantic version matching the specified prefix, returning both
-// the complete tag name and the extracted MAJOR.MINOR.PATCH tuple. Evaluation relies on parsed
-// semantic version ordering rather than commit-graph proximity; because all pipeline tags originate
-// from sequential executions on the default branch, semantic version ordering and graph proximity
-// remain equivalent without requiring commit-ancestry graph traversal. If no matching tag exists,
-// the function returns a synthetic "<prefix>0.0.0" tag alongside the fallback version string "0.0.0",
-// thereby preserving backward compatibility with initial module release behavior.
+// LatestTag returns the highest semver tag and parsed MAJOR.MINOR.PATCH version matching
+// prefix. Tags are ordered by semantic version instead of commit ancestry. Returns
+// "<prefix>0.0.0" and "0.0.0" if no tag matches.
 func LatestTag(repo *git.Repository, prefix string) (tag, version string, err error) {
 	iter, err := repo.Tags()
 	if err != nil {
@@ -93,8 +83,7 @@ func LatestTag(repo *git.Repository, prefix string) (tag, version string, err er
 		candidate := strings.TrimPrefix(strings.TrimPrefix(name[len(prefix):], "v"), "V")
 		major, minor, patch, parseErr := semver.ParseVersion(candidate)
 		if parseErr != nil {
-			// Reference names matching the prefix do not unconditionally represent valid release tags;
-			// non-semver suffixes are ignored rather than processed as fatal errors.
+			// Ignore non-semver tag suffixes instead of failing.
 			return nil
 		}
 
@@ -124,10 +113,8 @@ func compareVersions(majorA, minorA, patchA, majorB, minorB, patchB int) int {
 	return patchA - patchB
 }
 
-// DirChanged evaluates whether file modifications exist within the specified directory between
-// the commit trees referenced by parentSHA and sha. The directory path "." evaluates to true
-// for all file paths, reproducing the unconditional tagging behavior exhibited when
-// module scoping is omitted.
+// DirChanged reports whether any files under dir were modified between parentSHA and sha commit
+// trees. Passing "." or "" matches changes anywhere in the repository.
 func DirChanged(repo *git.Repository, parentSHA, sha, dir string) (bool, error) {
 	fromTree, err := treeAt(repo, parentSHA)
 	if err != nil {

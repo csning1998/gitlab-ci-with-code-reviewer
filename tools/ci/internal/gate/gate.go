@@ -24,9 +24,9 @@ func MaxRunes() (int, error) {
 }
 
 // CheckLength validates that description length does not exceed max.
-// Evaluation relies on UTF-8 rune counts rather than byte lengths to ensure accurate measurement
-// of multibyte CJK text. The input must be retrieved directly from the GitLab API rather than
-// CI_MERGE_REQUEST_DESCRIPTION, which is hard-capped at 2700 characters by GitLab CI.
+// Evaluation uses UTF-8 rune counts instead of byte lengths for CJK text accuracy.
+// Input must be retrieved from the GitLab API instead of CI_MERGE_REQUEST_DESCRIPTION,
+// which is capped at 2700 characters by GitLab CI.
 func CheckLength(description string, max int) error {
 	if n := utf8.RuneCountInString(description); n > max {
 		return fmt.Errorf("MR description is %d characters; the limit is %d. Shorten it and update the MR", n, max)

@@ -360,9 +360,9 @@ modules:
 		t.Fatalf("run(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	// Both modules resolve to the same empty tag prefix. Because LatestTag re-reads repository
-	// tags on every module iteration, the second module observes the tag the first module just
-	// created and bumps again from it within the same run() invocation, rather than colliding.
+	// Both modules resolve to the same empty tag prefix. LatestTag re-reads repository
+	// tags on each iteration, so the second module detects the first tag and bumps from it
+	// within the same run() call.
 	assertRemoteTag(t, remoteDir, "0.1.0", sha)
 	assertRemoteTag(t, remoteDir, "0.2.0", sha)
 }

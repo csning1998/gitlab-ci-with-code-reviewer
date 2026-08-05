@@ -1,6 +1,4 @@
-// Package gitremote configures the "origin" remote repository reference for authenticated push operations,
-// establishing a unified execution sequence shared by internal/gittag for tag pushes and internal/fmtpush
-// for formatting-commit pushes.
+// Package gitremote manages origin remote configuration for authenticated Git push operations.
 package gitremote
 
 import (
@@ -10,15 +8,11 @@ import (
 	"github.com/go-git/go-git/v5/config"
 )
 
-// Name defines the sole remote identifier upon which this package operates, given that the file transport
-// mechanism within go-git rejects push operations for remotes configured under alternative identifiers.
+// Name is the target remote name ("origin"). go-git file transport rejects push operations for non-origin remotes.
 const Name = "origin"
 
-// Set updates the configuration of the Name remote via an atomic read-modify-write operation, thereby
-// eliminating the failure window inherent in consecutive deletion and creation operations during which
-// the repository might otherwise remain devoid of a Name remote configuration. This procedure overwrites
-// pre-existing configurations for Name to accommodate execution environments (e.g. GitLab CI working
-// directories) in which a default origin remote targets a distinct URL.
+// Set updates the origin remote URL in repository config. It updates the remote in-place
+// to avoid transient missing-remote errors and overwrites pre-existing clone URLs.
 func Set(repo *git.Repository, remoteURL string) (*git.Remote, error) {
 	cfg, err := repo.Config()
 	if err != nil {

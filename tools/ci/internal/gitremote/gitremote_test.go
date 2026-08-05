@@ -31,8 +31,8 @@ func TestSet_EmptyURLAccepted(t *testing.T) {
 		t.Fatalf("PlainInit(...) failed: %v", err)
 	}
 
-	// RemoteConfig.Validate rejects exclusively nil or empty URL slices rather than empty URL strings;
-	// consequently, Set forwards this input to the persistence layer instead of returning a validation error.
+	// RemoteConfig.Validate rejects nil or empty URL slices, not empty URL strings.
+	// Set persists empty URL inputs without validation error.
 	remote, err := Set(repo, "")
 	if err != nil {
 		t.Fatalf("Set(...) returned an unexpected error: %v", err)

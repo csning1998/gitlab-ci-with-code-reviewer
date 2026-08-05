@@ -37,9 +37,8 @@ func newRepoWithCommit(t *testing.T) (dir, sha string) {
 	if err != nil {
 		t.Fatalf("Commit() failed: %v", err)
 	}
-	// GitLab CI checks out an explicit commit hash, leaving HEAD in a detached state (a direct reference)
-	// rather than referencing a branch (a symbolic reference). The "HEAD" push source within CommitAndPush
-	// resolves exclusively against a detached HEAD; therefore, the test fixture must reproduce this exact state.
+	// GitLab CI checks out a commit hash, leaving HEAD detached (direct reference) instead of
+	// on a branch (symbolic reference). CommitAndPush resolves HEAD against detached HEAD state.
 	if err := worktree.Checkout(&git.CheckoutOptions{Hash: hash}); err != nil {
 		t.Fatalf("Checkout(%q) failed: %v", hash, err)
 	}
@@ -349,8 +348,8 @@ func TestCommitAndPush_NonFastForwardRejected(t *testing.T) {
 	remoteDir := t.TempDir()
 	seedRemoteBranch(t, remoteDir, "feature-branch")
 
-	// The push refspec omits the "+" force prefix; therefore, remote branches containing commits
-	// outside the ancestry line of the local branch trigger rejection rather than overwrite.
+	// The push refspec omits the "+" force prefix, so non-fast-forward pushes trigger rejection
+	// instead of overwriting remote history.
 	err := CommitAndPush(sourceDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused")
 	if err == nil {
 		t.Fatal("CommitAndPush(...) against a diverged remote branch succeeded unexpectedly; expected a non-fast-forward rejection")

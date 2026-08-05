@@ -1,6 +1,4 @@
-// Command fmt-commit-pusher commits and pushes formatting changes to a merge request source branch.
-// This consolidates the Git remote configuration, working tree status check, commit creation, and push
-// sequence previously duplicated across CI/CD templates.
+// Command fmt-commit-pusher commits and pushes code formatting changes to a merge request source branch.
 package main
 
 import (
@@ -12,9 +10,8 @@ import (
 	"ci-tools/internal/fmtpush"
 )
 
-// run evaluates the working tree at repoPath for modifications and pushes resulting commits to branch.
-// Decoupling execution logic from flag parsing, environment access, and process termination enables
-// direct unit testing.
+// run checks repoPath for formatting changes, commits modifications, and pushes them to branch.
+// Execution logic is separated from flags and process exit for unit testing.
 func run(repoPath, message, branch, remoteURL, username, password string, stdout, stderr io.Writer) int {
 	if message == "" || branch == "" || remoteURL == "" || username == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --message, --branch, --remote-url, and --username are required.")

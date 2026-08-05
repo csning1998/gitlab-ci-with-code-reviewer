@@ -1,8 +1,5 @@
-// Command auto-tag derives and transmits, for each module defined within a repository versioning
-// specification, the subsequent Semantic Version tag required by the Conventional Commit subject
-// of the target commit. This command replaces shell orchestration wrappers around the
-// mr-semver-resolver and git-tag-pusher binaries with a consolidated executable invoking the
-// underlying packages directly.
+// Command auto-tag parses commit messages and creates and pushes semantic version tags for
+// repository modules configured in versioning.yml.
 package main
 
 import (
@@ -30,8 +27,7 @@ func commitSubject(repo *git.Repository, sha string) (string, error) {
 	return subject, nil
 }
 
-// parentSHA retrieves the primary parent commit hash for the commit specified by sha and returns false
-// if no parent commit exists, indicating that the target commit constitutes the root commit of the repository.
+// parentSHA returns the first parent commit hash of sha. Returns false if sha is a root commit.
 func parentSHA(repo *git.Repository, sha string) (string, bool, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
@@ -43,10 +39,8 @@ func parentSHA(repo *git.Repository, sha string) (string, bool, error) {
 	return commit.ParentHashes[0].String(), true, nil
 }
 
-// run evaluates each module specified within the versioning configuration at configPath and transmits
-// the required tags for the commit identified by sha. This function decouples core execution logic from
-// command-line argument parsing, environment variable retrieval, and process termination to enable
-// direct unit testing.
+// run evaluates modules in configPath and pushes warranted tags for sha. Execution logic is
+// separated from CLI flags and process exit for unit testing.
 func run(repoPath, configPath, sha, remoteURL, username, password string, stdout, stderr io.Writer) int {
 	if sha == "" || remoteURL == "" || username == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --sha, --remote-url, and --username are required.")
@@ -88,9 +82,7 @@ func run(repoPath, configPath, sha, remoteURL, username, password string, stdout
 			label = "<repository>"
 		}
 
-		// A root commit lacks a parent tree against which to perform diff evaluation;
-		// consequently, all modules are marked as modified, maintaining the unconditional
-		// initial-commit behavior that a two-commit diff cannot represent.
+		// Root commits have no parent tree to diff against, so all modules are treated as changed.
 		changed := true
 		if hasParent {
 			changed, err = versiontag.DirChanged(repo, parent, sha, mod.Dir)

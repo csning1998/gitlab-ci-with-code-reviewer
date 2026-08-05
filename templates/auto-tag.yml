@@ -2,25 +2,18 @@
 spec:
   inputs:
     reviewer_image:
-      description: 'Required; prebuilt reviewer image providing the mr-semver-resolver and git-tag-pusher binaries.'
-    v_prefix:
-      type: boolean
-      default: false
-      description: >-
-        Prepends v to every computed tag. Required for a Go module resolved via go get; leave
-        false for every other repository so tags stay unprefixed.
+      description: 'Required; prebuilt reviewer image providing the auto-tag binary.'
     stage:
       default: 'deploy'
       description: >-
         Pipeline stage running this job. The default matches core.yml's stage list; override
         this when the including project declares its own stages without a deploy entry.
-    modules:
-      default: ''
+    config_path:
+      default: '.gitlab/versioning.yml'
       description: >-
-        Comma-separated name=dir pairs for per-module tagging in a multi-module monorepo, for
-        example "kvm-provisioning=modules/kvm-provisioning,vault-credential=modules/vault-provisioning/vault-credential".
-        Each dir is relative to the repository root. A module is tagged as name-semver only when
-        the push touches a file under its dir. Leave empty for single, whole-repository tagging.
+        Path, relative to the repository root, to the versioning configuration declaring the
+        modules this job tags. See tools/ci/internal/versiontag for the file's schema; a module
+        with an empty name and dir "." reproduces single, whole-repository tagging.
 ---
 # Automatically calculates and pushes a new Semantic Version tag derived from Conventional Commit
 # headers on squash-merge commits. Replaces manual tagging procedures, eliminating tag detachment
@@ -36,68 +29,5 @@ auto-tag:
     GIT_DEPTH: '0'
   script:
     - |
-      SUBJECT=$(git log -1 --format=%s "$CI_COMMIT_SHA")
-      V_PREFIX="$[[ inputs.v_prefix ]]"
-
-      # Resolves and pushes one tag. Reuses mr-semver-resolver and git-tag-pusher regardless of
-      # whether the caller passed modules, so bump-rule changes in either binary propagate to
-      # every consuming repository without a separate per-repo implementation. Written in POSIX
-      # sh, since the reviewer image is Alpine-based and provides no bash.
-      tag_module() {
-        tag_prefix="$1"
-        latest_tag="$2"
-        latest_version="$3"
-
-        set -- --latest "$latest_version" --subject "$SUBJECT"
-        if [ "$V_PREFIX" = "true" ]; then
-          set -- "$@" --v-prefix
-        fi
-        RESULT=$(mr-semver-resolver "$@")
-
-        if [ "$RESULT" = "NONE" ]; then
-          echo "${tag_prefix:-<repository>}: commit subject does not trigger a release. Skipping."
-          return
-        fi
-
-        NEW_TAG="${tag_prefix}${RESULT}"
-        echo "${tag_prefix:-<repository>}: bumping ${latest_tag} to ${NEW_TAG} for ${CI_COMMIT_SHA}."
-        git-tag-pusher \
-          --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
-          --tag "$NEW_TAG" \
-          --sha "$CI_COMMIT_SHA" \
-          --username "gitlab-ci-token"
-      }
-
-      MODULES="$[[ inputs.modules ]]"
-      if [ -z "$MODULES" ]; then
-        if ! LATEST_TAG=$(git describe --tags --abbrev=0 "${CI_COMMIT_SHA}^" 2>/tmp/describe-error.log); then
-          echo "WARNING: git describe failed against ${CI_COMMIT_SHA}^, defaulting to 0.0.0. Reason:"
-          cat /tmp/describe-error.log
-          LATEST_TAG="0.0.0"
-        fi
-        tag_module "" "$LATEST_TAG" "$LATEST_TAG"
-      else
-        SAVED_IFS=$IFS
-        IFS=','
-        for pair in $MODULES; do
-          IFS=$SAVED_IFS
-          MODULE_NAME="${pair%%=*}"
-          MODULE_DIR="${pair#*=}"
-
-          if git diff --quiet "${CI_COMMIT_SHA}^" "${CI_COMMIT_SHA}" -- "$MODULE_DIR"; then
-            IFS=','
-            continue
-          fi
-
-          DESCRIBE_MATCH="${MODULE_NAME}-*"
-          LATEST_TAG=$(git describe --tags --abbrev=0 --match "$DESCRIBE_MATCH" "${CI_COMMIT_SHA}^" 2>/tmp/describe.log)
-          if [ $? -ne 0 ]; then
-            echo "WARNING: no prior tag matching ${MODULE_NAME}-*, defaulting to 0.0.0."
-            LATEST_TAG="${MODULE_NAME}-0.0.0"
-          fi
-          LATEST_VERSION="${LATEST_TAG#"${MODULE_NAME}"-}"
-          tag_module "${MODULE_NAME}-" "$LATEST_TAG" "$LATEST_VERSION"
-          IFS=','
-        done
-        IFS=$SAVED_IFS
-      fi
+      auto-tag --sha "$CI_COMMIT_SHA" --config "$[[ inputs.config_path ]]" --username "gitlab-ci-token" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
