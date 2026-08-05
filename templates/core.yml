@@ -98,7 +98,7 @@ security:mr-gate:
 
 # Applies deterministic classification labels (type::*, breaking-change, area::*)
 # independently of manual LLM review execution.
-mr-labeler:
+misc:mr-labeler:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
@@ -108,7 +108,7 @@ mr-labeler:
   script:
     - mr-labeler
 
-commitlint:
+lint:commit:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true

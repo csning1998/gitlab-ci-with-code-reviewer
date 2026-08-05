@@ -33,7 +33,7 @@ include:
       stage: release
 
 # Merge request events publish to the :edge container tag, whereas semver git tags produce versioned release images.
-build-reviewer-image:
+build:reviewer-image:
   stage: build
   image: quay.io/buildah/stable:v1.43.0
   rules:
@@ -55,13 +55,13 @@ build-reviewer-image:
         buildah push "$IMAGE:edge"
       fi
 
-trivy-image-scan:
+security:trivy-image:
   stage: security
   image:
     name: docker.io/aquasec/trivy:0.72.0
     entrypoint: [""]
   needs:
-    - job: build-reviewer-image
+    - job: build:reviewer-image
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
@@ -79,8 +79,8 @@ publish-catalog:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0
   needs:
-    - job: build-reviewer-image
-    - job: trivy-image-scan
+    - job: build:reviewer-image
+    - job: security:trivy-image
   rules:
     - if: "$CI_COMMIT_TAG"
   script:
