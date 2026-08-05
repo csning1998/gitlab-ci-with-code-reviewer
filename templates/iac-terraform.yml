@@ -19,14 +19,14 @@ spec:
       description: 'rules:changes globs gating the fmt and checkov jobs.'
 ---
 # Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
-terraform-fmt:
+fmt:terraform:
   stage: format
   image:
     name: '$[[ inputs.terraform_image ]]'
     entrypoint: ['']
   interruptible: false
   needs:
-    - job: prepare-fmt-commit-pusher
+    - job: fmt:prepare-pusher
       artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -37,8 +37,8 @@ terraform-fmt:
       ./fmt-commit-pusher --message "style: terraform fmt" \
         --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 
-checkov-terraform:
-  stage: lint
+security:checkov-terraform:
+  stage: security
   image:
     name: '$[[ inputs.checkov_image ]]'
     entrypoint: ['']

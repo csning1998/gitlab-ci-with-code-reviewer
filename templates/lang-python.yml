@@ -17,7 +17,7 @@ spec:
       description: 'Command to run Python tests.'
     test_stage:
       default: 'test'
-      description: 'Stage for the python-test job.'
+      description: 'Stage for the test:python job.'
 ---
 # Consuming pipelines must declare stages corresponding to the stages utilized by this component.
 
@@ -28,13 +28,13 @@ spec:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.python_globs ]]
 
-python-fmt:
+fmt:python:
   extends: .python-base
   stage: format
   image: '$[[ inputs.python_image ]]'
   interruptible: false # Disables job cancellation on new commits to guarantee completion of git push operations.
   needs:
-    - job: prepare-fmt-commit-pusher
+    - job: fmt:prepare-pusher
       artifacts: true
   before_script:
     - |
@@ -58,7 +58,7 @@ python-fmt:
       ./fmt-commit-pusher --message "style: ruff format and autofix" \
         --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 
-python-lint:
+lint:python:
   extends: .python-base
   stage: lint
   image: '$[[ inputs.python_image ]]'
@@ -79,7 +79,7 @@ python-lint:
         ruff check .
       fi
 
-python-test:
+test:python:
   extends: .python-base
   stage: '$[[ inputs.test_stage ]]'
   image: '$[[ inputs.python_image ]]'

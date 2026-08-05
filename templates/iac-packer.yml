@@ -13,14 +13,14 @@ spec:
       description: 'rules:changes globs gating the fmt job.'
 ---
 # Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
-packer-fmt:
+fmt:packer:
   stage: format
   image:
     name: '$[[ inputs.packer_image ]]'
     entrypoint: ['']
   interruptible: false
   needs:
-    - job: prepare-fmt-commit-pusher
+    - job: fmt:prepare-pusher
       artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

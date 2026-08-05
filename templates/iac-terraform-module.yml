@@ -26,7 +26,7 @@ spec:
 # Packages module_dir and uploads to the GitLab Terraform Module Registry on tag push.
 # Replicates upload behavior from Terraform/Module-Base.gitlab-ci.yml without stage dependencies.
 # Embeds module_name in the job identifier to prevent definition collisions.
-terraform-module-deploy-$[[ inputs.module_name ]]:
+deploy:terraform-module-$[[ inputs.module_name ]]:
   stage: deploy
   image: '$[[ inputs.curl_image ]]'
   interruptible: false

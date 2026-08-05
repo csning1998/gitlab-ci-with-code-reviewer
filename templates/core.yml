@@ -47,7 +47,7 @@ spec:
       type: array
       default: []
       description: >-
-        Runner tags required to schedule sonarqube-scan onto a runner with network access
+        Runner tags required to schedule security:sonarqube onto a runner with network access
         to the SonarQube instance. Leave empty when the default runner already has that access.
     sonar_go_coverage_path:
       default: ''
@@ -71,7 +71,7 @@ stages:
 
 # Exports fmt-commit-pusher binary from reviewer_image as a build artifact.
 # Tool-specific format jobs lack this binary and retrieve it via stage artifact dependencies.
-prepare-fmt-commit-pusher:
+fmt:prepare-pusher:
   stage: format
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
@@ -85,8 +85,8 @@ prepare-fmt-commit-pusher:
     expire_in: 1 hour
 
 # Enforces maximum merge request description character limits prior to LLM review invocation.
-check-mr-description:
-  stage: lint
+security:mr-gate:
+  stage: security
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
   variables:
@@ -122,7 +122,7 @@ commitlint:
       commitlint --config /etc/commitlint/commitlint.config.cjs \
       --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to "$CI_COMMIT_SHA"
 
-gitleaks:
+security:gitleaks:
   stage: security
   image:
     name: '$[[ inputs.gitleaks_image ]]'
@@ -134,13 +134,13 @@ gitleaks:
   script:
     - gitleaks detect --log-opts="$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA" --redact -v
 
-sonarqube-scan:
+security:sonarqube:
   stage: security
   image:
     name: '$[[ inputs.sonar_scanner_image ]]'
     entrypoint: ['']
   needs:
-    - job: go-test
+    - job: test:go
       optional: true
   interruptible: true
   allow_failure: true
@@ -164,7 +164,7 @@ sonarqube-scan:
         -Dsonar.test.inclusions="**/*_test.go" \
         $GO_COVERAGE_ARG
 
-markdownlint:
+lint:markdown:
   stage: lint
   image:
     name: '$[[ inputs.markdownlint_image ]]'
@@ -179,7 +179,7 @@ markdownlint:
   script:
     - mdl .
 
-yamllint:
+lint:yaml:
   stage: lint
   image: '$[[ inputs.yamllint_image ]]'
   needs: []
@@ -193,7 +193,7 @@ yamllint:
     - yamllint .
 
 # Omits explicit job dependencies (`needs`) to preserve compatibility across optional language component inclusions.
-claude-code-review:
+review:claude-code:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
   variables:
@@ -208,7 +208,7 @@ claude-code-review:
   script:
     - claude-review
 
-gemini-code-review:
+review:gemini-code:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
   variables:

@@ -7,7 +7,7 @@ spec:
     ts_globs:
       type: array
       default: ['frontend/**/*', 'backend/**/*', 'contracts/**/*']
-      description: 'rules:changes globs gating the type check and test jobs.'
+      description: 'rules:changes globs gating the fmt, type check, and test jobs.'
     frontend_dir:
       default: 'frontend'
       description: 'Vue/frontend directory; checked with vue-tsc.'
@@ -16,15 +16,16 @@ spec:
       description: 'Backend directory; checked with tsc --noEmit.'
 ---
 # Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
-prettier-fmt:
+fmt:typescript:
   stage: format
   image: '$[[ inputs.bun_image ]]'
   interruptible: false
   needs:
-    - job: prepare-fmt-commit-pusher
+    - job: fmt:prepare-pusher
       artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.ts_globs ]]
   before_script:
     - bun install
   script:
@@ -35,7 +36,7 @@ prettier-fmt:
 
 # Frontend and backend checks run as parallel jobs to ensure type errors
 # across both targets surface in a single pipeline run.
-bun-test:
+test:typescript:
   stage: test
   image: '$[[ inputs.bun_image ]]'
   interruptible: true
@@ -46,9 +47,9 @@ bun-test:
     paths:
       - node_modules/
   needs:
-    - job: typescript-check-frontend
+    - job: lint:typescript-frontend
       optional: true
-    - job: typescript-check-backend
+    - job: lint:typescript-backend
       optional: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -57,7 +58,7 @@ bun-test:
     - bun install --frozen-lockfile
     - bun run --filter '*' test
 
-typescript-check-frontend:
+lint:typescript-frontend:
   stage: lint
   image: '$[[ inputs.bun_image ]]'
   interruptible: true
@@ -69,7 +70,7 @@ typescript-check-frontend:
     - bun install
     - bunx vue-tsc --noEmit
 
-typescript-check-backend:
+lint:typescript-backend:
   stage: lint
   image: '$[[ inputs.bun_image ]]'
   interruptible: true
