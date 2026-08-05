@@ -21,23 +21,16 @@ terraform-fmt:
     name: '$[[ inputs.terraform_image ]]'
     entrypoint: ['']
   interruptible: false
+  needs:
+    - job: prepare-fmt-commit-pusher
+      artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-  before_script:
-    - apk add --no-cache git
-    - git config user.email "gitlab-ci@noreply"
-    - git config user.name "GitLab CI"
-    - |
-      REMOTE_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
-      git remote add origin "$REMOTE_URL" 2>/dev/null || git remote set-url origin "$REMOTE_URL"
   script:
     - terraform fmt -recursive
     - |
-      if ! git diff --quiet; then
-        git add -A
-        git commit -m "style: terraform fmt"
-        git push origin HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
-      fi
+      ./fmt-commit-pusher --message "style: terraform fmt" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 
 checkov-terraform:
   stage: lint
