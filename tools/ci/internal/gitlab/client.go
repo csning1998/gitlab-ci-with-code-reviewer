@@ -45,7 +45,7 @@ func New(apiURL, projectID, mrIID, token string) *Client {
 }
 
 // send executes HTTP operations and serves as the single point of conversion for HTTP error status codes into Go errors.
-func (c *Client) send(method, url string, payload any) (status int, header http.Header, data []byte, err error) {
+func (c *Client) executeHTTPRequest(method, url string, payload any) (status int, header http.Header, data []byte, err error) {
 	var reader io.Reader
 	if payload != nil {
 		body, err := json.Marshal(payload)
@@ -85,9 +85,9 @@ type mrDetail struct {
 	DiffRefs    DiffRefs `json:"diff_refs"`
 }
 
-// fetchDetail GETs the MR detail (title, description, diff refs) without diffs.
-func (c *Client) fetchDetail() (*mrDetail, error) {
-	_, _, data, err := c.send(http.MethodGet, c.mrURL, nil)
+// fetchMRDetail GETs the MR detail (title, description, diff refs) without diffs.
+func (c *Client) fetchMRDetail() (*mrDetail, error) {
+	_, _, data, err := c.executeHTTPRequest(http.MethodGet, c.mrURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch MR detail: %w", err)
 	}
@@ -101,7 +101,7 @@ func (c *Client) fetchDetail() (*mrDetail, error) {
 // FetchMRDescription retrieves the merge request description from the detail endpoint without downloading diff payloads,
 // enabling full-length validation while bypassing the 2700 character environment variable truncation limit.
 func (c *Client) FetchMRDescription() (string, error) {
-	d, err := c.fetchDetail()
+	d, err := c.fetchMRDetail()
 	if err != nil {
 		return "", err
 	}
@@ -111,12 +111,12 @@ func (c *Client) FetchMRDescription() (string, error) {
 // FetchMR queries merge request metadata and paginated file diffs using the /diffs endpoint,
 // which supersedes the legacy /changes endpoint deprecated in GitLab 15.7.
 func (c *Client) FetchMR() (*MRChanges, error) {
-	detail, err := c.fetchDetail()
+	detail, err := c.fetchMRDetail()
 	if err != nil {
 		return nil, err
 	}
 
-	_, diffsHeader, diffsData, err := c.send(http.MethodGet, c.mrURL+"/diffs?per_page=100", nil)
+	_, diffsHeader, diffsData, err := c.executeHTTPRequest(http.MethodGet, c.mrURL+"/diffs?per_page=100", nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch MR diffs: %w", err)
 	}
@@ -137,18 +137,18 @@ func (c *Client) FetchMR() (*MRChanges, error) {
 }
 
 func (c *Client) PostDiscussion(body string, position map[string]any) (int, error) {
-	status, _, _, err := c.send(http.MethodPost, c.mrURL+"/discussions", map[string]any{"body": body, "position": position})
+	status, _, _, err := c.executeHTTPRequest(http.MethodPost, c.mrURL+"/discussions", map[string]any{"body": body, "position": position})
 	return status, err
 }
 
 func (c *Client) PostNote(body string) (int, error) {
-	status, _, _, err := c.send(http.MethodPost, c.mrURL+"/notes", map[string]any{"body": body})
+	status, _, _, err := c.executeHTTPRequest(http.MethodPost, c.mrURL+"/notes", map[string]any{"body": body})
 	return status, err
 }
 
 // AddLabels appends the given labels to the merge request without removing any existing label,
 // via the add_labels parameter, which GitLab's API accepts as a comma-separated string.
 func (c *Client) AddLabels(labels []string) (int, error) {
-	status, _, _, err := c.send(http.MethodPut, c.mrURL, map[string]any{"add_labels": strings.Join(labels, ",")})
+	status, _, _, err := c.executeHTTPRequest(http.MethodPut, c.mrURL, map[string]any{"add_labels": strings.Join(labels, ",")})
 	return status, err
 }

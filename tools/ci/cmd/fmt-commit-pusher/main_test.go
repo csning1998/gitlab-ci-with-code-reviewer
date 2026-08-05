@@ -75,12 +75,12 @@ func TestRun_MissingArguments(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var stderr bytes.Buffer
-			code := run(".", c.message, c.branch, c.remoteURL, c.username, c.password, io.Discard, &stderr)
+			code := executeFormatCommitPush(".", c.message, c.branch, c.remoteURL, c.username, c.password, io.Discard, &stderr)
 			if code != 1 {
-				t.Errorf("run(...) code = %d, want 1", code)
+				t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 			}
 			if !strings.Contains(stderr.String(), c.wantErr) {
-				t.Errorf("run(...) stderr = %q, want it to contain %q", stderr.String(), c.wantErr)
+				t.Errorf("executeFormatCommitPush(...) stderr = %q, want it to contain %q", stderr.String(), c.wantErr)
 			}
 		})
 	}
@@ -88,28 +88,28 @@ func TestRun_MissingArguments(t *testing.T) {
 
 func TestRun_NoChanges_SkipsPush(t *testing.T) {
 	repoDir := newRepoWithCommit(t)
-	// An invalid remote path verifies that no push operation occurs. When HasChanges detects
+	// An invalid remote path verifies that no push operation occurs. When DetectWorktreeModifications detects
 	// a clean working tree, execution must exit before invoking CommitAndPush.
 	unreachableRemote := filepath.Join(t.TempDir(), "does-not-exist.git")
 
 	var stdout, stderr bytes.Buffer
-	code := run(repoDir, "style: fmt", "feature-branch", unreachableRemote, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: fmt", "feature-branch", unreachableRemote, "gitlab-ci-token", "unused", &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(...) code = %d, want 0, stderr = %q", code, stderr.String())
+		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "No formatting changes detected") {
-		t.Errorf("run(...) stdout = %q, want it to mention no formatting changes", stdout.String())
+		t.Errorf("executeFormatCommitPush(...) stdout = %q, want it to mention no formatting changes", stdout.String())
 	}
 }
 
 func TestRun_RepoOpenFails(t *testing.T) {
 	var stderr bytes.Buffer
-	code := run(t.TempDir(), "style: fmt", "feature-branch", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeFormatCommitPush(t.TempDir(), "style: fmt", "feature-branch", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
 	if code != 1 {
-		t.Errorf("run(...) code = %d, want 1", code)
+		t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "failed to open repository") {
-		t.Errorf("run(...) stderr = %q, want it to mention the open failure", stderr.String())
+		t.Errorf("executeFormatCommitPush(...) stderr = %q, want it to mention the open failure", stderr.String())
 	}
 }
 
@@ -120,12 +120,12 @@ func TestRun_BareRepository_HasChangesFails(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := run(bareDir, "style: fmt", "feature-branch", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeFormatCommitPush(bareDir, "style: fmt", "feature-branch", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
 	if code != 1 {
-		t.Errorf("run(...) code = %d, want 1", code)
+		t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "failed to retrieve working tree") {
-		t.Errorf("run(...) stderr = %q, want it to mention the missing working tree", stderr.String())
+		t.Errorf("executeFormatCommitPush(...) stderr = %q, want it to mention the missing working tree", stderr.String())
 	}
 }
 
@@ -139,12 +139,12 @@ func TestRun_PushFails_WithChangesPresent(t *testing.T) {
 	unreachableRemote := filepath.Join(t.TempDir(), "does-not-exist.git")
 
 	var stderr bytes.Buffer
-	code := run(repoDir, "style: gofmt", "feature-branch", unreachableRemote, "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", unreachableRemote, "gitlab-ci-token", "unused", io.Discard, &stderr)
 	if code != 1 {
-		t.Errorf("run(...) code = %d, want 1", code)
+		t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "failed to push branch") {
-		t.Errorf("run(...) stderr = %q, want it to mention the push failure", stderr.String())
+		t.Errorf("executeFormatCommitPush(...) stderr = %q, want it to mention the push failure", stderr.String())
 	}
 }
 
@@ -155,12 +155,12 @@ func TestRun_UntrackedFileOnly_CommitsAndPushes(t *testing.T) {
 	}
 	remoteDir := newBareRemote(t)
 
-	// HasChanges evaluates to true for untracked files when tracked files remain unchanged.
-	// This executes the untracked file handling path through run().
+	// DetectWorktreeModifications evaluates to true for untracked files when tracked files remain unchanged.
+	// This executes the untracked file handling path through executeFormatCommitPush().
 	var stdout, stderr bytes.Buffer
-	code := run(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(...) code = %d, want 0, stderr = %q", code, stderr.String())
+		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
 	remote, err := git.PlainOpen(remoteDir)
@@ -192,13 +192,13 @@ func TestRun_Success_ReportsPushedMessage(t *testing.T) {
 	remoteDir := newBareRemote(t)
 
 	var stdout, stderr bytes.Buffer
-	code := run(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(...) code = %d, want 0, stderr = %q", code, stderr.String())
+		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 	wantMessage := `Pushed formatting commit "style: gofmt" to feature-branch.`
 	if !strings.Contains(stdout.String(), wantMessage) {
-		t.Errorf("run(...) stdout = %q, want it to contain %q", stdout.String(), wantMessage)
+		t.Errorf("executeFormatCommitPush(...) stdout = %q, want it to contain %q", stdout.String(), wantMessage)
 	}
 }
 
@@ -210,9 +210,9 @@ func TestRun_Success(t *testing.T) {
 	remoteDir := newBareRemote(t)
 
 	var stdout, stderr bytes.Buffer
-	code := run(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(...) code = %d, want 0, stderr = %q", code, stderr.String())
+		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
 	remote, err := git.PlainOpen(remoteDir)
@@ -277,7 +277,7 @@ func TestMainSubprocess(t *testing.T) {
 }
 
 // TestMainSubprocess_MissingArguments verifies that main() forwards non-zero exit codes from
-// run() to os.Exit. Direct calls to run() in unit tests cannot validate this process exit behavior.
+// executeFormatCommitPush() to os.Exit. Direct calls to executeFormatCommitPush() in unit tests cannot validate this process exit behavior.
 func TestMainSubprocess_MissingArguments(t *testing.T) {
 	if os.Getenv("BE_FMT_COMMIT_PUSHER_MISSING_ARGS") == "1" {
 		os.Args = []string{

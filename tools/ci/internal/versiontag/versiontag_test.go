@@ -104,7 +104,7 @@ func TestLatestTag_PicksMaxVersionAmongMatchingPrefix(t *testing.T) {
 	}
 }
 
-func TestDirChanged(t *testing.T) {
+func TestDetectDirectoryTreeChanges(t *testing.T) {
 	repo, firstSHA := newRepoWithFiles(t, map[string]string{
 		"dirA/file.txt": "a1",
 		"dirB/file.txt": "b1",
@@ -114,28 +114,28 @@ func TestDirChanged(t *testing.T) {
 		"dirB/file.txt": "b1",
 	})
 
-	changedA, err := DirChanged(repo, firstSHA, secondSHA, "dirA")
+	changedA, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \"dirA\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA\") returned an unexpected error: %v", err)
 	}
 	if !changedA {
-		t.Error("DirChanged(..., \"dirA\") = false, want true")
+		t.Error("DetectDirectoryTreeChanges(..., \"dirA\") = false, want true")
 	}
 
-	changedB, err := DirChanged(repo, firstSHA, secondSHA, "dirB")
+	changedB, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirB")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \"dirB\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirB\") returned an unexpected error: %v", err)
 	}
 	if changedB {
-		t.Error("DirChanged(..., \"dirB\") = true, want false")
+		t.Error("DetectDirectoryTreeChanges(..., \"dirB\") = true, want false")
 	}
 
-	changedRoot, err := DirChanged(repo, firstSHA, secondSHA, ".")
+	changedRoot, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, ".")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \".\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \".\") returned an unexpected error: %v", err)
 	}
 	if !changedRoot {
-		t.Error("DirChanged(..., \".\") = false, want true")
+		t.Error("DetectDirectoryTreeChanges(..., \".\") = false, want true")
 	}
 }
 
@@ -184,19 +184,19 @@ func TestLatestTag_SemverComparison(t *testing.T) {
 	}
 }
 
-func TestDirChanged_InvalidSHA(t *testing.T) {
+func TestDetectDirectoryTreeChanges_InvalidSHA(t *testing.T) {
 	repo, validSHA := newRepoWithCommit(t)
 	invalidSHA := "0000000000000000000000000000000000000000"
 
-	if _, err := DirChanged(repo, invalidSHA, validSHA, "."); err == nil {
-		t.Error("DirChanged(...) with invalid parentSHA succeeded unexpectedly; expected an error")
+	if _, err := DetectDirectoryTreeChanges(repo, invalidSHA, validSHA, "."); err == nil {
+		t.Error("DetectDirectoryTreeChanges(...) with invalid parentSHA succeeded unexpectedly; expected an error")
 	}
-	if _, err := DirChanged(repo, validSHA, invalidSHA, "."); err == nil {
-		t.Error("DirChanged(...) with invalid target SHA succeeded unexpectedly; expected an error")
+	if _, err := DetectDirectoryTreeChanges(repo, validSHA, invalidSHA, "."); err == nil {
+		t.Error("DetectDirectoryTreeChanges(...) with invalid target SHA succeeded unexpectedly; expected an error")
 	}
 }
 
-func TestDirChanged_SubdirectoryPath(t *testing.T) {
+func TestDetectDirectoryTreeChanges_SubdirectoryPath(t *testing.T) {
 	repo, firstSHA := newRepoWithFiles(t, map[string]string{
 		"dirA/sub/file.txt":   "1",
 		"dirA-other/file.txt": "1",
@@ -206,20 +206,20 @@ func TestDirChanged_SubdirectoryPath(t *testing.T) {
 		"dirA-other/file.txt": "1",
 	})
 
-	changedSub, err := DirChanged(repo, firstSHA, secondSHA, "dirA/sub")
+	changedSub, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA/sub")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \"dirA/sub\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA/sub\") returned an unexpected error: %v", err)
 	}
 	if !changedSub {
-		t.Error("DirChanged(..., \"dirA/sub\") = false, want true")
+		t.Error("DetectDirectoryTreeChanges(..., \"dirA/sub\") = false, want true")
 	}
 
-	changedOther, err := DirChanged(repo, firstSHA, secondSHA, "dirA-other")
+	changedOther, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA-other")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \"dirA-other\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA-other\") returned an unexpected error: %v", err)
 	}
 	if changedOther {
-		t.Error("DirChanged(..., \"dirA-other\") = true, want false")
+		t.Error("DetectDirectoryTreeChanges(..., \"dirA-other\") = true, want false")
 	}
 }
 
@@ -280,18 +280,18 @@ func TestLatestTag_OverlappingPrefix(t *testing.T) {
 	}
 }
 
-func TestDirChanged_SameCommit(t *testing.T) {
+func TestDetectDirectoryTreeChanges_SameCommit(t *testing.T) {
 	repo, sha := newRepoWithCommit(t)
-	changed, err := DirChanged(repo, sha, sha, ".")
+	changed, err := DetectDirectoryTreeChanges(repo, sha, sha, ".")
 	if err != nil {
-		t.Fatalf("DirChanged(...) with identical commits returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(...) with identical commits returned an unexpected error: %v", err)
 	}
 	if changed {
-		t.Error("DirChanged(...) with identical commits = true, want false")
+		t.Error("DetectDirectoryTreeChanges(...) with identical commits = true, want false")
 	}
 }
 
-func TestDirChanged_TrailingSlashAndEmptyDir(t *testing.T) {
+func TestDetectDirectoryTreeChanges_TrailingSlashAndEmptyDir(t *testing.T) {
 	repo, firstSHA := newRepoWithFiles(t, map[string]string{
 		"dirA/file.txt": "a1",
 	})
@@ -299,24 +299,24 @@ func TestDirChanged_TrailingSlashAndEmptyDir(t *testing.T) {
 		"dirA/file.txt": "a2",
 	})
 
-	changedTrailing, err := DirChanged(repo, firstSHA, secondSHA, "dirA/")
+	changedTrailing, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA/")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \"dirA/\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA/\") returned an unexpected error: %v", err)
 	}
 	if !changedTrailing {
-		t.Error("DirChanged(..., \"dirA/\") = false, want true")
+		t.Error("DetectDirectoryTreeChanges(..., \"dirA/\") = false, want true")
 	}
 
-	changedEmpty, err := DirChanged(repo, firstSHA, secondSHA, "")
+	changedEmpty, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "")
 	if err != nil {
-		t.Fatalf("DirChanged(..., \"\") returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(..., \"\") returned an unexpected error: %v", err)
 	}
 	if !changedEmpty {
-		t.Error("DirChanged(..., \"\") = false, want true")
+		t.Error("DetectDirectoryTreeChanges(..., \"\") = false, want true")
 	}
 }
 
-func TestDirChanged_FileDeletion(t *testing.T) {
+func TestDetectDirectoryTreeChanges_FileDeletion(t *testing.T) {
 	repo, firstSHA := newRepoWithFiles(t, map[string]string{
 		"dirA/file.txt": "content",
 	})
@@ -335,12 +335,12 @@ func TestDirChanged_FileDeletion(t *testing.T) {
 		t.Fatalf("Commit() failed: %v", err)
 	}
 
-	changed, err := DirChanged(repo, firstSHA, secondSHA.String(), "dirA")
+	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA.String(), "dirA")
 	if err != nil {
-		t.Fatalf("DirChanged(...) on file deletion returned an unexpected error: %v", err)
+		t.Fatalf("DetectDirectoryTreeChanges(...) on file deletion returned an unexpected error: %v", err)
 	}
 	if !changed {
-		t.Error("DirChanged(...) on file deletion = false, want true")
+		t.Error("DetectDirectoryTreeChanges(...) on file deletion = false, want true")
 	}
 }
 

@@ -59,7 +59,7 @@ func (c *Client) Review(prompt string) (string, error) {
 	if err := stream.Err(); err != nil {
 		return "", fmt.Errorf("claude api: %w", err)
 	}
-	text := extractText(message.Content)
+	text := extractTextBlocks(message.Content)
 	if strings.TrimSpace(text) == "" {
 		return "", fmt.Errorf(
 			"claude api: empty text response (stop_reason=%s input_tokens=%d output_tokens=%d content_blocks=%d)",
@@ -72,9 +72,9 @@ func (c *Client) Review(prompt string) (string, error) {
 	return text, nil
 }
 
-// extractText concatenates TextBlock payloads from a Messages API content list.
+// extractTextBlocks concatenates TextBlock payloads from a Messages API content list.
 // Non-text blocks (for example thinking) are ignored by design for this reviewer.
-func extractText(blocks []sdk.ContentBlockUnion) string {
+func extractTextBlocks(blocks []sdk.ContentBlockUnion) string {
 	var sb strings.Builder
 	for _, block := range blocks {
 		if t, ok := block.AsAny().(sdk.TextBlock); ok {

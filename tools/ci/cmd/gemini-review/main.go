@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := config.LoadEnvFile()
 	if cfg.GeminiToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'GEMINI_MR_REVIEWER' is missing.")
 		os.Exit(1)
@@ -22,7 +22,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'GEMINI_API_KEY' is missing.")
 		os.Exit(1)
 	}
-	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.GeminiToken,
+	if err := review.ExecuteCodeReview(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.GeminiToken,
 		gemini.New(cfg.GeminiModel, cfg.GeminiKey)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

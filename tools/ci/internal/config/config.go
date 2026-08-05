@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -25,33 +26,85 @@ type Config struct {
 	ClaudeTimeoutMinutes int
 }
 
-// Load populates Config from process environment variables.
-// Essential GitLab CI variables trigger immediate failure if missing, whereas provider keys
-// are deferred to individual command binaries to accommodate modular job execution.
-func Load() Config {
-	claudeToken := env("CLAUDE_MR_REVIEWER", "")
-	geminiToken := env("GEMINI_MR_REVIEWER", "")
+// defaultEnvFilePath is the dotenv path LoadEnvFile applies when present in the process
+// working directory. Process environment variables always take precedence over file entries.
+const defaultEnvFilePath = ".env"
+
+// LoadEnvFile populates Config from the process environment after optionally applying
+// KEY=VALUE pairs from defaultEnvFilePath. Existing process environment entries are never
+// overwritten by the file. Essential GitLab CI variables trigger immediate failure if missing;
+// provider keys are deferred to individual command binaries to accommodate modular job execution.
+func LoadEnvFile() Config {
+	applyEnvFile(defaultEnvFilePath)
+	return loadFromProcessEnv()
+}
+
+// loadFromProcessEnv reads configuration exclusively from the process environment.
+func loadFromProcessEnv() Config {
+	claudeToken := lookupEnv("CLAUDE_MR_REVIEWER", "")
+	geminiToken := lookupEnv("GEMINI_MR_REVIEWER", "")
 	gitlabToken := claudeToken
 	if gitlabToken == "" {
 		gitlabToken = geminiToken
 	}
 	return Config{
-		APIURL:               require("CI_API_V4_URL", ""),
-		ProjectID:            require("CI_PROJECT_ID", ""),
-		MRIID:                require("CI_MERGE_REQUEST_IID", ""),
+		APIURL:               requireEnvVar("CI_API_V4_URL", ""),
+		ProjectID:            requireEnvVar("CI_PROJECT_ID", ""),
+		MRIID:                requireEnvVar("CI_MERGE_REQUEST_IID", ""),
 		GeminiToken:          geminiToken,
 		ClaudeToken:          claudeToken,
 		GitLabToken:          gitlabToken,
-		GeminiModel:          env("GEMINI_MODEL", defaultGeminiModel),
-		GeminiKey:            env("GEMINI_API_KEY", ""),
-		ClaudeModel:          env("CLAUDE_MODEL", defaultClaudeModel),
-		ClaudeKey:            env("CLAUDE_API_KEY", ""),
-		ClaudeMaxTokens:      envInt("CLAUDE_MAX_TOKENS", defaultClaudeMaxTokens),
-		ClaudeTimeoutMinutes: envInt("CLAUDE_TIMEOUT_MINUTES", defaultClaudeTimeoutMinutes),
+		GeminiModel:          lookupEnv("GEMINI_MODEL", defaultGeminiModel),
+		GeminiKey:            lookupEnv("GEMINI_API_KEY", ""),
+		ClaudeModel:          lookupEnv("CLAUDE_MODEL", defaultClaudeModel),
+		ClaudeKey:            lookupEnv("CLAUDE_API_KEY", ""),
+		ClaudeMaxTokens:      lookupEnvInt("CLAUDE_MAX_TOKENS", defaultClaudeMaxTokens),
+		ClaudeTimeoutMinutes: lookupEnvInt("CLAUDE_TIMEOUT_MINUTES", defaultClaudeTimeoutMinutes),
 	}
 }
 
-func require(name, def string) string {
+// applyEnvFile reads path as a dotenv file and sets process environment keys that are unset
+// or empty after trim. Missing files are ignored. Malformed lines are skipped.
+func applyEnvFile(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			continue
+		}
+		_ = os.Setenv(key, value)
+	}
+}
+
+func requireEnvVar(name, def string) string {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
 		v = def
@@ -63,7 +116,7 @@ func require(name, def string) string {
 	return v
 }
 
-func env(name, def string) string {
+func lookupEnv(name, def string) string {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
 		return def
@@ -71,7 +124,7 @@ func env(name, def string) string {
 	return v
 }
 
-func envInt(name string, def int) int {
+func lookupEnvInt(name string, def int) int {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
 		return def

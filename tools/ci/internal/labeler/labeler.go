@@ -47,7 +47,7 @@ var areaRules = []areaRule{
 }
 
 // commitTypeLabel extracts the type::* label from the merge request title, returning "" if unmapped or invalid.
-func commitTypeLabel(title string) string {
+func resolveCommitTypeLabel(title string) string {
 	m := conventionalHeaderRe.FindStringSubmatch(strings.TrimSpace(title))
 	if m == nil {
 		return ""
@@ -56,7 +56,7 @@ func commitTypeLabel(title string) string {
 }
 
 // isBreakingChange identifies breaking changes via title header "!" markers or description footers.
-func isBreakingChange(title, description string) bool {
+func detectBreakingChange(title, description string) bool {
 	m := conventionalHeaderRe.FindStringSubmatch(strings.TrimSpace(title))
 	if m != nil && m[3] == "!" {
 		return true
@@ -92,22 +92,22 @@ func New(gl *gitlab.Client) *Labeler {
 	return &Labeler{gitlab: gl}
 }
 
-// RunOnMR is the shared entrypoint for the mr-labeler binary.
-func RunOnMR(apiURL, projectID, mriid, token string) error {
-	return New(gitlab.New(apiURL, projectID, mriid, token)).Run()
+// ExecuteLabeling is the shared entrypoint for the mr-labeler binary.
+func ExecuteLabeling(apiURL, projectID, mriid, token string) error {
+	return New(gitlab.New(apiURL, projectID, mriid, token)).Execute()
 }
 
-func (l *Labeler) Run() error {
+func (l *Labeler) Execute() error {
 	mr, err := l.gitlab.FetchMR()
 	if err != nil {
 		return fmt.Errorf("fetch MR changes: %w", err)
 	}
 
 	var labels []string
-	if lbl := commitTypeLabel(mr.Title); lbl != "" {
+	if lbl := resolveCommitTypeLabel(mr.Title); lbl != "" {
 		labels = append(labels, lbl)
 	}
-	if isBreakingChange(mr.Title, mr.Description) {
+	if detectBreakingChange(mr.Title, mr.Description) {
 		labels = append(labels, "breaking-change")
 	}
 	labels = append(labels, resolveAreaLabels(mr.Changes)...)

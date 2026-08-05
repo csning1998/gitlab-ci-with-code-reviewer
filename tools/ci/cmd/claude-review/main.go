@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := config.LoadEnvFile()
 	if cfg.ClaudeToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'CLAUDE_MR_REVIEWER' is missing.")
 		os.Exit(1)
@@ -24,7 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 	timeout := time.Duration(cfg.ClaudeTimeoutMinutes) * time.Minute
-	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken,
+	if err := review.ExecuteCodeReview(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken,
 		claude.New(cfg.ClaudeModel, cfg.ClaudeKey, cfg.ClaudeMaxTokens, timeout)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

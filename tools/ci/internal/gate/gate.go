@@ -10,8 +10,8 @@ import (
 
 const defaultMaxRunes = 5000
 
-// MaxRunes reads the MAX_DESCRIPTION_CHARS limit, falling back to the default.
-func MaxRunes() (int, error) {
+// ResolveDescriptionRuneLimit reads the MAX_DESCRIPTION_CHARS limit, falling back to the default.
+func ResolveDescriptionRuneLimit() (int, error) {
 	v := strings.TrimSpace(os.Getenv("MAX_DESCRIPTION_CHARS"))
 	if v == "" {
 		return defaultMaxRunes, nil
@@ -23,11 +23,11 @@ func MaxRunes() (int, error) {
 	return n, nil
 }
 
-// CheckLength validates that description length does not exceed max.
+// ValidateDescriptionLength validates that description length does not exceed max.
 // Evaluation uses UTF-8 rune counts instead of byte lengths for CJK text accuracy.
 // Input must be retrieved from the GitLab API instead of CI_MERGE_REQUEST_DESCRIPTION,
 // which is capped at 2700 characters by GitLab CI.
-func CheckLength(description string, max int) error {
+func ValidateDescriptionLength(description string, max int) error {
 	if n := utf8.RuneCountInString(description); n > max {
 		return fmt.Errorf("MR description is %d characters; the limit is %d. Shorten it and update the MR", n, max)
 	}

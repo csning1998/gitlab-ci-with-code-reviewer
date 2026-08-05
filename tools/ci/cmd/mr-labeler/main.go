@@ -11,12 +11,12 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := config.LoadEnvFile()
 	if cfg.GitLabToken == "" {
 		fmt.Fprintln(os.Stderr, "Error: need CLAUDE_MR_REVIEWER or GEMINI_MR_REVIEWER to read and label the MR.")
 		os.Exit(1)
 	}
-	if err := labeler.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.GitLabToken); err != nil {
+	if err := labeler.ExecuteLabeling(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.GitLabToken); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

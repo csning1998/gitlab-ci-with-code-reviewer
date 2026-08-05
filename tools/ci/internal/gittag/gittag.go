@@ -41,7 +41,7 @@ func PushTag(repoPath, remoteURL, tagName, username, password string) error {
 		return fmt.Errorf("failed to open repository at path %q: %w", repoPath, err)
 	}
 
-	remote, err := gitremote.Set(repo, remoteURL)
+	remote, err := gitremote.ConfigureOriginRemoteURL(repo, remoteURL)
 	if err != nil {
 		return fmt.Errorf("failed to configure push remote for URL %q: %w", remoteURL, err)
 	}

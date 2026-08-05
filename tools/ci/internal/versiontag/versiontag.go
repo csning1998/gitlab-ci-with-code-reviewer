@@ -113,14 +113,14 @@ func compareVersions(majorA, minorA, patchA, majorB, minorB, patchB int) int {
 	return patchA - patchB
 }
 
-// DirChanged reports whether any files under dir were modified between parentSHA and sha commit
+// DetectDirectoryTreeChanges reports whether any files under dir were modified between parentSHA and sha commit
 // trees. Passing "." or "" matches changes anywhere in the repository.
-func DirChanged(repo *git.Repository, parentSHA, sha, dir string) (bool, error) {
-	fromTree, err := treeAt(repo, parentSHA)
+func DetectDirectoryTreeChanges(repo *git.Repository, parentSHA, sha, dir string) (bool, error) {
+	fromTree, err := resolveCommitTree(repo, parentSHA)
 	if err != nil {
 		return false, err
 	}
-	toTree, err := treeAt(repo, sha)
+	toTree, err := resolveCommitTree(repo, sha)
 	if err != nil {
 		return false, err
 	}
@@ -136,21 +136,21 @@ func DirChanged(repo *git.Repository, parentSHA, sha, dir string) (bool, error) 
 		if path == "" {
 			path = change.From.Name
 		}
-		if pathUnderDir(path, prefix) {
+		if pathContainedInDirectory(path, prefix) {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func pathUnderDir(path, dir string) bool {
+func pathContainedInDirectory(path, dir string) bool {
 	if dir == "" || dir == "." {
 		return true
 	}
 	return path == dir || strings.HasPrefix(path, dir+"/")
 }
 
-func treeAt(repo *git.Repository, sha string) (*object.Tree, error) {
+func resolveCommitTree(repo *git.Repository, sha string) (*object.Tree, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve commit %q: %w", sha, err)

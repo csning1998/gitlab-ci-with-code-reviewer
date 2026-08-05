@@ -12,8 +12,9 @@ import (
 	"ci-tools/internal/gitremote"
 )
 
-// HasChanges reports whether the repository working tree contains dirty state or untracked files.
-func HasChanges(repoPath string) (bool, error) {
+// DetectWorktreeModifications reports whether the repository working tree contains
+// modifications or untracked files relative to the index and HEAD.
+func DetectWorktreeModifications(repoPath string) (bool, error) {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to open repository at path %q: %w", repoPath, err)
@@ -52,7 +53,7 @@ func CommitAndPush(repoPath, message, branch, remoteURL, username, password stri
 		return fmt.Errorf("failed to create commit %q: %w", message, err)
 	}
 
-	remote, err := gitremote.Set(repo, remoteURL)
+	remote, err := gitremote.ConfigureOriginRemoteURL(repo, remoteURL)
 	if err != nil {
 		return fmt.Errorf("failed to configure push remote for URL %q: %w", remoteURL, err)
 	}

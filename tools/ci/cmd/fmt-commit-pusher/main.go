@@ -10,9 +10,9 @@ import (
 	"ci-tools/internal/fmtpush"
 )
 
-// run checks repoPath for formatting changes, commits modifications, and pushes them to branch.
+// executeFormatCommitPush checks repoPath for formatting changes, commits modifications, and pushes them to branch.
 // Execution logic is separated from flags and process exit for unit testing.
-func run(repoPath, message, branch, remoteURL, username, password string, stdout, stderr io.Writer) int {
+func executeFormatCommitPush(repoPath, message, branch, remoteURL, username, password string, stdout, stderr io.Writer) int {
 	if message == "" || branch == "" || remoteURL == "" || username == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --message, --branch, --remote-url, and --username are required.")
 		return 1
@@ -22,7 +22,7 @@ func run(repoPath, message, branch, remoteURL, username, password string, stdout
 		return 1
 	}
 
-	changed, err := fmtpush.HasChanges(repoPath)
+	changed, err := fmtpush.DetectWorktreeModifications(repoPath)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
@@ -49,5 +49,5 @@ func main() {
 	username := flag.String("username", "gitlab-ci-token", "HTTP basic auth username for the push")
 	flag.Parse()
 
-	os.Exit(run(*repo, *message, *branch, *remoteURL, *username, os.Getenv("CI_JOB_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeFormatCommitPush(*repo, *message, *branch, *remoteURL, *username, os.Getenv("CI_JOB_TOKEN"), os.Stdout, os.Stderr))
 }
