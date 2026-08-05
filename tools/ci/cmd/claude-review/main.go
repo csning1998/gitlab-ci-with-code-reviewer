@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"ci-tools/internal/claude"
 	"ci-tools/internal/config"
@@ -22,8 +23,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'CLAUDE_API_KEY' is missing.")
 		os.Exit(1)
 	}
+	timeout := time.Duration(cfg.ClaudeTimeoutMinutes) * time.Minute
 	if err := review.RunOnMR(cfg.APIURL, cfg.ProjectID, cfg.MRIID, cfg.ClaudeToken,
-		claude.New(cfg.ClaudeModel, cfg.ClaudeKey, cfg.ClaudeMaxTokens)); err != nil {
+		claude.New(cfg.ClaudeModel, cfg.ClaudeKey, cfg.ClaudeMaxTokens, timeout)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

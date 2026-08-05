@@ -48,24 +48,34 @@ func DetermineBump(subject string) Bump {
 	}
 }
 
-// NextVersion applies bump to a MAJOR.MINOR.PATCH version string.
-func NextVersion(latest string, bump Bump) (string, error) {
-	parts := strings.Split(latest, ".")
+// ParseVersion splits a MAJOR.MINOR.PATCH version string into its three integer components.
+func ParseVersion(version string) (major, minor, patch int, err error) {
+	parts := strings.Split(version, ".")
 	if len(parts) != 3 {
-		return "", fmt.Errorf("latest version %q is not in MAJOR.MINOR.PATCH form", latest)
+		return 0, 0, 0, fmt.Errorf("version %q is not in MAJOR.MINOR.PATCH form", version)
 	}
 
-	major, err := strconv.Atoi(parts[0])
+	major, err = strconv.Atoi(parts[0])
 	if err != nil {
-		return "", fmt.Errorf("invalid major version in %q: %w", latest, err)
+		return 0, 0, 0, fmt.Errorf("invalid major version in %q: %w", version, err)
 	}
-	minor, err := strconv.Atoi(parts[1])
+	minor, err = strconv.Atoi(parts[1])
 	if err != nil {
-		return "", fmt.Errorf("invalid minor version in %q: %w", latest, err)
+		return 0, 0, 0, fmt.Errorf("invalid minor version in %q: %w", version, err)
 	}
-	patch, err := strconv.Atoi(parts[2])
+	patch, err = strconv.Atoi(parts[2])
 	if err != nil {
-		return "", fmt.Errorf("invalid patch version in %q: %w", latest, err)
+		return 0, 0, 0, fmt.Errorf("invalid patch version in %q: %w", version, err)
+	}
+
+	return major, minor, patch, nil
+}
+
+// NextVersion applies bump to a MAJOR.MINOR.PATCH version string.
+func NextVersion(latest string, bump Bump) (string, error) {
+	major, minor, patch, err := ParseVersion(latest)
+	if err != nil {
+		return "", err
 	}
 
 	switch bump {

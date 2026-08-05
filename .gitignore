@@ -20,6 +20,10 @@ terraform.tfstate.backup
 selinux/*.mod
 selinux/*.pp
 
+## BLOB
+fmt-commit-pusher
+claude-review
+
 ## Go
 tools/ci/coverage.out
 tools/ci/coverage.raw.out

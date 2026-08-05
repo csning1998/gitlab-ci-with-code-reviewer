@@ -15,7 +15,7 @@ spec:
       default: ['ansible/**', 'ansible.cfg']
       description: 'rules:changes globs gating the ansible jobs.'
 ---
-ansible-lint:
+lint:ansible:
   stage: lint
   image: '$[[ inputs.ansible_lint_image ]]'
   allow_failure: true
@@ -29,8 +29,8 @@ ansible-lint:
     - ansible-lint
 
 # Checkov Ansible scan failures execute with --soft-fail to treat findings as non-blocking technical debt.
-checkov-ansible:
-  stage: lint
+security:checkov-ansible:
+  stage: security
   image:
     name: '$[[ inputs.checkov_image ]]'
     entrypoint: ['']

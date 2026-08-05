@@ -25,6 +25,12 @@ spec:
       description: >-
         Max output tokens for the Claude Messages API request; raise this if large diffs
         truncate the JSON response.
+    claude_timeout_minutes:
+      type: number
+      default: 10
+      description: >-
+        Timeout, in minutes, for the Claude Messages API request; raise this if large diffs
+        exceed the deadline before the response completes.
     enable_commitlint:
       type: boolean
       default: true
@@ -47,7 +53,7 @@ spec:
       type: array
       default: []
       description: >-
-        Runner tags required to schedule sonarqube-scan onto a runner with network access
+        Runner tags required to schedule security:sonarqube onto a runner with network access
         to the SonarQube instance. Leave empty when the default runner already has that access.
     sonar_go_coverage_path:
       default: ''
@@ -55,7 +61,7 @@ spec:
         Path to a go test -coverprofile report, relative to the repository root. Leave empty
         when no Go coverage report exists; the corresponding sonar-scanner property is omitted.
 ---
-# core.yml declares master pipeline stages and workflow auto-cancel rules; language components attach jobs to these stages.
+# Defines core pipeline stages and workflow auto-cancellation rules for downstream language components.
 workflow:
   auto_cancel:
     on_new_commit: interruptible
@@ -69,8 +75,23 @@ stages:
   - review
   - deploy
 
-# Rejects merge requests exceeding description character bounds prior to invoking LLM reviewer endpoints.
-check-mr-description:
+# Exports fmt-commit-pusher binary from reviewer_image as a build artifact.
+# Tool-specific format jobs lack this binary and retrieve it via stage artifact dependencies.
+fmt:prepare-pusher:
+  stage: format
+  image: '$[[ inputs.reviewer_image ]]'
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - cp /usr/local/bin/fmt-commit-pusher .
+  artifacts:
+    paths:
+      - fmt-commit-pusher
+    expire_in: 1 hour
+
+# Enforces maximum merge request description character limits prior to LLM review invocation.
+misc:mr-gate:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
@@ -81,9 +102,9 @@ check-mr-description:
   script:
     - mr-gate
 
-# Applies deterministic labels (type::*, breaking-change, area::*) independent of whether the
-# manually-triggered LLM review jobs below run in this pipeline.
-mr-labeler:
+# Applies deterministic classification labels (type::*, breaking-change, area::*)
+# independently of manual LLM review execution.
+misc:mr-labeler:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
@@ -93,7 +114,7 @@ mr-labeler:
   script:
     - mr-labeler
 
-commitlint:
+lint:commit:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
@@ -107,7 +128,7 @@ commitlint:
       commitlint --config /etc/commitlint/commitlint.config.cjs \
       --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to "$CI_COMMIT_SHA"
 
-gitleaks:
+security:gitleaks:
   stage: security
   image:
     name: '$[[ inputs.gitleaks_image ]]'
@@ -119,13 +140,13 @@ gitleaks:
   script:
     - gitleaks detect --log-opts="$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA" --redact -v
 
-sonarqube-scan:
+security:sonarqube:
   stage: security
   image:
     name: '$[[ inputs.sonar_scanner_image ]]'
     entrypoint: ['']
   needs:
-    - job: go-test
+    - job: test:go
       optional: true
   interruptible: true
   allow_failure: true
@@ -149,7 +170,7 @@ sonarqube-scan:
         -Dsonar.test.inclusions="**/*_test.go" \
         $GO_COVERAGE_ARG
 
-markdownlint:
+lint:markdown:
   stage: lint
   image:
     name: '$[[ inputs.markdownlint_image ]]'
@@ -164,7 +185,7 @@ markdownlint:
   script:
     - mdl .
 
-yamllint:
+lint:yaml:
   stage: lint
   image: '$[[ inputs.yamllint_image ]]'
   needs: []
@@ -177,14 +198,15 @@ yamllint:
   script:
     - yamllint .
 
-# Omit explicit job dependencies (needs) to maintain compatibility across varying language component inclusions.
-claude-code-review:
+# Omits explicit job dependencies (`needs`) to preserve compatibility across optional language component inclusions.
+review:claude-code:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
   variables:
     CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
     CLAUDE_MAX_TOKENS: '$[[ inputs.claude_max_tokens ]]'
+    CLAUDE_TIMEOUT_MINUTES: '$[[ inputs.claude_timeout_minutes ]]'
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CLAUDE_MODEL != ""'
       when: manual
@@ -193,7 +215,7 @@ claude-code-review:
   script:
     - claude-review
 
-gemini-code-review:
+review:gemini-code:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
   variables:

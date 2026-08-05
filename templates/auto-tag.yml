@@ -1,0 +1,33 @@
+---
+spec:
+  inputs:
+    reviewer_image:
+      description: 'Required; prebuilt reviewer image providing the auto-tag binary.'
+    stage:
+      default: 'deploy'
+      description: >-
+        Pipeline stage running this job. The default matches core.yml's stage list; override
+        this when the including project declares its own stages without a deploy entry.
+    config_path:
+      default: '.gitlab/versioning.yml'
+      description: >-
+        Path, relative to the repository root, to the versioning configuration declaring the
+        modules this job tags. See tools/ci/internal/versiontag for the file's schema; a module
+        with an empty name and dir "." reproduces single, whole-repository tagging.
+---
+# Automatically calculates and pushes a new Semantic Version tag derived from Conventional Commit
+# headers on squash-merge commits. Replaces manual tagging procedures, eliminating tag detachment
+# caused by commit hash reassignments during GitLab squash-and-merge operations. Requires a
+# TAG_PUSH_TOKEN CI/CD variable, a Project Access Token with the write_repository scope, since
+# GitLab excludes CI_JOB_TOKEN-authenticated pushes from triggering downstream pipelines.
+auto-tag:
+  stage: '$[[ inputs.stage ]]'
+  image: '$[[ inputs.reviewer_image ]]'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  variables:
+    GIT_DEPTH: '0'
+  script:
+    - |
+      auto-tag --sha "$CI_COMMIT_SHA" --config "$[[ inputs.config_path ]]" --username "gitlab-ci-token" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"

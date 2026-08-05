@@ -16,12 +16,13 @@ type Config struct {
 	ClaudeToken string
 	// GitLabToken holds whichever of GeminiToken/ClaudeToken is configured, for binaries that
 	// only need GitLab API access (mr-gate, mr-labeler) and are indifferent to LLM provider.
-	GitLabToken     string
-	GeminiModel     string
-	GeminiKey       string
-	ClaudeModel     string
-	ClaudeKey       string
-	ClaudeMaxTokens int
+	GitLabToken          string
+	GeminiModel          string
+	GeminiKey            string
+	ClaudeModel          string
+	ClaudeKey            string
+	ClaudeMaxTokens      int
+	ClaudeTimeoutMinutes int
 }
 
 // Load populates Config from process environment variables.
@@ -35,17 +36,18 @@ func Load() Config {
 		gitlabToken = geminiToken
 	}
 	return Config{
-		APIURL:          require("CI_API_V4_URL", ""),
-		ProjectID:       require("CI_PROJECT_ID", ""),
-		MRIID:           require("CI_MERGE_REQUEST_IID", ""),
-		GeminiToken:     geminiToken,
-		ClaudeToken:     claudeToken,
-		GitLabToken:     gitlabToken,
-		GeminiModel:     env("GEMINI_MODEL", defaultGeminiModel),
-		GeminiKey:       env("GEMINI_API_KEY", ""),
-		ClaudeModel:     env("CLAUDE_MODEL", defaultClaudeModel),
-		ClaudeKey:       env("CLAUDE_API_KEY", ""),
-		ClaudeMaxTokens: envInt("CLAUDE_MAX_TOKENS", defaultClaudeMaxTokens),
+		APIURL:               require("CI_API_V4_URL", ""),
+		ProjectID:            require("CI_PROJECT_ID", ""),
+		MRIID:                require("CI_MERGE_REQUEST_IID", ""),
+		GeminiToken:          geminiToken,
+		ClaudeToken:          claudeToken,
+		GitLabToken:          gitlabToken,
+		GeminiModel:          env("GEMINI_MODEL", defaultGeminiModel),
+		GeminiKey:            env("GEMINI_API_KEY", ""),
+		ClaudeModel:          env("CLAUDE_MODEL", defaultClaudeModel),
+		ClaudeKey:            env("CLAUDE_API_KEY", ""),
+		ClaudeMaxTokens:      envInt("CLAUDE_MAX_TOKENS", defaultClaudeMaxTokens),
+		ClaudeTimeoutMinutes: envInt("CLAUDE_TIMEOUT_MINUTES", defaultClaudeTimeoutMinutes),
 	}
 }
 

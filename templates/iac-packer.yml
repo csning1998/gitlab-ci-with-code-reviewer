@@ -13,25 +13,20 @@ spec:
       description: 'rules:changes globs gating the fmt job.'
 ---
 # Disables job cancellation on new commits to guarantee completion of automated formatting push operations.
-packer-fmt:
+fmt:packer:
   stage: format
   image:
     name: '$[[ inputs.packer_image ]]'
     entrypoint: ['']
   interruptible: false
+  needs:
+    - job: fmt:prepare-pusher
+      artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.packer_globs ]]
-  before_script:
-    - apk add --no-cache git
-    - git config user.email "gitlab-ci@noreply"
-    - git config user.name "GitLab CI"
-    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
   script:
     - packer fmt -recursive $[[ inputs.packer_dir ]]
     - |
-      if ! git diff --quiet; then
-        git add -A
-        git commit -m "style: packer fmt"
-        git push origin HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
-      fi
+      ./fmt-commit-pusher --message "style: packer fmt" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"

@@ -17,7 +17,7 @@ spec:
       description: 'Command to run Python tests.'
     test_stage:
       default: 'test'
-      description: 'Stage for the python-test job.'
+      description: 'Stage for the test:python job.'
 ---
 # Consuming pipelines must declare stages corresponding to the stages utilized by this component.
 
@@ -28,31 +28,15 @@ spec:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.python_globs ]]
 
-# Shared Git authentication configuration for automated formatting commits.
-.git-setup:
-  before_script:
-    - apk add --no-cache git
-    - git config user.email "gitlab-ci@noreply"
-    - git config user.name "GitLab CI"
-    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
-
-# Shared script block committing and pushing formatting changes back to source branch.
-.ruff-fmt-commit:
-  script:
-    - |
-      if ! git diff --quiet; then
-        git add -A
-        git commit -m "style: ruff format and autofix"
-        git push origin HEAD:${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
-      fi
-
-python-fmt:
+fmt:python:
   extends: .python-base
   stage: format
   image: '$[[ inputs.python_image ]]'
   interruptible: false # Disables job cancellation on new commits to guarantee completion of git push operations.
+  needs:
+    - job: fmt:prepare-pusher
+      artifacts: true
   before_script:
-    - !reference [.git-setup, before_script]
     - |
       if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
         if ! command -v uv >/dev/null 2>&1; then
@@ -70,9 +54,11 @@ python-fmt:
         ruff format .
         ruff check --fix . || true
       fi
-    - !reference [.ruff-fmt-commit, script]
+    - |
+      ./fmt-commit-pusher --message "style: ruff format and autofix" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 
-python-lint:
+lint:python:
   extends: .python-base
   stage: lint
   image: '$[[ inputs.python_image ]]'
@@ -93,7 +79,7 @@ python-lint:
         ruff check .
       fi
 
-python-test:
+test:python:
   extends: .python-base
   stage: '$[[ inputs.test_stage ]]'
   image: '$[[ inputs.python_image ]]'
