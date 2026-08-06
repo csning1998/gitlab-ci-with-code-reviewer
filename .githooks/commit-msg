@@ -13,8 +13,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 # which requires only .git/ rather than the full working tree. MSG_FILE already resolves to a
 # path beneath .git/ (COMMIT_EDITMSG). No source outside .git/ needs to be mounted.
 podman run --rm \
-    -v "${REPO_ROOT}/.git":/repo/.git \
-    -v "$(realpath "${MSG_FILE}")":/repo/.git/COMMIT_EDITMSG_HOOK \
+    -v "${REPO_ROOT}/.git":/repo/.git:ro \
+    -v "$(realpath "${MSG_FILE}")":/repo/.git/COMMIT_EDITMSG_HOOK:ro \
     -w /repo \
     "$IMAGE" \
-    commitlint --config /etc/commitlint/commitlint.config.cjs --edit .git/COMMIT_EDITMSG_HOOK
+    commitlint --config /etc/commitlint/commitlint.config.cjs --cwd /repo --edit .git/COMMIT_EDITMSG_HOOK
