@@ -4,7 +4,11 @@
 
 ### Item A. Purpose
 
-Apply classification labels without an LLM. Every MR pipeline then receives consistent `type::*`, optional `breaking-change`, and `area::*` labels from title, description, and path heuristics.
+Apply classification labels without an LLM. Every MR pipeline receives consistent `type::*`, optional `breaking-change`, and `area::*` labels from title, description, and path heuristics.
+
+### Item B. Boundary with LLM Review
+
+`mr-labeler` owns `type::*`, `breaking-change`, and `area::*`. The `security` label depends on findings from the current LLM review run and is owned by [review](review.md).
 
 ## Section 2. Behavior
 
@@ -17,17 +21,18 @@ flowchart TB
     break[detectBreakingChange]
     area[resolveAreaLabels]
     apply[AddLabels]
-
     fetch --> type --> break --> area --> apply
 ```
 
-Binary entrypoint: `labeler.ExecuteLabeling`, which constructs a `Labeler` and calls `Execute`.
+`labeler.ExecuteLabeling` is the binary entrypoint, where `ExecuteLabeling` constructs a `Labeler` and calls `Execute`.
+
+`AddLabels` uses the GitLab `add_labels` parameter as a comma-separated string. The API appends the supplied labels. Existing labels on the merge request remain in place.
 
 ## Section 3. Policy
 
 ### Item A. Type Mapping
 
-Subject pattern: `^([a-z]+)(\([^)]*\))?(!)?:\s` (see `resolveCommitTypeLabel` in `internal/labeler`).
+Subject pattern: `^([a-z]+)(\([^)]*\))?(!)?:\s` (refer to `resolveCommitTypeLabel` in `internal/labeler`).
 
 | Commit type                               | Label                          |
 | ----------------------------------------- | ------------------------------ |
@@ -47,9 +52,11 @@ Subject pattern: `^([a-z]+)(\([^)]*\))?(!)?:\s` (see `resolveCommitTypeLabel` in
 
 Either condition adds `breaking-change`.
 
+Tag major bumps under [versioning](versioning.md) use only the subject-line `!`. Body footers leave SemVer major increments unchanged.
+
 ### Item C. Area Rules (`resolveAreaLabels`)
 
-First-match accumulation over changed paths (deduplicated):
+First-match accumulation over changed paths with deduplication:
 
 | Label                  | Path heuristic (summary)                                     |
 | ---------------------- | ------------------------------------------------------------ |
@@ -59,9 +66,10 @@ First-match accumulation over changed paths (deduplicated):
 | `area::backend`        | `backend/`                                                   |
 | `area::observability`  | grafana, prometheus, monitoring, observability path segments |
 
-Rules are repository-opinionated defaults for this repository layout. Forks that require different areas MUST change `internal/labeler` and cut a release; inputs do not currently parameterize the rule table.
+Rules are repository-opinionated defaults for this repository layout. Forks that require different areas MUST change `internal/labeler` and cut a release. Inputs currently omit parameterization of the rule table.
 
 ## Section 4. Verification
 
 1. `go test` under `tools/ci/internal/labeler`.
-2. Open an MR titled `fix(ci): ...` touching `templates/core.yml`; expect `type::fix` and `area::CI`.
+2. Open an MR titled `fix(ci): ...` touching `templates/core.yml`. Expect `type::fix` and `area::CI`.
+3. Confirm a prior human label remains after the job runs under `add_labels` append semantics.

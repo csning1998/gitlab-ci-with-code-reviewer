@@ -2,7 +2,7 @@
 
 This dimension specializes Catalog components. Each page is a **contract sheet**: inclusion criteria, required inputs, emitted jobs, side effects, and verification. Defaults are summarized; the authoritative schema remains `templates/<name>.yml` `spec.inputs`.
 
-Stage semantics are defined in [pipeline-protocol.md](../pipeline-protocol.md). Component pages bind jobs to those stages; they MUST NOT redefine the stage model.
+Stage semantics are defined in [pipeline-protocol.md](../pipeline-protocol.md). Component pages bind jobs to the stages defined there and MUST NOT redefine the stage model.
 
 ## Section 1. Topology
 

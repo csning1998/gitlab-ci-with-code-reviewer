@@ -36,4 +36,4 @@ Creates a module package visible in the project Terraform Module Registry.
 
 ## Section 3. Verification
 
-Push a tag that matches `tag_prefix`; confirm a single deploy job for that module runs and the registry lists the new version.
+Push a tag that matches `tag_prefix`. Confirm a single deploy job for the tagged module runs and the registry lists the new version.

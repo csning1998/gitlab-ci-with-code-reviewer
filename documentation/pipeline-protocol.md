@@ -1,6 +1,6 @@
 # Pipeline Protocol
 
-This dimension specifies the time-ordered job protocol that `core` establishes and that language or IaC components extend. Component pages MUST NOT redefine stage semantics; they bind jobs to those stages under `rules:` and `changes:`.
+This document specifies the time-ordered job protocol established by `core` and extended by language or IaC components. Component pages bind jobs to the stages under `rules:` and `changes:`. Component pages MUST NOT redefine stage semantics.
 
 ## Section 1. Topology
 
@@ -16,7 +16,7 @@ This dimension specifies the time-ordered job protocol that `core` establishes a
 6. `review`
 7. `deploy`
 
-This repository self-validation pipeline inserts a `release` stage for image and Catalog publication. Consuming projects that include `auto-tag` typically map that job onto `deploy` or a custom stage via the `stage` input.
+The product-repository self-validation pipeline inserts a `release` stage for image and Catalog publication. Consuming projects that include `auto-tag` typically map the auto-tag job onto `deploy` or a custom stage via the `stage` input.
 
 `workflow.auto_cancel.on_new_commit` is `interruptible` at the workflow level. Individual jobs that push git objects set `interruptible: false`, which prevents a newer pipeline from canceling an in-progress format push.
 
@@ -100,7 +100,7 @@ flowchart TB
 1. **Default branch:** `auto-tag` reads Conventional Commit type from the squash-merge subject (and module config under `.gitlab/versioning.yml`), computes the next version, and pushes a tag using `TAG_PUSH_TOKEN`.
 2. **Tag pipeline:** builds `reviewer:X.Y.Z`, fails on CRITICAL/HIGH Trivy findings, publishes Catalog/Release metadata.
 
-GitLab does not start a new pipeline for tag pushes authenticated solely with `CI_JOB_TOKEN`. That platform rule is why `TAG_PUSH_TOKEN` exists.
+GitLab omits a new pipeline for tag pushes authenticated solely with `CI_JOB_TOKEN`. `TAG_PUSH_TOKEN` restores a normal tag pipeline under the GitLab job-token restriction.
 
 ### Item C. Scheduling Rules (Cross-Cutting)
 

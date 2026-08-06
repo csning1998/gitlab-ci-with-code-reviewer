@@ -32,7 +32,7 @@ auto-tag --sha "$CI_COMMIT_SHA" --config "<config_path>" \
     --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 ```
 
-Authentication for the push uses `TAG_PUSH_TOKEN` (see [service-interface](../service-interface.md) and [versioning](../mechanisms/versioning.md)).
+Authentication for the push uses `TAG_PUSH_TOKEN` (refer to [service-interface](../service-interface.md) and [versioning](../mechanisms/versioning.md)).
 
 ### Item C. Versioning File Shape
 
@@ -48,7 +48,7 @@ Non-empty `name` values select tag prefixes and directory-scoped change detectio
 
 ### Item D. Side Effects
 
-Creates and pushes one or more git tags. Those tags SHOULD start the release pipeline that publishes images and Catalog entries for this product.
+Creates and pushes one or more git tags. Pushed tags SHOULD start the release pipeline that publishes images and Catalog entries for this product.
 
 ## Section 3. Verification
 

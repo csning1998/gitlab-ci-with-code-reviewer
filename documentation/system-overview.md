@@ -21,7 +21,7 @@ This repository packages those concerns as **versioned GitLab CI/CD Catalog comp
     2. A multi-tenant SaaS review product with a UI separate from GitLab discussions.
     3. Replacement of project-specific test matrices beyond the jobs each language component defines.
     4. Automatic, non-manual LLM review as a blocking merge gate (review jobs are manual and `allow_failure: true` in `core`).
-    5. Full-repository LLM context on every review (deferred; see [decisions](decisions/README.md)).
+    5. Full-repository LLM context on every review (deferred; refer to [decisions](decisions/README.md)).
 
 ## Section 2. Topology
 
@@ -84,7 +84,7 @@ flowchart LR
 1. **Pinned versions only.** `core` requires `reviewer_image` with no default. Consumers MUST NOT use `:latest`. This repository may use `:edge` only for pre-merge self-review of unreleased binaries.
 2. **Explicit side-effect jobs.** Formatting commits and version tags are dedicated binaries with documented credentials, separate from lint tool images.
 3. **Deterministic policy before probabilistic review.** `mr-labeler` and `mr-gate` run without an LLM, which keeps classification and description limits available when model keys are absent.
-4. **Shared mechanisms, specialized surfaces.** Language components own tool images and globs; they reuse `fmt-commit-pusher` exported by `fmt:prepare-pusher`.
+4. **Shared mechanisms, specialized surfaces.** Language components own tool images and globs and reuse `fmt-commit-pusher` exported by `fmt:prepare-pusher`.
 5. **Contract identifiers over paraphrase.** Job names follow `<category>:<specific>`. Inputs live in `spec.inputs`. Architecture prose cites those names.
 
 ## Section 5. Verification

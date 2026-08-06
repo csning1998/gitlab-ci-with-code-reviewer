@@ -48,7 +48,7 @@ Catalog resolution is instance-scoped.
 | Class                    | Examples                                   | Storage                   | Rotation note                                                                          |
 | ------------------------ | ------------------------------------------ | ------------------------- | -------------------------------------------------------------------------------------- |
 | GitLab reviewer PAT      | `CLAUDE_MR_REVIEWER`, `GEMINI_MR_REVIEWER` | CI variables (masked)     | Developer + `api`/`read_api`                                                           |
-| Model API keys           | `CLAUDE_API_KEY`, `GEMINI_API_KEY`         | CI variables              | Provider console; Claude automation deferred (see [decisions](../decisions/README.md)) |
+| Model API keys           | `CLAUDE_API_KEY`, `GEMINI_API_KEY`         | CI variables              | Provider console; Claude automation deferred (refer to [decisions](../decisions/README.md)) |
 | Tag push token           | `TAG_PUSH_TOKEN`                           | CI variable               | `write_repository`; distinct from job token                                            |
 | Sonar                    | `SONAR_HOST_URL`, `SONAR_TOKEN`            | CI variables              | Only if `enable_sonarqube`                                                             |
 | Terraform management PAT | `gitlab_token` / backend password          | Local tfvars (gitignored) | Owner/API for runner registration                                                      |

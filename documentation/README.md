@@ -2,7 +2,7 @@
 
 This directory partitions `gitlab-ci-with-code-reviewer` into **orthogonal dimensions** that are MECE with respect to architectural concern. Each dimension isolates one class of **underlying questions** about the same system. Document order defines neither a total order nor a prerequisite partial order among dimensions.
 
-A top-down presentation order (problem statement, then service boundary, then runtime behavior) remains a valid first pass through the dimension set. That order is instructional.
+A top-down presentation order (problem statement, then service boundary, then runtime behavior) remains a valid instructional first pass through the dimension set.
 
 ## Section 1. Scope
 

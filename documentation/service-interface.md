@@ -16,13 +16,13 @@ include:
 Normative constraints:
 
 1. `<version>` MUST be an explicit release tag (for example `1.2.3`) for production consumers. Branch names are out of contract.
-2. `<component>` MUST be one of the published template basenames (see [components](components/README.md)).
+2. `<component>` MUST be one of the published template basenames (refer to [components](components/README.md)).
 3. Including **`core` is mandatory** before language or IaC packs that rely on shared stages, `fmt:prepare-pusher`, gate, labeler, or review jobs.
 4. `core.inputs.reviewer_image` MUST be set to the registry image whose tag equals `<version>`:
 
     `registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:<version>`
 
-5. Self-hosted GitLab instances cannot resolve the gitlab.com Catalog path. They MUST mirror the project and image, then substitute the instance-local component path (see [substrate](substrate/README.md)).
+5. Self-hosted GitLab instances cannot resolve the gitlab.com Catalog path and MUST mirror the project and image, then substitute the instance-local component path (refer to [substrate](substrate/README.md)).
 
 ### Item B. Minimal Consumer Skeleton
 
@@ -65,7 +65,7 @@ Gate and labeler accept **either** reviewer PAT through `internal/config` resolu
     2. Fine-grained tokens that omit MR discussion permissions yield `403` on inline notes.
     3. Extraneous integration scopes are unnecessary; keep `api` and `read_api` only.
 - **Repository write for format jobs**
-  Format jobs push commits to the MR source branch through HTTPS using `CI_JOB_TOKEN` (see `fmt-commit-pusher`). The project MUST allow job token repository writes under **Settings > CI/CD > Job token permissions** (or the equivalent token access control surface for the GitLab version in use).
+  Format jobs push commits to the MR source branch through HTTPS using `CI_JOB_TOKEN` (refer to `fmt-commit-pusher`). The project MUST allow job token repository writes under **Settings > CI/CD > Job token permissions** (or the equivalent token access control surface for the GitLab version in use).
 
 ### Item D. Component Inventory (Interface Level)
 
