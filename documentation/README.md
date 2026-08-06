@@ -11,7 +11,7 @@ A top-down presentation order (problem statement, then service boundary, then ru
 1. **Audience selects a free subset of dimensions; dimensions are mutually independent under selection.** Inclusion of one dimension neither implies nor precludes inclusion of another. Paths for consumer, operator, and maintainer below are unrestricted entry sets over that orthogonal partition.
 2. **`templates/*.yml` and `tools/ci` remain the machine-contract sources of truth.** Prose records intent, invariants, side effects, and verification criteria. When prose and source diverge, source prevails and the prose is defective.
 3. **Mermaid diagrams encode control flow and component topology only.** Visual styling is omitted unless a single emphasis is required for a safety boundary. Quantitative limits, input defaults, and error strings remain in prose.
-4. **Publication status.** `docs/arch` is an incremental documentation surface. Component contract sheets may remain compact until a later revision expands a given sheet.
+4. **Publication status.** `documentation/` is an incremental documentation surface. Component contract sheets may remain compact until a later revision expands a given sheet.
 
 ## Section 2. Topology
 

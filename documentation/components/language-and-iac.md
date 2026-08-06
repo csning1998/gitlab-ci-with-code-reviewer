@@ -17,7 +17,7 @@ Shared stage semantics: [pipeline-protocol.md](../pipeline-protocol.md). Shared 
 
 ## Section 2. Contract
 
-### Item A. `lang-go` in [`templates/lang-go.yml`](../../../templates/lang-go.yml)
+### Item A. `lang-go` in [`templates/lang-go.yml`](../../templates/lang-go.yml)
 
 Go format, build, test (with coverage artifact), and `golangci-lint` gated by path globs.
 
@@ -41,7 +41,7 @@ Consumers outside this monorepo MUST reset `go_dir`, `go_fmt_path`, `go_globs`, 
 
 **Side effects:** May push a commit with subject `style: gofmt` to the MR source branch.
 
-### Item B. `lang-python` in [`templates/lang-python.yml`](../../../templates/lang-python.yml)
+### Item B. `lang-python` in [`templates/lang-python.yml`](../../templates/lang-python.yml)
 
 Ruff format and autofix commit, Ruff lint, and pytest. Package manager input selects `pip` or `uv` installation paths.
 
@@ -61,7 +61,7 @@ Ruff format and autofix commit, Ruff lint, and pytest. Package manager input sel
 
 **Side effects:** May push `style: ruff format and autofix`.
 
-### Item C. `lang-typescript` in [`templates/lang-typescript.yml`](../../../templates/lang-typescript.yml)
+### Item C. `lang-typescript` in [`templates/lang-typescript.yml`](../../templates/lang-typescript.yml)
 
 Prettier format commit, parallel frontend (`vue-tsc`) and backend (`tsc --noEmit`) typechecks, and Bun workspace tests.
 
@@ -81,7 +81,7 @@ Prettier format commit, parallel frontend (`vue-tsc`) and backend (`tsc --noEmit
 
 **Side effects:** May push `style: prettier fmt`.
 
-### Item D. `iac-terraform` in [`templates/iac-terraform.yml`](../../../templates/iac-terraform.yml)
+### Item D. `iac-terraform` in [`templates/iac-terraform.yml`](../../templates/iac-terraform.yml)
 
 Recursive `terraform fmt` with commit push, and Checkov scan for the Terraform framework.
 
@@ -100,7 +100,7 @@ Recursive `terraform fmt` with commit push, and Checkov scan for the Terraform f
 
 **Side effects:** May push `style: terraform fmt`.
 
-### Item E. `iac-packer` in [`templates/iac-packer.yml`](../../../templates/iac-packer.yml)
+### Item E. `iac-packer` in [`templates/iac-packer.yml`](../../templates/iac-packer.yml)
 
 Recursive Packer format with commit push.
 
@@ -116,7 +116,7 @@ Recursive Packer format with commit push.
 
 **Side effects:** May push `style: packer fmt`.
 
-### Item F. `iac-ansible` in [`templates/iac-ansible.yml`](../../../templates/iac-ansible.yml)
+### Item F. `iac-ansible` in [`templates/iac-ansible.yml`](../../templates/iac-ansible.yml)
 
 `ansible-lint` and Checkov Ansible framework scan. No format-and-push job.
 

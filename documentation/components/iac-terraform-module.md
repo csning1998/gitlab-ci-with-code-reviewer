@@ -1,4 +1,4 @@
-# Component: `iac-terraform-module` in [`templates/iac-terraform-module.yml`](../../../templates/iac-terraform-module.yml)
+# Component: `iac-terraform-module` in [`templates/iac-terraform-module.yml`](../../templates/iac-terraform-module.yml)
 
 
 ## Section 1. Scope

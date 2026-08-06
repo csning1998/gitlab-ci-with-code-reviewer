@@ -53,7 +53,7 @@ Mechanism detail: [formatting-and-push.md](../mechanisms/formatting-and-push.md)
 
 ## Section 3. Scope
 
-### Item A. Expansion Status on `docs/arch`
+### Item A. Expansion Status under `documentation/`
 
 | Page                              | Status                                                     |
 | --------------------------------- | ---------------------------------------------------------- |

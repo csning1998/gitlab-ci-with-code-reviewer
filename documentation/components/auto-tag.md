@@ -1,4 +1,4 @@
-# Component: `auto-tag` in [`templates/auto-tag.yml`](../../../templates/auto-tag.yml)
+# Component: `auto-tag` in [`templates/auto-tag.yml`](../../templates/auto-tag.yml)
 
 **Binary:** `auto-tag` in `reviewer_image`
 

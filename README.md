@@ -1,5 +1,7 @@
 # GitLab Merge Request Reviewer
 
+Architecture dimensions (system boundary, Catalog contract, pipeline protocol, components, mechanisms, substrate, decisions) live under [`documentation/README.md`](documentation/README.md). This root README remains the operational bootstrap for credentials, runner setup, and consumer include examples.
+
 ## Section 1. Obtain API Key from AI Provider(s)
 
 ### Option 1. Google AI Studio Setup Process

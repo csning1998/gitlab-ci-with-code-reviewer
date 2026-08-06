@@ -1,4 +1,4 @@
-# Component: `core` in [`templates/core.yml`](../../../templates/core.yml)
+# Component: `core` in [`templates/core.yml`](../../templates/core.yml)
 
 **Required input:** `reviewer_image` (no default)
 
@@ -21,6 +21,7 @@
 | `yamllint_image`         | string  | `pipelinecomponents/yamllint:0.35.12`    |                                                 |
 | `max_description_chars`  | number  | `5000`                                   | Shared by gate and review                       |
 | `claude_max_tokens`      | number  | `16384`                                  | Claude Messages API max output tokens           |
+| `claude_timeout_minutes` | number  | `10`                                     | Claude Messages API request timeout             |
 | `enable_commitlint`      | boolean | `true`                                   |                                                 |
 | `gitleaks_image`         | string  | `docker.io/zricethezav/gitleaks:v8.30.1` |                                                 |
 | `enable_sonarqube`       | boolean | `false`                                  | Requires `SONAR_HOST_URL` and `SONAR_TOKEN`     |

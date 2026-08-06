@@ -2,7 +2,7 @@
 
 This dimension records accepted operating principles and deferred alternatives. Decisions constrain product behavior as a cross-cutting index wherever those choices apply.
 
-Long-form memoranda currently reside under `documentation/MOU-*.md`. This directory provides the navigation surface and status for the `docs/arch` reading path. A later commit on this branch MAY move full text here as `ADR-NNN-*.md` without changing decisions.
+Long-form memoranda currently reside under `documentation/MOU-*.md`. This directory provides the navigation surface and status for the architecture reading path under `documentation/`. A later commit on this branch MAY move full text here as `ADR-NNN-*.md` without changing decisions.
 
 ## Section 1. Topology
 
