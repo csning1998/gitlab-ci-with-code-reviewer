@@ -17,6 +17,16 @@
         },
         {
             "files": [
+                "*.md",
+                "*.mdx"
+            ],
+            "options": {
+                "tabWidth": 4,
+                "embeddedLanguageFormatting": "off"
+            }
+        },
+        {
+            "files": [
                 "*.tf",
                 "*.yaml",
                 "*.yml",

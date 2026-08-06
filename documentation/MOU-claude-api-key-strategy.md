@@ -6,7 +6,7 @@ This document records an architectural decision that remains deferred. No implem
 
 ## Section 2. Current Architecture
 
-Each repository consuming `gitlab-ci-with-code-reviewer` supplies its own `CLAUDE_API_KEY` and `GEMINI_API_KEY` CI/CD variable, read by `internal/config.Load()` and passed to the respective provider client. The Gemini keys are provisioned through Terraform in `csning1998-lab/meta-platform/layers/40-provider-api-keys`, using the `hashicorp/google` provider's `google_apikeys_key` resource, one key per repository, each restricted to `generativelanguage.googleapis.com` under the shared Google Cloud project `gen-lang-client-0531142873`. Claude keys have no equivalent automation; each must be created manually in the Claude Console.
+Each repository consuming `gitlab-ci-with-code-reviewer` supplies its own `CLAUDE_API_KEY` and `GEMINI_API_KEY` CI/CD variable, read by `internal/config.LoadEnvFile()` and passed to the respective provider client. The Gemini keys are provisioned through Terraform in `csning1998-lab/meta-platform/layers/40-provider-api-keys`, using the `hashicorp/google` provider's `google_apikeys_key` resource, one key per repository, each restricted to `generativelanguage.googleapis.com` under the shared Google Cloud project `gen-lang-client-0531142873`. Claude keys have no equivalent automation; each must be created manually in the Claude Console.
 
 ## Section 3. Considered Alternative
 
@@ -30,11 +30,11 @@ The `.gitlab-ci.yml` syntax for requesting the token:
 
 ```yaml
 job_with_id_tokens:
-    id_tokens:
-        ANTHROPIC_ID_TOKEN:
-            aud: https://api.anthropic.com
-    script:
-        - claude-review
+  id_tokens:
+    ANTHROPIC_ID_TOKEN:
+      aud: https://api.anthropic.com
+  script:
+    - claude-review
 ```
 
 ### Task D. No SDK Version Bump Is Required
@@ -43,7 +43,7 @@ job_with_id_tokens:
 
 ### Task E. Implementation Cost
 
-Adopting WIF requires: registering one GitLab CI federation issuer (one-time, not per-repository); creating one service account and one federation rule per repository requiring isolated cost/usage attribution; adding `id_tokens` to the `claude-code-review` job in `templates/core.yml`; and replacing the static `CLAUDE_API_KEY` read in `internal/config.Load()` and `internal/claude/client.go` with the SDK's federation credential construction. This is a change to the reviewer's Go code and CI template, not confined to the Terraform layer that provisions secrets.
+Adopting WIF requires: registering one GitLab CI federation issuer (one-time, not per-repository); creating one service account and one federation rule per repository requiring isolated cost/usage attribution; adding `id_tokens` to the `claude-code-review` job in `templates/core.yml`; and replacing the static `CLAUDE_API_KEY` read in `internal/config.LoadEnvFile()` and `internal/claude/client.go` with the SDK's federation credential construction. This is a change to the reviewer's Go code and CI template, not confined to the Terraform layer that provisions secrets.
 
 ## Section 5. Recommendation
 
@@ -57,4 +57,4 @@ Should this alternative be pursued in the future, the following MUST be complete
 2. Decide the service account and federation rule granularity: one service account per repository (preserving today's per-repository cost isolation) versus one shared service account with per-repository Workspace routing.
 3. Determine how federation issuers, service accounts, and federation rules will be created as infrastructure as code, since no Terraform provider was found to expose them as first-class resources.
 4. Update `templates/core.yml` to request an `id_tokens` claim with `aud: https://api.anthropic.com` on the `claude-code-review` job.
-5. Update `internal/config.Load()` and `internal/claude/client.go` to construct the Anthropic client from federation credentials instead of a static `CLAUDE_API_KEY`.
+5. Update `internal/config.LoadEnvFile()` and `internal/claude/client.go` to construct the Anthropic client from federation credentials instead of a static `CLAUDE_API_KEY`.

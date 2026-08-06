@@ -182,10 +182,10 @@ Components are referenced using the path syntax `gitlab.com/csning1998/gitlab-ci
 
 ```yaml
 include:
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
-      inputs:
-          reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-go@1.0.0
+  - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.5.0
+    inputs:
+      reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.5.0
+  - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-go@1.5.0
 ```
 
 ### Step C. Inject Inputs for Project-Specific Differences
@@ -194,24 +194,24 @@ Specify inputs to override default configurations. Operators should verify and s
 
 ```yaml
 include:
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
-      inputs:
-          reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
-          claude_model: claude-sonnet-4-6
-          gemini_model: gemini-3.5-flash
-          model_k: model_v
+  - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.5.0
+    inputs:
+      reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.5.0
+      claude_model: claude-sonnet-4-6
+      gemini_model: gemini-3.5-flash
+      model_k: model_v
 
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
-      inputs:
-          ts_globs: ['frontend/**/*', 'backend/**/*']
-          frontend_dir: frontend
-          backend_dir: backend
+  - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.5.0
+    inputs:
+      ts_globs: ['frontend/**/*', 'backend/**/*']
+      frontend_dir: frontend
+      backend_dir: backend
 
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-terraform@1.0.0
-      inputs:
-          checkov_skip: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21'
+  - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-terraform@1.5.0
+    inputs:
+      checkov_skip: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21'
 
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
+  - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-ansible@1.5.0
 ```
 
 Supported components comprise `core`, `lang-go`, `lang-typescript`, `iac-terraform`, `iac-packer`, and `iac-ansible`. Full input schemas are defined within the respective files under `templates/`.
