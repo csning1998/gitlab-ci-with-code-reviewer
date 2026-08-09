@@ -228,6 +228,112 @@ func TestCreateTag_FollowsRedirect(t *testing.T) {
 	}
 }
 
+func TestVerifyScope_Success(t *testing.T) {
+	var gotPath, gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.Header.Get("PRIVATE-TOKEN")
+		_, _ = io.WriteString(w, `{"scopes":["api","read_api"],"active":true,"revoked":false}`)
+	}))
+	defer server.Close()
+
+	if err := VerifyScope(server.URL, "secret-token", "api"); err != nil {
+		t.Fatalf("VerifyScope(...) returned an unexpected error: %v", err)
+	}
+	if gotPath != "/personal_access_tokens/self" {
+		t.Errorf("request path = %q, want %q", gotPath, "/personal_access_tokens/self")
+	}
+	if gotToken != "secret-token" {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	}
+}
+
+func TestVerifyScope_MissingScope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"scopes":["write_repository"],"active":true,"revoked":false}`)
+	}))
+	defer server.Close()
+
+	err := VerifyScope(server.URL, "unused", "api")
+	if err == nil {
+		t.Fatal("VerifyScope(...) succeeded unexpectedly for a token missing the required scope")
+	}
+	if !strings.Contains(err.Error(), "do not include the required") {
+		t.Errorf("VerifyScope(...) error = %q, want it to mention the missing scope", err.Error())
+	}
+}
+
+func TestVerifyScope_Revoked(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"scopes":["api"],"active":true,"revoked":true}`)
+	}))
+	defer server.Close()
+
+	err := VerifyScope(server.URL, "unused", "api")
+	if err == nil {
+		t.Fatal("VerifyScope(...) succeeded unexpectedly for a revoked token")
+	}
+	if !strings.Contains(err.Error(), "revoked or inactive") {
+		t.Errorf("VerifyScope(...) error = %q, want it to mention the revoked token", err.Error())
+	}
+}
+
+func TestVerifyScope_Inactive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"scopes":["api"],"active":false,"revoked":false}`)
+	}))
+	defer server.Close()
+
+	err := VerifyScope(server.URL, "unused", "api")
+	if err == nil {
+		t.Fatal("VerifyScope(...) succeeded unexpectedly for an inactive token")
+	}
+	if !strings.Contains(err.Error(), "revoked or inactive") {
+		t.Errorf("VerifyScope(...) error = %q, want it to mention the inactive token", err.Error())
+	}
+}
+
+func TestVerifyScope_ErrorStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"message":"401 Unauthorized"}`)
+	}))
+	defer server.Close()
+
+	err := VerifyScope(server.URL, "unused", "api")
+	if err == nil {
+		t.Fatal("VerifyScope(...) succeeded unexpectedly on a 401 response")
+	}
+	if !strings.Contains(err.Error(), "status 401") {
+		t.Errorf("VerifyScope(...) error = %q, want it to mention the status code", err.Error())
+	}
+}
+
+func TestVerifyScope_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `not json`)
+	}))
+	defer server.Close()
+
+	err := VerifyScope(server.URL, "unused", "api")
+	if err == nil {
+		t.Fatal("VerifyScope(...) succeeded unexpectedly on a malformed response body")
+	}
+	if !strings.Contains(err.Error(), "failed to parse token introspection response") {
+		t.Errorf("VerifyScope(...) error = %q, want it to mention the parse failure", err.Error())
+	}
+}
+
+func TestVerifyScope_UnreachableServer(t *testing.T) {
+	err := VerifyScope("http://127.0.0.1:0", "unused", "api")
+	if err == nil {
+		t.Fatal("VerifyScope(...) against an unreachable server succeeded unexpectedly")
+	}
+	if !strings.Contains(err.Error(), "failed to reach GitLab API") {
+		t.Errorf("VerifyScope(...) error = %q, want it to mention the unreachable API", err.Error())
+	}
+}
+
 func TestCreateTag_EmptyToken(t *testing.T) {
 	var gotToken string
 	var gotHeaderPresent bool

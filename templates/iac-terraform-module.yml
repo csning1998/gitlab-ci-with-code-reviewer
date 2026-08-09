@@ -17,15 +17,11 @@ spec:
       default: 'curlimages/curl:8.10.1'
       description: 'curl image for the registry upload job.'
     tag_prefix:
-      default: '$[[ inputs.module_name ]]-'
       description: >-
-        Literal tag prefix required for module publication, matched against CI_COMMIT_TAG.
-        Defaults to the auto-tag module_name prefix. Set to '' for un-prefixed repository tags
-        to prevent cross-module job execution.
+        Literal prefix matched against CI_COMMIT_TAG. Omits default values to prevent unexpanded
+        $[[ inputs.module_name ]] tokens from evaluating literally in rule condition interpolations.
 ---
-# Packages module_dir and uploads to the GitLab Terraform Module Registry on tag push.
-# Replicates upload behavior from Terraform/Module-Base.gitlab-ci.yml without stage dependencies.
-# Embeds module_name in the job identifier to prevent definition collisions.
+# Embeds module_name in job identifiers to isolate registry uploads and prevent job name collisions across components.
 deploy:terraform-module-$[[ inputs.module_name ]]:
   stage: deploy
   image: '$[[ inputs.curl_image ]]'
