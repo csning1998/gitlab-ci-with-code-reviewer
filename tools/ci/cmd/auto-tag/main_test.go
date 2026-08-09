@@ -3,36 +3,107 @@ package main
 import (
 	"bytes"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// tagRequest records parameters captured from a single POST /projects/:id/repository/tags API call.
+type tagRequest struct {
+	projectPath string
+	escapedPath string
+	tagName     string
+	ref         string
+}
+
+// tagAPIServer implements a mock GitLab tag creation endpoint that logs requests and returns a fixed status code.
+type tagAPIServer struct {
+	*httptest.Server
+	mu       sync.Mutex
+	requests []tagRequest
+	status   int
+}
+
+func newTagAPIServer(t *testing.T, status int) *tagAPIServer {
+	t.Helper()
+	s := &tagAPIServer{status: status}
+	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		s.requests = append(s.requests, tagRequest{
+			projectPath: r.URL.Path,
+			escapedPath: r.URL.EscapedPath(),
+			tagName:     r.URL.Query().Get("tag_name"),
+			ref:         r.URL.Query().Get("ref"),
+		})
+		s.mu.Unlock()
+		w.WriteHeader(s.status)
+	}))
+	t.Cleanup(s.Close)
+	return s
+}
+
+func (s *tagAPIServer) recorded() []tagRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]tagRequest(nil), s.requests...)
+}
+
+func assertTagCreated(t *testing.T, s *tagAPIServer, tagName, wantRef string) {
+	t.Helper()
+	for _, req := range s.recorded() {
+		if req.tagName == tagName {
+			if req.ref != wantRef {
+				t.Errorf("tag %q created for ref %q, want %q", tagName, req.ref, wantRef)
+			}
+			return
+		}
+	}
+	t.Errorf("no tag creation request recorded for %q; recorded = %+v", tagName, s.recorded())
+}
+
+func assertTagNotCreated(t *testing.T, s *tagAPIServer, tagName string) {
+	t.Helper()
+	for _, req := range s.recorded() {
+		if req.tagName == tagName {
+			t.Errorf("tag %q unexpectedly created", tagName)
+		}
+	}
+}
+
+func assertNoTagsCreated(t *testing.T, s *tagAPIServer) {
+	t.Helper()
+	if got := s.recorded(); len(got) != 0 {
+		t.Errorf("recorded %d tag creation requests, want 0: %+v", len(got), got)
+	}
+}
+
 func TestExecuteAutoTag_MissingArguments(t *testing.T) {
 	cases := []struct {
-		name      string
-		sha       string
-		remoteURL string
-		username  string
-		password  string
-		wantErr   string
+		name       string
+		sha        string
+		apiBaseURL string
+		projectID  string
+		password   string
+		wantErr    string
 	}{
-		{"missing sha", "", "https://example.invalid/repo.git", "gitlab-ci-token", "token", "--sha, --remote-url, and --username are required"},
-		{"missing remote-url", "abc", "", "gitlab-ci-token", "token", "--sha, --remote-url, and --username are required"},
-		{"missing username", "abc", "https://example.invalid/repo.git", "", "token", "--sha, --remote-url, and --username are required"},
-		{"missing password", "abc", "https://example.invalid/repo.git", "gitlab-ci-token", "", "TAG_PUSH_TOKEN must be set"},
+		{"missing sha", "", "https://example.invalid/api/v4", "123", "token", "--sha, --api-url, and --project-id are required"},
+		{"missing api-url", "abc", "", "123", "token", "--sha, --api-url, and --project-id are required"},
+		{"missing project-id", "abc", "https://example.invalid/api/v4", "", "token", "--sha, --api-url, and --project-id are required"},
+		{"missing password", "abc", "https://example.invalid/api/v4", "123", "", "TAG_PUSH_TOKEN must be set"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var stderr bytes.Buffer
-			code := executeAutoTag(".", ".gitlab/versioning.yml", c.sha, c.remoteURL, c.username, c.password, io.Discard, &stderr)
+			code := executeAutoTag(".", ".gitlab/versioning.yml", c.sha, c.apiBaseURL, c.projectID, c.password, io.Discard, &stderr)
 			if code != 1 {
 				t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 			}
@@ -48,7 +119,7 @@ func TestExecuteAutoTag_ConfigLoadFails(t *testing.T) {
 	missingConfig := filepath.Join(t.TempDir(), "does-not-exist.yml")
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, missingConfig, sha, "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeAutoTag(repoDir, missingConfig, sha, "https://example.invalid/api/v4", "123", "unused", io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -65,7 +136,7 @@ modules:
 `)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(t.TempDir(), config, "abc123", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeAutoTag(t.TempDir(), config, "abc123", "https://example.invalid/api/v4", "123", "unused", io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -81,15 +152,15 @@ modules:
   - name: ""
     dir: "."
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	assertRemoteTag(t, remoteDir, "0.1.0", sha)
+	assertTagCreated(t, server, "0.1.0", sha)
 }
 
 func TestExecuteAutoTag_BumpNone_NoTagPushed(t *testing.T) {
@@ -99,14 +170,14 @@ modules:
   - name: ""
     dir: "."
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
-	assertNoTags(t, remoteDir)
+	assertNoTagsCreated(t, server)
 }
 
 func TestExecuteAutoTag_MultiModule_OnlyChangedModuleTagged(t *testing.T) {
@@ -126,16 +197,16 @@ modules:
   - name: modB
     dir: modB
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, secondSHA, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	assertRemoteTag(t, remoteDir, "modA-0.1.0", secondSHA)
-	assertTagAbsent(t, remoteDir, "modB-0.1.0")
+	assertTagCreated(t, server, "modA-0.1.0", secondSHA)
+	assertTagNotCreated(t, server, "modB-0.1.0")
 }
 
 func TestExecuteAutoTag_InvalidSHA_CommitResolveFails(t *testing.T) {
@@ -145,18 +216,18 @@ modules:
   - name: ""
     dir: "."
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 	nonExistentSHA := strings.Repeat("f", 40)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, nonExistentSHA, remoteDir, "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeAutoTag(repoDir, config, nonExistentSHA, server.URL, "123", "unused", io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "failed to resolve commit") {
 		t.Errorf("executeAutoTag(...) stderr = %q, want it to mention the commit resolution failure", stderr.String())
 	}
-	assertNoTags(t, remoteDir)
+	assertNoTagsCreated(t, server)
 }
 
 func TestExecuteAutoTag_RootCommit_MultiModule_AllTaggedRegardlessOfDir(t *testing.T) {
@@ -168,18 +239,17 @@ modules:
   - name: modB
     dir: modB
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	// A root commit has no parent tree to diff against, so every declared module is treated
-	// as changed even though neither modA nor modB exists within the committed tree.
-	assertRemoteTag(t, remoteDir, "modA-0.1.0", sha)
-	assertRemoteTag(t, remoteDir, "modB-0.1.0", sha)
+	// Root commits lack parent trees for diffing; all declared modules evaluate as changed.
+	assertTagCreated(t, server, "modA-0.1.0", sha)
+	assertTagCreated(t, server, "modB-0.1.0", sha)
 }
 
 func TestExecuteAutoTag_NonRootCommit_NoModuleChanged_SkipsAll(t *testing.T) {
@@ -199,10 +269,10 @@ modules:
   - name: modB
     dir: modB
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, secondSHA, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -212,7 +282,7 @@ modules:
 	if !strings.Contains(stdout.String(), `modB: no changes under "modB". Skipping.`) {
 		t.Errorf("executeAutoTag(...) stdout = %q, want it to report modB as skipped", stdout.String())
 	}
-	assertNoTags(t, remoteDir)
+	assertNoTagsCreated(t, server)
 }
 
 func TestExecuteAutoTag_NonRootCommit_BothModulesChanged_BothTagged(t *testing.T) {
@@ -233,16 +303,16 @@ modules:
   - name: modB
     dir: modB
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, secondSHA, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	assertRemoteTag(t, remoteDir, "modA-0.0.1", secondSHA)
-	assertRemoteTag(t, remoteDir, "modB-0.0.1", secondSHA)
+	assertTagCreated(t, server, "modA-0.0.1", secondSHA)
+	assertTagCreated(t, server, "modB-0.0.1", secondSHA)
 }
 
 func TestExecuteAutoTag_VersionProgression_AcrossSequentialCommits(t *testing.T) {
@@ -252,7 +322,7 @@ modules:
   - name: ""
     dir: "."
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	steps := []struct {
 		files   map[string]string
@@ -269,11 +339,11 @@ modules:
 		sha := commitFiles(t, repo, step.files, step.message)
 
 		var stdout, stderr bytes.Buffer
-		code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+		code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 		if code != 0 {
 			t.Fatalf("executeAutoTag(%q) code = %d, want 0, stderr = %q", step.message, code, stderr.String())
 		}
-		assertRemoteTag(t, remoteDir, step.wantTag, sha)
+		assertTagCreated(t, server, step.wantTag, sha)
 	}
 }
 
@@ -284,40 +354,65 @@ modules:
   - name: ""
     dir: "."
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	// A "!" following the type or scope forces a major bump regardless of the "fix" type,
-	// which would otherwise only warrant a patch release.
-	assertRemoteTag(t, remoteDir, "1.0.0", sha)
+	// Exclamation marks following commit types or scopes mandate major version bumps.
+	assertTagCreated(t, server, "1.0.0", sha)
 }
 
-func TestExecuteAutoTag_PushFails_UnreachableRemote_LocalTagPersists(t *testing.T) {
+func TestExecuteAutoTag_APIFailure_ReturnsError(t *testing.T) {
 	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
 	config := writeConfig(t, `
 modules:
   - name: ""
     dir: "."
 `)
-	unreachableRemote := filepath.Join(t.TempDir(), "does-not-exist.git")
+	server := newTagAPIServer(t, http.StatusBadRequest)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, unreachableRemote, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "failed to push tag") {
-		t.Errorf("executeAutoTag(...) stderr = %q, want it to mention the push failure", stderr.String())
+	if !strings.Contains(stderr.String(), "GitLab API returned status") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want it to mention the API failure", stderr.String())
+	}
+}
+
+func TestExecuteAutoTag_LocalMirrorFails_JobStillSucceeds(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	// Pre-creates a directory at the target ref path to force an EISDIR write error.
+	// Permission-based restrictions fail when CI containers execute as root; directory
+	// collisions guarantee a local ref write failure while remaining invisible to
+	// repo.Tags() version baseline calculations.
+	collisionPath := filepath.Join(repoDir, ".git", "refs", "tags", "0.1.0")
+	if err := os.MkdirAll(collisionPath, 0o755); err != nil {
+		t.Fatalf("failed to pre-create a directory blocking the tag ref path: %v", err)
 	}
 
-	// CreateTag runs, and succeeds, before PushTag is attempted, so a push failure leaves
-	// the tag committed to the local repository even though the remote never received it.
-	assertRemoteTag(t, repoDir, "0.1.0", sha)
+	var stdout, stderr bytes.Buffer
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0 (a local mirror failure must not fail the job), stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Warning:") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want a warning about the local mirror failure", stderr.String())
+	}
+	// Verifies remote API tag creation completes independently of local mirror failures.
+	assertTagCreated(t, server, "0.1.0", sha)
 }
 
 func TestExecuteAutoTag_TagPrefixOverride_ExplicitEmptyString(t *testing.T) {
@@ -329,18 +424,17 @@ modules:
     dir: modA
     tag_prefix: ""
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	// An explicit empty tag_prefix suppresses the "modA-" default that would otherwise be
-	// derived from the module name.
-	assertRemoteTag(t, remoteDir, "0.1.0", sha)
-	assertTagAbsent(t, remoteDir, "modA-0.1.0")
+	// Empty tag_prefix overrides suppress module-name prefix derivation.
+	assertTagCreated(t, server, "0.1.0", sha)
+	assertTagNotCreated(t, server, "modA-0.1.0")
 }
 
 func TestExecuteAutoTag_ModulesShareSamePrefix_ChainedBumpWithinSingleRun(t *testing.T) {
@@ -352,19 +446,111 @@ modules:
   - name: ""
     dir: modB
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
 
-	// Both modules resolve to the same empty tag prefix. LatestTag re-reads repository
-	// tags on each iteration, so the second module detects the first tag and bumps from it
-	// within the same executeAutoTag() call.
-	assertRemoteTag(t, remoteDir, "0.1.0", sha)
-	assertRemoteTag(t, remoteDir, "0.2.0", sha)
+	// Identical tag prefixes require local tag mirroring between module iterations to evaluate version bumps sequentially.
+	assertTagCreated(t, server, "0.1.0", sha)
+	assertTagCreated(t, server, "0.2.0", sha)
+}
+
+func TestExecuteAutoTag_APIFailure_StopsProcessingRemainingModules(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: modA
+  - name: modB
+    dir: modB
+`)
+	server := newTagAPIServer(t, http.StatusBadRequest)
+
+	var stdout, stderr bytes.Buffer
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
+	}
+	// API errors trigger immediate termination, halting subsequent module processing.
+	if got := len(server.recorded()); got != 1 {
+		t.Errorf("recorded %d API requests, want exactly 1 (fail-fast on the first module)", got)
+	}
+}
+
+func TestExecuteAutoTag_ProjectIDWithNamespacePath_EscapedInAPICall(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, sha, server.URL, "group/subgroup/project", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+
+	requests := server.recorded()
+	if len(requests) != 1 {
+		t.Fatalf("recorded %d requests, want 1", len(requests))
+	}
+	if requests[0].escapedPath != "/projects/group%2Fsubgroup%2Fproject/repository/tags" {
+		t.Errorf("request escaped path = %q, want every \"/\" in the namespace path percent-encoded", requests[0].escapedPath)
+	}
+}
+
+func TestExecuteAutoTag_TagAPIUnreachable_ReturnsError(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	unreachableAPI := "http://127.0.0.1:1"
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(repoDir, config, sha, unreachableAPI, "123", "unused", io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "failed to reach GitLab API") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want it to mention the unreachable API", stderr.String())
+	}
+}
+
+func TestExecuteAutoTag_MultiModule_ExactAPICallCount(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{
+		"modA/file.txt": "a1",
+		"modB/file.txt": "b1",
+	}, "chore: init")
+	secondSHA := commitFiles(t, repo, map[string]string{
+		"modA/file.txt": "a2",
+		"modB/file.txt": "b2",
+	}, "fix: patch both modules")
+
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: modA
+  - name: modB
+    dir: modB
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	// Changed modules issue exactly one API request each.
+	if got := len(server.recorded()); got != 2 {
+		t.Errorf("recorded %d API requests, want exactly 2 (one per changed module)", got)
+	}
 }
 
 func setupRepo(t *testing.T, files map[string]string, message string) (repoDir, sha string) {
@@ -423,64 +609,7 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
-func newBareRemote(t *testing.T) string {
-	t.Helper()
-	remoteDir := t.TempDir()
-	if _, err := git.PlainInit(remoteDir, true); err != nil {
-		t.Fatalf("PlainInit(%q, bare) failed: %v", remoteDir, err)
-	}
-	return remoteDir
-}
-
-func assertRemoteTag(t *testing.T, remoteDir, tagName, wantSHA string) {
-	t.Helper()
-	remote, err := git.PlainOpen(remoteDir)
-	if err != nil {
-		t.Fatalf("failed to open remote repository at path %q: %v", remoteDir, err)
-	}
-	ref, err := remote.Reference(plumbing.NewTagReferenceName(tagName), true)
-	if err != nil {
-		t.Fatalf("failed to locate reference for tag %q within remote repository: %v", tagName, err)
-	}
-	if ref.Hash().String() != wantSHA {
-		t.Errorf("tag %q resolves to commit hash %q; expected %q", tagName, ref.Hash().String(), wantSHA)
-	}
-}
-
-func assertTagAbsent(t *testing.T, remoteDir, tagName string) {
-	t.Helper()
-	remote, err := git.PlainOpen(remoteDir)
-	if err != nil {
-		t.Fatalf("failed to open remote repository at path %q: %v", remoteDir, err)
-	}
-	if _, err := remote.Reference(plumbing.NewTagReferenceName(tagName), true); err == nil {
-		t.Errorf("tag %q unexpectedly exists within remote repository", tagName)
-	}
-}
-
-func assertNoTags(t *testing.T, remoteDir string) {
-	t.Helper()
-	remote, err := git.PlainOpen(remoteDir)
-	if err != nil {
-		t.Fatalf("failed to open remote repository at path %q: %v", remoteDir, err)
-	}
-	iter, err := remote.Tags()
-	if err != nil {
-		t.Fatalf("Tags() failed: %v", err)
-	}
-	defer iter.Close()
-	count := 0
-	_ = iter.ForEach(func(*plumbing.Reference) error {
-		count++
-		return nil
-	})
-	if count != 0 {
-		t.Errorf("remote repository has %d tags, want 0", count)
-	}
-}
-
-// TestMainSubprocess exercises main itself by re-executing this test binary as a child process,
-// since main calls os.Exit and would otherwise terminate the parent test runner.
+// TestMainSubprocess executes main in a child process to isolate os.Exit calls.
 func TestMainSubprocess(t *testing.T) {
 	if os.Getenv("BE_AUTO_TAG") == "1" {
 		os.Args = []string{
@@ -488,8 +617,8 @@ func TestMainSubprocess(t *testing.T) {
 			"--repo=" + os.Getenv("TEST_REPO_DIR"),
 			"--config=" + os.Getenv("TEST_CONFIG_PATH"),
 			"--sha=" + os.Getenv("TEST_SHA"),
-			"--remote-url=" + os.Getenv("TEST_REMOTE_URL"),
-			"--username=gitlab-ci-token",
+			"--api-url=" + os.Getenv("TEST_API_URL"),
+			"--project-id=123",
 		}
 		main()
 		return
@@ -501,7 +630,7 @@ modules:
   - name: ""
     dir: "."
 `)
-	remoteDir := newBareRemote(t)
+	server := newTagAPIServer(t, http.StatusCreated)
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess")
 	cmd.Env = append(os.Environ(),
@@ -510,7 +639,7 @@ modules:
 		"TEST_REPO_DIR="+repoDir,
 		"TEST_CONFIG_PATH="+config,
 		"TEST_SHA="+sha,
-		"TEST_REMOTE_URL="+remoteDir,
+		"TEST_API_URL="+server.URL,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -519,5 +648,5 @@ modules:
 		t.Fatalf("subprocess exited with error: %v, stderr = %q", err, stderr.String())
 	}
 
-	assertRemoteTag(t, remoteDir, "0.1.0", sha)
+	assertTagCreated(t, server, "0.1.0", sha)
 }

@@ -15,11 +15,9 @@ spec:
         modules this job tags. See tools/ci/internal/versiontag for the file's schema; a module
         with an empty name and dir "." reproduces single, whole-repository tagging.
 ---
-# Automatically calculates and pushes a new Semantic Version tag derived from Conventional Commit
-# headers on squash-merge commits. Replaces manual tagging procedures, eliminating tag detachment
-# caused by commit hash reassignments during GitLab squash-and-merge operations. Requires a
-# TAG_PUSH_TOKEN CI/CD variable, a Project Access Token with the write_repository scope, since
-# GitLab excludes CI_JOB_TOKEN-authenticated pushes from triggering downstream pipelines.
+# Calculates and creates Semantic Version tags from Conventional Commit headers on squash merges.
+# Remote tag creation executes via GitLab REST API to ensure tag pipeline execution
+# (gitlab-org/gitlab#569187). Requires TAG_PUSH_TOKEN with write_repository scope.
 auto-tag:
   stage: '$[[ inputs.stage ]]'
   image: '$[[ inputs.reviewer_image ]]'
@@ -29,5 +27,5 @@ auto-tag:
     GIT_DEPTH: '0'
   script:
     - |
-      auto-tag --sha "$CI_COMMIT_SHA" --config "$[[ inputs.config_path ]]" --username "gitlab-ci-token" \
-        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      auto-tag --sha "$CI_COMMIT_SHA" --config "$[[ inputs.config_path ]]" \
+        --api-url "$CI_API_V4_URL" --project-id "$CI_PROJECT_ID"

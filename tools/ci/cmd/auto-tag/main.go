@@ -1,5 +1,5 @@
-// Command auto-tag parses commit messages and creates and pushes semantic version tags for
-// repository modules configured in versioning.yml.
+// Command auto-tag evaluates Conventional Commit subjects to publish Semantic Version
+// tags across configured repository modules via the GitLab REST API.
 package main
 
 import (
@@ -12,12 +12,13 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"ci-tools/internal/gitlabapi"
 	"ci-tools/internal/gittag"
 	"ci-tools/internal/semver"
 	"ci-tools/internal/versiontag"
 )
 
-// resolveCommitSubject extracts the initial line of the commit message corresponding to the specified commit hash.
+// resolveCommitSubject returns the subject line of a commit SHA for Conventional Commit header parsing.
 func resolveCommitSubject(repo *git.Repository, sha string) (string, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
@@ -27,7 +28,7 @@ func resolveCommitSubject(repo *git.Repository, sha string) (string, error) {
 	return subject, nil
 }
 
-// resolveFirstParentSHA returns the first parent commit hash of sha. Returns false if sha is a root commit.
+// resolveFirstParentSHA locates the first parent SHA of a commit to establish baseline trees for directory diffs.
 func resolveFirstParentSHA(repo *git.Repository, sha string) (string, bool, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
@@ -39,11 +40,11 @@ func resolveFirstParentSHA(repo *git.Repository, sha string) (string, bool, erro
 	return commit.ParentHashes[0].String(), true, nil
 }
 
-// executeAutoTag evaluates modules in configPath and pushes warranted tags for sha. Execution logic is
-// separated from CLI flags and process exit for unit testing.
-func executeAutoTag(repoPath, configPath, sha, remoteURL, username, password string, stdout, stderr io.Writer) int {
-	if sha == "" || remoteURL == "" || username == "" {
-		_, _ = fmt.Fprintln(stderr, "Error: --sha, --remote-url, and --username are required.")
+// executeAutoTag processes module version bumps and publishes tags for a given commit.
+// Logic is decoupled from flags and process termination to permit direct unit testing.
+func executeAutoTag(repoPath, configPath, sha, apiBaseURL, projectID, password string, stdout, stderr io.Writer) int {
+	if sha == "" || apiBaseURL == "" || projectID == "" {
+		_, _ = fmt.Fprintln(stderr, "Error: --sha, --api-url, and --project-id are required.")
 		return 1
 	}
 	if password == "" {
@@ -82,7 +83,7 @@ func executeAutoTag(repoPath, configPath, sha, remoteURL, username, password str
 			label = "<repository>"
 		}
 
-		// Root commits have no parent tree to diff against, so all modules are treated as changed.
+		// Root commits have no parent tree for diff evaluation. Mark all modules changed to guarantee initial tag coverage.
 		changed := true
 		if hasParent {
 			changed, err = versiontag.DetectDirectoryTreeChanges(repo, parent, sha, mod.Dir)
@@ -116,13 +117,14 @@ func executeAutoTag(repoPath, configPath, sha, remoteURL, username, password str
 		newTag := prefix + nextVersion
 
 		_, _ = fmt.Fprintf(stdout, "%s: bumping %s to %s for %s.\n", label, latestTag, newTag, sha)
-		if err := gittag.CreateTag(repoPath, newTag, sha); err != nil {
+		if err := gitlabapi.CreateTag(apiBaseURL, projectID, newTag, sha, password); err != nil {
 			_, _ = fmt.Fprintln(stderr, "Error:", err)
 			return 1
 		}
-		if err := gittag.PushTag(repoPath, remoteURL, newTag, username, password); err != nil {
-			_, _ = fmt.Fprintln(stderr, "Error:", err)
-			return 1
+		// Mirror tag locally to supply updated ref state for sequential module version evaluation.
+		// Remote REST API creation is authoritative; local ref writes are non-fatal to release execution.
+		if err := gittag.CreateTag(repoPath, newTag, sha); err != nil {
+			_, _ = fmt.Fprintln(stderr, "Warning:", err)
 		}
 	}
 
@@ -133,9 +135,9 @@ func main() {
 	repo := flag.String("repo", ".", "path to the local repository")
 	config := flag.String("config", ".gitlab/versioning.yml", "path to the versioning configuration file")
 	sha := flag.String("sha", "", "commit SHA to evaluate and tag")
-	remoteURL := flag.String("remote-url", "", "URL of the remote to which tags are pushed")
-	username := flag.String("username", "", "HTTP basic auth username for the push")
+	apiBaseURL := flag.String("api-url", "", "GitLab API root, e.g. https://gitlab.com/api/v4")
+	projectID := flag.String("project-id", "", "GitLab project ID owning the tags")
 	flag.Parse()
 
-	os.Exit(executeAutoTag(*repo, *config, *sha, *remoteURL, *username, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeAutoTag(*repo, *config, *sha, *apiBaseURL, *projectID, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
 }
