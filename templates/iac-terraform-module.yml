@@ -30,10 +30,17 @@ deploy:terraform-module-$[[ inputs.module_name ]]:
     - if: '$CI_COMMIT_TAG =~ /^$[[ inputs.tag_prefix ]]/'
   script:
     - MODULE_NAME=$(echo "$[[ inputs.module_name ]]" | tr " _" -)
-    - TAR_FILENAME="/tmp/${MODULE_NAME}-$[[ inputs.module_system ]]-${CI_COMMIT_TAG}.tgz"
+    - MODULE_VERSION="${CI_COMMIT_TAG#$[[ inputs.tag_prefix ]]}"
+    - |
+      if ! [[ "${MODULE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        echo "Error: MODULE_VERSION '${MODULE_VERSION}' is not valid semver." >&2
+        echo "CI_COMMIT_TAG '${CI_COMMIT_TAG}', tag_prefix '$[[ inputs.tag_prefix ]]'." >&2
+        exit 1
+      fi
+    - TAR_FILENAME="/tmp/${MODULE_NAME}-$[[ inputs.module_system ]]-${MODULE_VERSION}.tgz"
     - |
       UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/terraform/modules/${MODULE_NAME}\
-      /$[[ inputs.module_system ]]/${CI_COMMIT_TAG}/file"
+      /$[[ inputs.module_system ]]/${MODULE_VERSION}/file"
     - |
       tar -vczf "${TAR_FILENAME}" -C "$[[ inputs.module_dir ]]" \
       --exclude=./.git --exclude=./.terraform --exclude='*.tfstate*' --exclude='*.tfvars' .
