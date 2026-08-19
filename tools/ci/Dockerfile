@@ -17,8 +17,13 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/claude-review ./cm
 FROM alpine:3.24
 # Install ca-certificates for TLS validation, Node.js/npm for commitlint,
 # and Git to support commitlint tree traversal subcommands (e.g., git merge-base).
+# commitlint.config.cjs does not invoke tsc. The native TypeScript compiler is a prebuilt Go binary
+# whose stdlib still reports HIGH CVEs (CVE-2026-33818 and seven siblings) under Trivy 0.72.0.
 RUN apk add --no-cache ca-certificates nodejs npm git \
-    && npm install -g --no-save @commitlint/cli@21.2.1 @commitlint/config-conventional@21.2.0
+    && npm install -g --no-save @commitlint/cli@21.2.1 @commitlint/config-conventional@21.2.0 \
+    && test -d /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript \
+    && rm -rf /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript
+
 ENV NODE_PATH=/usr/local/lib/node_modules
 COPY --from=build /out/claude-review /usr/local/bin/claude-review
 COPY --from=build /out/gemini-review /usr/local/bin/gemini-review
