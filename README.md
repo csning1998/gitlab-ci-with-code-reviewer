@@ -214,7 +214,11 @@ include:
     - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
 ```
 
-Supported components comprise `core`, `lang-go`, `lang-typescript`, `iac-terraform`, `iac-packer`, and `iac-ansible`. Full input schemas are defined within the respective files under `templates/`.
+Supported components comprise `core`, `lang-go`, `lang-python`, `lang-typescript`, `lang-c-cpp`, `lang-jvm`, `lang-csharp`, `lang-rust`, `iac-terraform`, `iac-packer`, and `iac-ansible`. Full input schemas are defined within the respective files under `templates/`.
+
+Language components take the toolchain image from the consuming `*_image` input. One published component version therefore runs against more than one language release.
+
+`lang-jvm` covers Java, Kotlin, and Groovy. The `build_tool` input accepts `maven` or `gradle`. Maven jobs use flags that exist in Maven 2. The consuming project sets the bytecode target in its build files.
 
 The `core` component unconditionally executes a `gitleaks` secret-detection job on every Merge Request, alongside a `sonarqube-scan` job gated by the `enable_sonarqube` input (`type: boolean`, default `false`). Activation of `enable_sonarqube` requires a self-hosted SonarQube instance and the presence of `SONAR_HOST_URL` and `SONAR_TOKEN` CI/CD variables within the consuming project or an inherited group.
 
@@ -244,7 +248,6 @@ A unified Semantic Versioning (SemVer) tag aligns container image releases with 
 
 ### Planned Language Path Space (Not Yet Implemented)
 
-Two additional language components remain reserved for future implementation, adhering to the input conventions established by the `core` component:
+The following capability remains reserved for future implementation, adhering to the input conventions established by the `core` component:
 
-- `lang-python`: Code formatting and linting (executed via `ruff` or a combination of `black` and `flake8`), alongside static type checking (executed via `mypy`).
-- `lang-java`: Build execution (executed via `gradle` or `maven`), together with formatting and linting validation (executed via `spotless` and `checkstyle`). The selection of the build tool dictates the structural design and caching strategy of the job.
+- Dependency caching for the `lang-jvm`, `lang-csharp`, and `lang-rust` components. Maven, NuGet, and Cargo each resolve dependencies from a remote registry on every job execution, and a cache keyed on the respective lock file would reduce job duration. No existing component declares a `cache` block except `lang-typescript`, therefore introducing one requires a consistent key and path convention across every language component.

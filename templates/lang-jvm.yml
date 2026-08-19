@@ -1,0 +1,116 @@
+---
+spec:
+  inputs:
+    jvm_image:
+      default: 'maven:3.9.16-eclipse-temurin-25'
+      description: >-
+        Container image providing a JDK and build tooling. For Gradle projects without
+        a committed wrapper, select a Gradle image. Target specific bytecode releases
+        by configuring compiler release flags or selecting a matching JDK image.
+    build_tool:
+      default: 'maven'
+      options: ['maven', 'gradle']
+      description: 'Build tool for compilation and test execution. Supports Maven and Gradle.'
+    jvm_globs:
+      type: array
+      default:
+        - '**/*.java'
+        - '**/*.kt'
+        - '**/*.kts'
+        - '**/*.groovy'
+        - '**/pom.xml'
+        - '**/build.gradle'
+        - '**/settings.gradle'
+        - '**/gradle.properties'
+      description: 'rules:changes patterns gating all JVM jobs.'
+    jvm_dir:
+      default: '.'
+      description: 'Directory containing pom.xml or build.gradle, relative to the repository root.'
+    jvm_fmt_cmd:
+      default: ''
+      description: >-
+        Shell command executed by fmt:jvm (for example, "mvn -B spotless:apply" or
+        "./gradlew spotlessApply"). The consuming project authors this value.
+        Leave empty to disable fmt:jvm.
+    jvm_lint_cmd:
+      default: ''
+      description: >-
+        Shell command executed by lint:jvm (for example, "mvn -B checkstyle:check" or
+        "./gradlew ktlintCheck"). The consuming project authors this value.
+        Leave empty to disable lint:jvm.
+---
+# Consuming pipelines must define all stages referenced by this component.
+# Restricts Maven options to Maven 2 syntax to support legacy JDK images.
+.jvm-base:
+  interruptible: true
+  image: '$[[ inputs.jvm_image ]]'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.jvm_globs ]]
+
+fmt:jvm:
+  extends: .jvm-base
+  stage: format
+  interruptible: false # Prevents cancellation on redundant pipelines to complete the Git push.
+  needs:
+    - job: fmt:prepare-pusher
+      artifacts: true
+  variables:
+    JVM_FMT_CMD: '$[[ inputs.jvm_fmt_cmd ]]'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $JVM_FMT_CMD != ""'
+      changes: $[[ inputs.jvm_globs ]]
+  script:
+    - (cd "$[[ inputs.jvm_dir ]]" && $JVM_FMT_CMD)
+    - |
+      ./fmt-commit-pusher --message "style: jvm format" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+lint:jvm:
+  extends: .jvm-base
+  stage: lint
+  needs: []
+  variables:
+    JVM_LINT_CMD: '$[[ inputs.jvm_lint_cmd ]]'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $JVM_LINT_CMD != ""'
+      changes: $[[ inputs.jvm_globs ]]
+  script:
+    - cd "$[[ inputs.jvm_dir ]]"
+    - $JVM_LINT_CMD
+
+build:jvm:
+  extends: .jvm-base
+  stage: build
+  needs: []
+  script:
+    - cd "$[[ inputs.jvm_dir ]]"
+    - |
+      if [ "$[[ inputs.build_tool ]]" = "gradle" ]; then
+        if [ -x ./gradlew ]; then
+          ./gradlew assemble
+        else
+          gradle assemble
+        fi
+      else
+        mvn -B -DskipTests package
+      fi
+
+test:jvm:
+  extends: .jvm-base
+  stage: test
+  needs:
+    - job: build:jvm
+      optional: true
+  script:
+    - cd "$[[ inputs.jvm_dir ]]"
+    - |
+      if [ "$[[ inputs.build_tool ]]" = "gradle" ]; then
+        if [ -x ./gradlew ]; then
+          ./gradlew test
+        else
+          gradle test
+        fi
+      else
+        mvn -B test
+      fi

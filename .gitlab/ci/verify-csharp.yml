@@ -1,0 +1,192 @@
+---
+verify:csharp-runtime-matrix:
+  stage: build
+  image: "$DOTNET_SDK_IMAGE"
+  needs: []
+  interruptible: true
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-csharp.yml
+        - fixtures/csharp-canary/**/*
+        - .gitlab/ci/verify-csharp.yml
+  parallel:
+    matrix:
+      - DOTNET_SDK_IMAGE: "mcr.microsoft.com/dotnet/sdk:8.0"
+        TARGET_TFM: "net8.0"
+        EXPECTED_TFM: ".NETCoreApp,Version=v8.0"
+      - DOTNET_SDK_IMAGE: "mcr.microsoft.com/dotnet/sdk:9.0"
+        TARGET_TFM: "net9.0"
+        EXPECTED_TFM: ".NETCoreApp,Version=v9.0"
+      - DOTNET_SDK_IMAGE: "mcr.microsoft.com/dotnet/sdk:10.0"
+        TARGET_TFM: "net10.0"
+        EXPECTED_TFM: ".NETCoreApp,Version=v10.0"
+  script:
+    - cd fixtures/csharp-canary
+    - |
+      set -eu
+      sed -i \
+        "s|<TargetFramework>[^<]*</TargetFramework>|<TargetFramework>${TARGET_TFM}</TargetFramework>|" \
+        src/Canary.csproj tests/Canary.Tests.csproj
+      rm -rf src/bin src/obj tests/bin tests/obj
+      dotnet build Canary.sln --configuration Release
+      deps="src/bin/Release/${TARGET_TFM}/Canary.deps.json"
+      actual=$(grep -m1 'NETCoreApp,Version=' "$deps" \
+        | sed 's/.*\(\.NETCoreApp,Version=v[0-9.]*\).*/\1/')
+      echo "image=$DOTNET_SDK_IMAGE tfm=$TARGET_TFM expected=$EXPECTED_TFM actual=$actual"
+      test "$actual" = "$EXPECTED_TFM"
+      output=$(dotnet "src/bin/Release/${TARGET_TFM}/Canary.dll")
+      echo "output=$output"
+      test "$output" = "canary"
+
+verify:csharp-tfm-matrix:
+  stage: build
+  image: "mcr.microsoft.com/dotnet/sdk:10.0"
+  needs: []
+  interruptible: true
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-csharp.yml
+        - fixtures/csharp-canary/**/*
+        - .gitlab/ci/verify-csharp.yml
+  script:
+    - cd fixtures/csharp-canary
+    - |
+      set -eu
+      for tfm in net8.0 net9.0 net10.0; do
+        expected=".NETCoreApp,Version=v${tfm#net}"
+        sed -i \
+          "s|<TargetFramework>[^<]*</TargetFramework>|<TargetFramework>${tfm}</TargetFramework>|" \
+          src/Canary.csproj tests/Canary.Tests.csproj
+        rm -rf src/bin src/obj tests/bin tests/obj
+        dotnet build src/Canary.csproj --configuration Release
+        deps="src/bin/Release/${tfm}/Canary.deps.json"
+        actual=$(grep -m1 'NETCoreApp,Version=' "$deps" \
+          | sed 's/.*\(\.NETCoreApp,Version=v[0-9.]*\).*/\1/')
+        echo "tfm=$tfm expected=$expected actual=$actual"
+        test "$actual" = "$expected"
+      done
+
+verify:csharp-langversion-matrix:
+  stage: build
+  image: "mcr.microsoft.com/dotnet/sdk:10.0"
+  needs: []
+  interruptible: true
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-csharp.yml
+        - fixtures/csharp-canary/**/*
+        - .gitlab/ci/verify-csharp.yml
+  script:
+    - cd fixtures/csharp-canary
+    - |
+      set -eu
+      for lv in ISO-1 ISO-2 3 4 5 6 7 7.1 7.2 7.3 8.0 9.0 10.0 11.0 12.0 13.0 14.0; do
+        sed -i "s|<LangVersion>[^<]*</LangVersion>|<LangVersion>${lv}</LangVersion>|" src/Canary.csproj
+        rm -rf src/bin src/obj
+        dotnet build src/Canary.csproj --configuration Release
+        output=$(dotnet src/bin/Release/net10.0/Canary.dll)
+        echo "langversion=$lv output=$output"
+        test "$output" = "canary"
+      done
+
+verify:csharp-tfm-floor:
+  stage: build
+  image: "mcr.microsoft.com/dotnet/sdk:10.0"
+  needs: []
+  interruptible: true
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-csharp.yml
+        - fixtures/csharp-canary/**/*
+        - .gitlab/ci/verify-csharp.yml
+  script:
+    - cd fixtures/csharp-canary
+    - |
+      set -eu
+      sed -i "s|<TargetFramework>[^<]*</TargetFramework>|<TargetFramework>net11.0</TargetFramework>|" src/Canary.csproj
+      rm -rf src/bin src/obj
+      if log=$(dotnet build src/Canary.csproj --configuration Release 2>&1); then
+        echo "$log"
+        echo "net11.0 was accepted, which contradicts the SDK 10 target cap documented by Microsoft"
+        exit 1
+      fi
+      echo "$log"
+      echo "$log" | grep -F 'NETSDK1045'
+      test ! -f src/bin/Release/net11.0/Canary.dll
+
+verify:csharp-langversion-level:
+  stage: build
+  image: "mcr.microsoft.com/dotnet/sdk:10.0"
+  needs: []
+  interruptible: true
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-csharp.yml
+        - fixtures/csharp-canary/**/*
+        - .gitlab/ci/verify-csharp.yml
+  script:
+    - cd fixtures/csharp-canary
+    - |
+      set -eu
+      rm -rf src/bin src/obj negative/bin negative/obj
+      dotnet build src/Canary.csproj --configuration Release
+      output=$(dotnet src/bin/Release/net10.0/Canary.dll)
+      echo "iso1_canary output=$output"
+      test "$output" = "canary"
+      if log=$(dotnet build negative/GenericViolation.csproj --configuration Release 2>&1); then
+        echo "$log"
+        echo "generics were accepted at LangVersion ISO-1, so the language level is not enforced"
+        exit 1
+      fi
+      echo "$log"
+      echo "$log" | grep -E 'CS8022|Feature .generics.'
+
+verify:csharp-tooling:
+  stage: build
+  image: "mcr.microsoft.com/dotnet/sdk:10.0"
+  needs: []
+  interruptible: true
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-csharp.yml
+        - fixtures/csharp-canary/**/*
+        - fixtures/csharp-negative/**/*
+        - .gitlab/ci/verify-csharp.yml
+  script:
+    - |
+      set -eu
+      cd fixtures/csharp-canary
+      dotnet format Canary.sln --verify-no-changes --severity warn
+      dotnet test Canary.sln --configuration Release
+      output=$(dotnet src/bin/Release/net10.0/Canary.dll)
+      echo "tooling output=$output"
+      test "$output" = "canary"
+      cd ../csharp-negative
+      if dotnet format Canary.csproj --verify-no-changes --severity warn; then
+        echo "dotnet format reported no finding against misformatted input"
+        exit 1
+      fi

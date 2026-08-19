@@ -31,6 +31,10 @@ include:
     inputs:
       reviewer_image: "$CI_REGISTRY_IMAGE/reviewer:edge"
       stage: release
+  - local: .gitlab/ci/verify-jvm.yml
+  - local: .gitlab/ci/verify-c-cpp.yml
+  - local: .gitlab/ci/verify-csharp.yml
+  - local: .gitlab/ci/verify-rust.yml
 
 # Merge request events publish to the :edge container tag, whereas semver git tags produce versioned release images.
 build:reviewer-image:

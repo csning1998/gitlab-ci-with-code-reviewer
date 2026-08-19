@@ -1,0 +1,77 @@
+---
+spec:
+  inputs:
+    rust_image:
+      default: 'rust:1.97-slim'
+      description: >-
+        Official Rust image. Job before_script installs rustfmt and clippy via
+        rustup if absent from the image profile.
+    rust_globs:
+      type: array
+      default:
+        - '**/*.rs'
+        - '**/Cargo.toml'
+        - '**/Cargo.lock'
+      description: 'rules:changes patterns gating all Rust jobs.'
+    rust_dir:
+      default: '.'
+      description: 'Directory containing Cargo.toml, relative to the repository root.'
+    clippy_args:
+      default: '-- -D warnings'
+      description: >-
+        Additional words appended to cargo clippy --all-targets. The consuming
+        project authors this value. Defaults to promoting warnings to errors.
+---
+# Consuming pipelines must define all stages referenced by this component.
+
+.rust-base:
+  interruptible: true
+  image: '$[[ inputs.rust_image ]]'
+  variables:
+    CARGO_TERM_COLOR: 'never'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.rust_globs ]]
+
+fmt:rust:
+  extends: .rust-base
+  stage: format
+  interruptible: false # Prevents cancellation on redundant pipelines to complete the Git push.
+  needs:
+    - job: fmt:prepare-pusher
+      artifacts: true
+  before_script:
+    - rustup component add rustfmt
+  script:
+    - (cd "$[[ inputs.rust_dir ]]" && cargo fmt --all)
+    - |
+      ./fmt-commit-pusher --message "style: cargo fmt" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+lint:rust:
+  extends: .rust-base
+  stage: lint
+  needs: []
+  before_script:
+    - rustup component add clippy
+  script:
+    - cd "$[[ inputs.rust_dir ]]"
+    - cargo clippy --all-targets $[[ inputs.clippy_args ]]
+
+build:rust:
+  extends: .rust-base
+  stage: build
+  needs: []
+  script:
+    - cd "$[[ inputs.rust_dir ]]"
+    - cargo build --all-targets
+
+test:rust:
+  extends: .rust-base
+  stage: test
+  needs:
+    - job: build:rust
+      optional: true
+  script:
+    - cd "$[[ inputs.rust_dir ]]"
+    - cargo test

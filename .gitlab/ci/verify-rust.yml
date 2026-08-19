@@ -1,0 +1,53 @@
+---
+verify:rust-edition-matrix:
+  stage: build
+  image: "rust:1.97-slim"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-rust.yml
+        - fixtures/rust-canary/**/*
+        - .gitlab/ci/verify-rust.yml
+  parallel:
+    matrix:
+      - RUST_EDITION: ["2015", "2018", "2021", "2024"]
+  before_script:
+    - rustup component add rustfmt clippy
+  script:
+    - cd fixtures/rust-canary
+    - |
+      set -eu
+      sed -i "s/^edition = .*/edition = \"$RUST_EDITION\"/" Cargo.toml
+      cargo fmt --all -- --check
+      cargo clippy --all-targets -- -D warnings
+      cargo build --all-targets
+      cargo test
+      echo "edition=$RUST_EDITION output=$(./target/debug/canary)"
+      test "$(./target/debug/canary)" = "canary"
+
+verify:rust-clippy-floor:
+  stage: build
+  image: "rust:1.97-slim"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-rust.yml
+        - fixtures/rust-negative/**/*
+        - .gitlab/ci/verify-rust.yml
+  before_script:
+    - rustup component add clippy
+  script:
+    - cd fixtures/rust-negative
+    - |
+      set -eu
+      if log=$(cargo clippy --all-targets -- -D warnings 2>&1); then
+        echo "$log"
+        echo "clippy reported no finding against a known clone_on_copy violation"
+        exit 1
+      fi
+      echo "$log"
+      echo "$log" | grep -F 'clone_on_copy'

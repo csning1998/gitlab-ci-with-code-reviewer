@@ -30,3 +30,15 @@ tools/ci/coverage.raw.out
 
 ## Miscellaneous
 merge-request.md
+
+# Java build output
+target/
+*.class
+*.jar
+
+# .NET build output
+bin/
+obj/
+
+## Fixture build output
+fixtures/c-canary/bin/

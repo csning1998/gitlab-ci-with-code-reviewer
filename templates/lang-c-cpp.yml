@@ -1,0 +1,86 @@
+---
+spec:
+  inputs:
+    c_image:
+      default: 'gcc:12'
+      description: >-
+        Container image providing gcc, g++, and make. When clang-format or cpplint
+        is absent, before_script installs them via apt-get and pip on Debian-based images.
+        Custom or non-Debian images must include both tools.
+    c_globs:
+      type: array
+      default: ['**/*.c', '**/*.h', '**/*.cpp', '**/*.hpp']
+      description: 'rules:changes patterns gating all C/C++ jobs.'
+    c_dir:
+      default: '.'
+      description: 'Directory containing the Makefile for build:c-cpp, relative to the repository root.'
+    c_build_target:
+      default: 'all'
+      description: 'Make target executed by build:c-cpp.'
+    clang_format_style:
+      default: 'file'
+      description: 'Value passed to clang-format --style. Defaults to loading .clang-format from the repository.'
+---
+# Consuming pipelines must define all stages referenced by this component.
+
+.c-cpp-base:
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.c_globs ]]
+
+fmt:c-cpp:
+  extends: .c-cpp-base
+  stage: format
+  image: '$[[ inputs.c_image ]]'
+  interruptible: false # Prevents cancellation on redundant pipelines to complete the Git push.
+  needs:
+    - job: fmt:prepare-pusher
+      artifacts: true
+  before_script:
+    - |
+      if ! command -v clang-format >/dev/null 2>&1; then
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "clang-format is absent and apt-get is unavailable." >&2
+          echo "Use a Debian-based c_image or install clang-format in the image." >&2
+          exit 1
+        fi
+        apt-get update && apt-get install -y --no-install-recommends clang-format
+      fi
+  script:
+    - |
+      find . -regextype posix-extended -regex '.*\.(c|h|cpp|hpp)$' \
+        -exec clang-format --style="$[[ inputs.clang_format_style ]]" -i {} +
+    - |
+      ./fmt-commit-pusher --message "style: clang-format" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+lint:c-cpp:
+  extends: .c-cpp-base
+  stage: lint
+  image: '$[[ inputs.c_image ]]'
+  needs: []
+  before_script:
+    - |
+      if ! command -v cpplint >/dev/null 2>&1; then
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "cpplint is absent and apt-get is unavailable." >&2
+          echo "Use a Debian-based c_image or install cpplint in the image." >&2
+          exit 1
+        fi
+        apt-get update && apt-get install -y --no-install-recommends python3-pip
+        pip3 install --no-cache-dir cpplint || pip3 install --no-cache-dir --break-system-packages cpplint
+      fi
+  script:
+    - |
+      find . -regextype posix-extended -regex '.*\.(c|h|cpp|hpp)$' -print0 \
+        | xargs -0 --no-run-if-empty cpplint
+
+build:c-cpp:
+  extends: .c-cpp-base
+  stage: build
+  image: '$[[ inputs.c_image ]]'
+  needs: []
+  script:
+    - cd "$[[ inputs.c_dir ]]"
+    - make "$[[ inputs.c_build_target ]]"

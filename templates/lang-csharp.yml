@@ -1,0 +1,71 @@
+---
+spec:
+  inputs:
+    dotnet_image:
+      default: 'mcr.microsoft.com/dotnet/sdk:10.0'
+      description: '.NET SDK image providing format, build, and test commands.'
+    csharp_globs:
+      type: array
+      default:
+        - '**/*.cs'
+        - '**/*.csproj'
+        - '**/*.sln'
+        - '**/*.props'
+        - '**/*.targets'
+      description: 'rules:changes patterns gating all C# jobs.'
+    csharp_dir:
+      default: '.'
+      description: 'Directory containing the solution or project file, relative to the repository root.'
+    dotnet_configuration:
+      default: 'Release'
+      description: 'Build configuration passed to dotnet build and dotnet test.'
+---
+# Consuming pipelines must define all stages referenced by this component.
+.csharp-base:
+  interruptible: true
+  image: '$[[ inputs.dotnet_image ]]'
+  variables:
+    DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    DOTNET_NOLOGO: '1'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: $[[ inputs.csharp_globs ]]
+
+fmt:csharp:
+  extends: .csharp-base
+  stage: format
+  interruptible: false # Prevents cancellation on redundant pipelines to complete the Git push.
+  needs:
+    - job: fmt:prepare-pusher
+      artifacts: true
+  script:
+    - (cd "$[[ inputs.csharp_dir ]]" && dotnet format)
+    - |
+      ./fmt-commit-pusher --message "style: dotnet format" \
+        --remote-url "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+lint:csharp:
+  extends: .csharp-base
+  stage: lint
+  needs: []
+  script:
+    - cd "$[[ inputs.csharp_dir ]]"
+    - dotnet format --verify-no-changes --severity warn
+
+build:csharp:
+  extends: .csharp-base
+  stage: build
+  needs: []
+  script:
+    - cd "$[[ inputs.csharp_dir ]]"
+    - dotnet build --configuration "$[[ inputs.dotnet_configuration ]]"
+
+test:csharp:
+  extends: .csharp-base
+  stage: test
+  needs:
+    - job: build:csharp
+      optional: true
+  script:
+    - cd "$[[ inputs.csharp_dir ]]"
+    - dotnet test --configuration "$[[ inputs.dotnet_configuration ]]"

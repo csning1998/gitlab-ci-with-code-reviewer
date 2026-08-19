@@ -1,0 +1,86 @@
+---
+.c-cpp-verify:
+  stage: build
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-c-cpp.yml
+        - fixtures/c-canary/**/*
+        - .gitlab/ci/verify-c-cpp.yml
+
+verify:c-std-matrix:
+  extends: .c-cpp-verify
+  image: "$GCC_IMAGE"
+  parallel:
+    matrix:
+      - GCC_IMAGE: "gcc:12"
+        C_STANDARDS: "c89 c90 c99 c11 c17 c2x"
+      - GCC_IMAGE: "gcc:15"
+        C_STANDARDS: "c89 c99 c11 c17 c2x c23"
+  script:
+    - cd fixtures/c-canary
+    - |
+      set -eu
+      for std in $C_STANDARDS; do
+        gcc -std=$std -Wall -Wextra -Werror -o /tmp/canary-c src/canary.c
+        echo "c std=$std output=$(/tmp/canary-c)"
+        test "$(/tmp/canary-c)" = "canary"
+      done
+
+verify:cpp-std-matrix:
+  extends: .c-cpp-verify
+  image: "$GCC_IMAGE"
+  parallel:
+    matrix:
+      - GCC_IMAGE: "gcc:12"
+        CPP_STANDARDS: "c++98 c++03 c++11 c++14 c++17 c++20 c++23"
+      - GCC_IMAGE: "gcc:15"
+        CPP_STANDARDS: "c++98 c++11 c++17 c++20 c++23"
+  script:
+    - cd fixtures/c-canary
+    - |
+      set -eu
+      for std in $CPP_STANDARDS; do
+        g++ -std=$std -Wall -Wextra -Werror -o /tmp/canary-cpp src/canary.cpp
+        echo "cpp std=$std output=$(/tmp/canary-cpp)"
+        test "$(/tmp/canary-cpp)" = "canary"
+      done
+
+verify:c-cpp-make:
+  extends: .c-cpp-verify
+  image: "gcc:12"
+  script:
+    - cd fixtures/c-canary
+    - make all
+    - test "$(./bin/canary)" = "canary"
+    - test "$(./bin/canary_cpp)" = "canary"
+
+verify:c-cpp-tooling:
+  extends: .c-cpp-verify
+  image: "gcc:12"
+  before_script:
+    - |
+      if ! command -v clang-format >/dev/null 2>&1; then
+        apt-get update && apt-get install -y --no-install-recommends clang-format
+      fi
+      if ! command -v cpplint >/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends python3-pip
+        pip3 install --no-cache-dir cpplint || pip3 install --no-cache-dir --break-system-packages cpplint
+      fi
+  script:
+    - cd fixtures/c-canary
+    - |
+      set -eu
+      cpplint src/canary.c src/canary.cpp
+      clang-format --style=file --dry-run --Werror src/canary.c src/canary.cpp
+      cd negative
+      if cpplint style_violation.c; then
+        echo "cpplint reported no finding against a file carrying three known violations"
+        exit 1
+      fi
+      if clang-format --style=file --dry-run --Werror format_violation.c; then
+        echo "clang-format reported no finding against misformatted input"
+        exit 1
+      fi

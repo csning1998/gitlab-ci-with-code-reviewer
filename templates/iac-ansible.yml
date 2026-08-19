@@ -9,11 +9,11 @@ spec:
       description: 'Checkov image for the ansible-framework scan.'
     ansible_dir:
       default: 'ansible'
-      description: 'Ansible directory linted and scanned.'
+      description: 'Directory containing Ansible playbooks and inventory files to lint and scan.'
     ansible_globs:
       type: array
-      default: ['ansible/**', 'ansible.cfg']
-      description: 'rules:changes globs gating the ansible jobs.'
+      default: ['ansible/**/*', 'ansible.cfg']
+      description: 'rules:changes patterns gating Ansible pipeline jobs.'
 ---
 lint:ansible:
   stage: lint
@@ -25,10 +25,10 @@ lint:ansible:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.ansible_globs ]]
   script:
-    - cd $[[ inputs.ansible_dir ]]
+    - cd "$[[ inputs.ansible_dir ]]"
     - ansible-lint
 
-# Checkov Ansible scan failures execute with --soft-fail to treat findings as non-blocking technical debt.
+# Executes Checkov with --soft-fail to report findings without failing the pipeline.
 security:checkov-ansible:
   stage: security
   image:
@@ -41,4 +41,4 @@ security:checkov-ansible:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.ansible_globs ]]
   script:
-    - checkov --directory $[[ inputs.ansible_dir ]] --framework ansible --compact --quiet --soft-fail
+    - checkov --directory "$[[ inputs.ansible_dir ]]" --framework ansible --compact --quiet --soft-fail

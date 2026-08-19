@@ -1,0 +1,139 @@
+---
+verify:jvm-target-matrix:
+  stage: build
+  image: "$JVM_MATRIX_IMAGE"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-jvm.yml
+        - fixtures/jvm-canary/**/*
+        - .gitlab/ci/verify-jvm.yml
+  parallel:
+    matrix:
+      - JVM_MATRIX_IMAGE: "maven:3.9.16-eclipse-temurin-8"
+        COMPILER_MODE: "source-target"
+        TARGET_RELEASES: "1.2 1.3 1.4 1.5 1.6 1.7 1.8"
+      - JVM_MATRIX_IMAGE: "maven:3.9.16-eclipse-temurin-25"
+        COMPILER_MODE: "release"
+        TARGET_RELEASES: "8 11 17 21 25"
+  script:
+    - cd fixtures/jvm-canary
+    - |
+      set -eu
+      for rel in $TARGET_RELEASES; do
+        case "$rel" in
+          1.2) expected=46 ;;
+          1.3) expected=47 ;;
+          1.4) expected=48 ;;
+          1.5) expected=49 ;;
+          1.6) expected=50 ;;
+          1.7) expected=51 ;;
+          1.8) expected=52 ;;
+          8) expected=52 ;;
+          11) expected=55 ;;
+          17) expected=61 ;;
+          21) expected=65 ;;
+          25) expected=69 ;;
+          *)
+            echo "unmapped javac release $rel" >&2
+            exit 1
+            ;;
+        esac
+        rm -rf target
+        if [ "$COMPILER_MODE" = "release" ]; then
+          mvn -B -Dmaven.compiler.release="$rel" -DskipTests package
+        else
+          mvn -B -Dmaven.compiler.source="$rel" -Dmaven.compiler.target="$rel" -DskipTests package
+        fi
+        actual=$(od -An -tu1 -j7 -N1 target/classes/Canary.class | tr -d ' ')
+        echo "target=$rel expected_major=$expected actual_major=$actual"
+        test "$actual" = "$expected"
+      done
+
+verify:jvm-runtime-matrix:
+  stage: build
+  image: "$JDK_IMAGE"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-jvm.yml
+        - fixtures/jvm-canary/**/*
+        - .gitlab/ci/verify-jvm.yml
+  parallel:
+    matrix:
+      - JDK_IMAGE: "azul/zulu-openjdk:6"
+        EXPECTED_MAJOR: "50"
+      - JDK_IMAGE: "azul/zulu-openjdk:7"
+        EXPECTED_MAJOR: "51"
+      - JDK_IMAGE: "eclipse-temurin:8-jdk"
+        EXPECTED_MAJOR: "52"
+      - JDK_IMAGE: "eclipse-temurin:11-jdk"
+        EXPECTED_MAJOR: "55"
+      - JDK_IMAGE: "eclipse-temurin:17-jdk"
+        EXPECTED_MAJOR: "61"
+      - JDK_IMAGE: "eclipse-temurin:21-jdk"
+        EXPECTED_MAJOR: "65"
+      - JDK_IMAGE: "eclipse-temurin:25-jdk"
+        EXPECTED_MAJOR: "69"
+  script:
+    - cd fixtures/jvm-canary/src/main/java
+    - |
+      set -eu
+      javac Canary.java
+      actual=$(od -An -tu1 -j7 -N1 Canary.class | tr -d ' ')
+      echo "image=$JDK_IMAGE expected_major=$EXPECTED_MAJOR actual_major=$actual"
+      test "$actual" = "$EXPECTED_MAJOR"
+
+verify:jvm-release-floor:
+  stage: build
+  image: "maven:3.9.16-eclipse-temurin-25"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-jvm.yml
+        - fixtures/jvm-canary/**/*
+        - .gitlab/ci/verify-jvm.yml
+  script:
+    - cd fixtures/jvm-canary
+    - |
+      set -eu
+      rm -rf target
+      if log=$(mvn -B -Dmaven.compiler.release=7 -DskipTests package 2>&1); then
+        echo "$log"
+        echo "release 7 was accepted, which contradicts the documented floor of 8"
+        exit 1
+      fi
+      echo "$log"
+      echo "$log" | grep -E 'invalid target release|release version 7 not supported|invalid flag'
+      test ! -f target/classes/Canary.class
+
+verify:jvm-source-level:
+  stage: build
+  image: "eclipse-temurin:8-jdk"
+  needs: []
+  interruptible: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - templates/lang-jvm.yml
+        - fixtures/jvm-canary/**/*
+        - .gitlab/ci/verify-jvm.yml
+  script:
+    - cd fixtures/jvm-canary
+    - |
+      set -eu
+      rm -rf out && mkdir -p out
+      javac -source 1.4 -target 1.4 -d out src/main/java/Canary.java
+      actual=$(od -An -tu1 -j7 -N1 out/Canary.class | tr -d ' ')
+      echo "source_level=1.4 expected_major=48 actual_major=$actual"
+      test "$actual" = "48"
+      if javac -source 1.4 -target 1.4 -d out negative/Generic14.java; then
+        echo "generics were accepted at -source 1.4, so the source level is not enforced"
+        exit 1
+      fi
