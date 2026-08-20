@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -22,6 +23,8 @@ type tagRequest struct {
 	escapedPath string
 	tagName     string
 	ref         string
+	method      string
+	token       string
 }
 
 // tagAPIServer implements a mock GitLab tag creation endpoint that logs requests and returns a fixed status code.
@@ -42,6 +45,8 @@ func newTagAPIServer(t *testing.T, status int) *tagAPIServer {
 			escapedPath: r.URL.EscapedPath(),
 			tagName:     r.URL.Query().Get("tag_name"),
 			ref:         r.URL.Query().Get("ref"),
+			method:      r.Method,
+			token:       r.Header.Get("PRIVATE-TOKEN"),
 		})
 		s.mu.Unlock()
 		w.WriteHeader(s.status)
@@ -114,17 +119,37 @@ func TestExecuteAutoTag_MissingArguments(t *testing.T) {
 	}
 }
 
-func TestExecuteAutoTag_ConfigLoadFails(t *testing.T) {
-	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "chore: init")
+func TestExecuteAutoTag_MissingConfig_AppliesWholeRepositoryDefaults(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
 	missingConfig := filepath.Join(t.TempDir(), "does-not-exist.yml")
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stdout, stderr bytes.Buffer
+	code := executeAutoTag(repoDir, missingConfig, sha, server.URL, "123", "unused", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Applying whole-repository defaults") {
+		t.Errorf("executeAutoTag(...) stdout = %q, want it to mention the applied defaults", stdout.String())
+	}
+	assertTagCreated(t, server, "0.1.0", sha)
+}
+
+func TestExecuteAutoTag_MalformedConfig_Fails(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "chore: init")
+	malformedConfig := writeConfig(t, `
+modules:
+  - name: "root"
+    dir: ""
+`)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, missingConfig, sha, "https://example.invalid/api/v4", "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(repoDir, malformedConfig, sha, "https://example.invalid/api/v4", "123", "unused", io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "failed to read versioning config") {
-		t.Errorf("executeAutoTag(...) stderr = %q, want it to mention the config read failure", stderr.String())
+	if !strings.Contains(stderr.String(), "has an empty dir") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want it to mention the empty dir validation failure", stderr.String())
 	}
 }
 
@@ -145,39 +170,76 @@ modules:
 	}
 }
 
-func TestExecuteAutoTag_RootCommit_SingleModule_TagsAndPushes(t *testing.T) {
-	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
-	config := writeConfig(t, `
+// TestExecuteAutoTag_CommitMessageClassification exercises single-commit, single-module runs
+// where the only varying input is the commit subject. The bump-type mapping itself
+// (feat/fix/perf/chore/exclamation mark) is unit tested in semver.TestDetermineBump; each case
+// here instead asserts that executeAutoTag wires that classification through to the correct
+// tag name, tag suppression, or stdout message on a real repository and mocked GitLab API.
+func TestExecuteAutoTag_CommitMessageClassification(t *testing.T) {
+	cases := []struct {
+		name          string
+		message       string
+		wantTag       string // empty means no tag should be created
+		wantTagAbsent string // optional: a specific tag name that must not be created
+		wantStdoutHas string // optional substring
+	}{
+		{
+			name:    "feat on a root commit triggers a minor bump",
+			message: "feat: initial release",
+			wantTag: "0.1.0",
+		},
+		{
+			name:    "fix with scope and exclamation mark triggers a major bump",
+			message: "fix(api)!: breaking fix",
+			wantTag: "1.0.0",
+		},
+		{
+			name:    "perf triggers a patch bump",
+			message: "perf: reduce allocations",
+			wantTag: "0.0.1",
+		},
+		{
+			name:          "chore does not trigger a release",
+			message:       "chore: bump dependency",
+			wantStdoutHas: "<repository>: commit subject does not trigger a release. Skipping.",
+		},
+		{
+			name:          "BREAKING CHANGE text confined to the commit body does not force a major bump",
+			message:       "feat: add endpoint\n\nBREAKING CHANGE: remove v1",
+			wantTag:       "0.1.0",
+			wantTagAbsent: "1.0.0",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, c.message)
+			config := writeConfig(t, `
 modules:
   - name: ""
     dir: "."
 `)
-	server := newTagAPIServer(t, http.StatusCreated)
+			server := newTagAPIServer(t, http.StatusCreated)
 
-	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
+			var stdout, stderr bytes.Buffer
+			code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
+			}
+
+			if c.wantTag != "" {
+				assertTagCreated(t, server, c.wantTag, sha)
+			} else {
+				assertNoTagsCreated(t, server)
+			}
+			if c.wantTagAbsent != "" {
+				assertTagNotCreated(t, server, c.wantTagAbsent)
+			}
+			if c.wantStdoutHas != "" && !strings.Contains(stdout.String(), c.wantStdoutHas) {
+				t.Errorf("executeAutoTag(...) stdout = %q, want it to contain %q", stdout.String(), c.wantStdoutHas)
+			}
+		})
 	}
-
-	assertTagCreated(t, server, "0.1.0", sha)
-}
-
-func TestExecuteAutoTag_BumpNone_NoTagPushed(t *testing.T) {
-	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "chore: bump dependency")
-	config := writeConfig(t, `
-modules:
-  - name: ""
-    dir: "."
-`)
-	server := newTagAPIServer(t, http.StatusCreated)
-
-	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
-	}
-	assertNoTagsCreated(t, server)
 }
 
 func TestExecuteAutoTag_MultiModule_OnlyChangedModuleTagged(t *testing.T) {
@@ -345,25 +407,6 @@ modules:
 		}
 		assertTagCreated(t, server, step.wantTag, sha)
 	}
-}
-
-func TestExecuteAutoTag_BreakingChangeWithScope_MajorBump(t *testing.T) {
-	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "fix(api)!: breaking fix")
-	config := writeConfig(t, `
-modules:
-  - name: ""
-    dir: "."
-`)
-	server := newTagAPIServer(t, http.StatusCreated)
-
-	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
-	}
-
-	// Exclamation marks following commit types or scopes mandate major version bumps.
-	assertTagCreated(t, server, "1.0.0", sha)
 }
 
 func TestExecuteAutoTag_APIFailure_ReturnsError(t *testing.T) {
@@ -553,6 +596,429 @@ modules:
 	}
 }
 
+func TestExecuteAutoTag_ConfigPathIsDirectory_DoesNotApplyDefaults(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(repoDir, t.TempDir(), sha, server.URL, "123", "unused", io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1 (a directory is not a missing config file)", code)
+	}
+	if strings.Contains(stderr.String(), "Applying whole-repository defaults") {
+		t.Errorf("executeAutoTag(...) stderr = %q, must not apply defaults when the path exists as a directory", stderr.String())
+	}
+	assertNoTagsCreated(t, server)
+}
+
+func TestExecuteAutoTag_InvalidYAML_DoesNotApplyDefaults(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	malformedConfig := writeConfig(t, "modules: [unclosed")
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(repoDir, malformedConfig, sha, server.URL, "123", "unused", io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "failed to parse versioning config") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want a YAML parse error", stderr.String())
+	}
+	assertNoTagsCreated(t, server)
+}
+
+func TestExecuteAutoTag_EmptyModules_Fails(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	emptyModules := writeConfig(t, "modules: []")
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(repoDir, emptyModules, sha, server.URL, "123", "unused", io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "declares no modules") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want the empty-modules validation failure", stderr.String())
+	}
+	assertNoTagsCreated(t, server)
+}
+
+func TestExecuteAutoTag_MissingConfig_NonRootCommitTagsWholeRepository(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{"README.md": "v1\n"}, "chore: init")
+	sha := commitFiles(t, repo, map[string]string{"README.md": "v2\n"}, "feat: follow-up")
+	missingConfig := filepath.Join(t.TempDir(), "does-not-exist.yml")
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stdout, stderr bytes.Buffer
+	code := executeAutoTag(repoDir, missingConfig, sha, server.URL, "123", "token-value", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), missingConfig) {
+		t.Errorf("executeAutoTag(...) stdout = %q, want the missing config path %q", stdout.String(), missingConfig)
+	}
+	if !strings.Contains(stdout.String(), "<repository>: bumping") {
+		t.Errorf("executeAutoTag(...) stdout = %q, want the empty-name module label <repository>", stdout.String())
+	}
+	assertTagCreated(t, server, "0.1.0", sha)
+}
+
+func TestExecuteAutoTag_SendsPrivateTokenAndPOST(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+	const token = "glpat-auto-tag-token"
+
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", token, io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	requests := server.recorded()
+	if len(requests) != 1 {
+		t.Fatalf("recorded %d requests, want 1", len(requests))
+	}
+	if requests[0].method != http.MethodPost {
+		t.Errorf("request method = %q, want POST", requests[0].method)
+	}
+	if requests[0].token != token {
+		t.Errorf("PRIVATE-TOKEN = %q, want %q", requests[0].token, token)
+	}
+}
+
+func TestExecuteAutoTag_MirrorsTagLocallyOnSuccess(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	assertLocalTag(t, repoDir, "0.1.0", sha)
+}
+
+func TestExecuteAutoTag_CustomTagPrefix(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"svc/file.txt": "1"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: svc
+    dir: svc
+    tag_prefix: "svc/v"
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	assertTagCreated(t, server, "svc/v0.1.0", sha)
+	assertTagNotCreated(t, server, "svc-0.1.0")
+}
+
+func TestExecuteAutoTag_SiblingDirectoryPrefixNotMatched(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{
+		"modA/file.txt":       "a1",
+		"modA-extra/file.txt": "e1",
+	}, "chore: init")
+	secondSHA := commitFiles(t, repo, map[string]string{
+		"modA-extra/file.txt": "e2",
+	}, "feat: change sibling directory")
+
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: modA
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	assertNoTagsCreated(t, server)
+}
+
+func TestExecuteAutoTag_FirstModuleSkippedSecondTagged(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{
+		"modA/file.txt": "a1",
+		"modB/file.txt": "b1",
+	}, "chore: init")
+	secondSHA := commitFiles(t, repo, map[string]string{
+		"modB/file.txt": "b2",
+	}, "fix: change module B")
+
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: modA
+  - name: modB
+    dir: modB
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	assertTagNotCreated(t, server, "modA-0.0.1")
+	assertTagCreated(t, server, "modB-0.0.1", secondSHA)
+}
+
+func TestExecuteAutoTag_FileDeletionInModule_Tags(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{
+		"modA/file.txt": "a1",
+	}, "chore: init")
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree() failed: %v", err)
+	}
+	if _, err := wt.Remove("modA/file.txt"); err != nil {
+		t.Fatalf("Remove() failed: %v", err)
+	}
+	sha, err := wt.Commit("fix: remove module file", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("Commit() failed: %v", err)
+	}
+
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: modA
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, sha.String(), server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	assertTagCreated(t, server, "modA-0.0.1", sha.String())
+}
+
+func TestExecuteAutoTag_ModuleDirTrailingSlash(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{"modA/file.txt": "a1"}, "chore: init")
+	secondSHA := commitFiles(t, repo, map[string]string{"modA/file.txt": "a2"}, "feat: change module A")
+
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: "modA/"
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	assertTagCreated(t, server, "modA-0.1.0", secondSHA)
+}
+
+func TestExecuteAutoTag_APIStatusOK_NotCreated_Fails(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServer(t, http.StatusOK)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1 (tag creation requires HTTP 201)", code)
+	}
+	if !strings.Contains(stderr.String(), "GitLab API returned status 200") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want status 200 in the error", stderr.String())
+	}
+}
+
+func TestExecuteAutoTag_WhitespaceSHA_FailsBeforeAPI(t *testing.T) {
+	repoDir, _ := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(repoDir, config, "   ", server.URL, "123", "unused", io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "failed to resolve commit") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want a commit resolution failure", stderr.String())
+	}
+	assertNoTagsCreated(t, server)
+}
+
+func TestExecuteAutoTag_NamedModuleStdoutUsesName(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"modA/file.txt": "a1"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: modA
+    dir: modA
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stdout bytes.Buffer
+	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, io.Discard)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "modA: bumping") {
+		t.Errorf("executeAutoTag(...) stdout = %q, want the module name as the log label", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "<repository>") {
+		t.Errorf("executeAutoTag(...) stdout = %q, named modules must not fall back to <repository>", stdout.String())
+	}
+}
+
+func TestResolveCommitSubject_UsesFirstLineOnly(t *testing.T) {
+	_, repo := initRepo(t)
+	sha := commitFiles(t, repo, map[string]string{"README.md": "test\n"}, "feat: subject\n\nfix: body must be ignored")
+
+	got, err := resolveCommitSubject(repo, sha)
+	if err != nil {
+		t.Fatalf("resolveCommitSubject(...) error = %v", err)
+	}
+	if got != "feat: subject" {
+		t.Errorf("resolveCommitSubject(...) = %q, want the first line only", got)
+	}
+}
+
+func TestResolveCommitSubject_InvalidSHA(t *testing.T) {
+	_, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{"README.md": "test\n"}, "feat: initial")
+
+	_, err := resolveCommitSubject(repo, strings.Repeat("0", 40))
+	if err == nil {
+		t.Fatal("resolveCommitSubject(...) succeeded for a missing SHA; want an error")
+	}
+	if !strings.Contains(err.Error(), "failed to resolve commit") {
+		t.Errorf("resolveCommitSubject(...) error = %q, want a wrapped resolve failure", err.Error())
+	}
+}
+
+func TestResolveFirstParentSHA_RootAndLinearHistory(t *testing.T) {
+	_, repo := initRepo(t)
+	root := commitFiles(t, repo, map[string]string{"a.txt": "1"}, "root")
+	child := commitFiles(t, repo, map[string]string{"a.txt": "2"}, "child")
+
+	parent, hasParent, err := resolveFirstParentSHA(repo, root)
+	if err != nil {
+		t.Fatalf("resolveFirstParentSHA(root) error = %v", err)
+	}
+	if hasParent || parent != "" {
+		t.Errorf("resolveFirstParentSHA(root) = (%q, %v), want (\"\", false)", parent, hasParent)
+	}
+
+	parent, hasParent, err = resolveFirstParentSHA(repo, child)
+	if err != nil {
+		t.Fatalf("resolveFirstParentSHA(child) error = %v", err)
+	}
+	if !hasParent || parent != root {
+		t.Errorf("resolveFirstParentSHA(child) = (%q, %v), want (%q, true)", parent, hasParent, root)
+	}
+}
+
+func TestResolveFirstParentSHA_MergeCommitUsesFirstParent(t *testing.T) {
+	_, repo := initRepo(t)
+	root := commitFiles(t, repo, map[string]string{"a.txt": "root"}, "root")
+	firstParent := commitFiles(t, repo, map[string]string{"a.txt": "main"}, "mainline")
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree() failed: %v", err)
+	}
+	sidePath := filepath.Join(wt.Filesystem.Root(), "side.txt")
+	if err := os.WriteFile(sidePath, []byte("side"), 0o644); err != nil {
+		t.Fatalf("WriteFile(side.txt) failed: %v", err)
+	}
+	if _, err := wt.Add("side.txt"); err != nil {
+		t.Fatalf("Add(side.txt) failed: %v", err)
+	}
+	secondParent, err := wt.Commit("side branch", &git.CommitOptions{
+		Author:  &object.Signature{Name: "test", Email: "test@example.com"},
+		Parents: []plumbing.Hash{plumbing.NewHash(root)},
+	})
+	if err != nil {
+		t.Fatalf("side commit failed: %v", err)
+	}
+
+	merge, err := wt.Commit("merge", &git.CommitOptions{
+		Author:  &object.Signature{Name: "test", Email: "test@example.com"},
+		Parents: []plumbing.Hash{plumbing.NewHash(firstParent), secondParent},
+	})
+	if err != nil {
+		t.Fatalf("merge commit failed: %v", err)
+	}
+
+	got, hasParent, err := resolveFirstParentSHA(repo, merge.String())
+	if err != nil {
+		t.Fatalf("resolveFirstParentSHA(merge) error = %v", err)
+	}
+	if !hasParent {
+		t.Fatal("resolveFirstParentSHA(merge) hasParent = false, want true")
+	}
+	if got != firstParent {
+		t.Errorf("resolveFirstParentSHA(merge) = %q, want first parent %q (second parent is %q)", got, firstParent, secondParent.String())
+	}
+}
+
+func TestResolveFirstParentSHA_InvalidSHA(t *testing.T) {
+	_, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{"a.txt": "1"}, "root")
+
+	_, _, err := resolveFirstParentSHA(repo, strings.Repeat("0", 40))
+	if err == nil {
+		t.Fatal("resolveFirstParentSHA(...) succeeded for a missing SHA; want an error")
+	}
+}
+
+func TestMainSubprocess_MissingToken_ExitsOne(t *testing.T) {
+	if os.Getenv("BE_AUTO_TAG_MISSING_TOKEN") == "1" {
+		os.Args = []string{
+			"auto-tag",
+			"--sha=abc",
+			"--api-url=http://example.invalid",
+			"--project-id=123",
+		}
+		main()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainSubprocess_MissingToken_ExitsOne$")
+	cmd.Env = append(envWithout(os.Environ(), "TAG_PUSH_TOKEN"), "BE_AUTO_TAG_MISSING_TOKEN=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("subprocess exited 0; want exit 1 when TAG_PUSH_TOKEN is unset")
+	}
+	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
+		t.Fatalf("subprocess error = %v, want exit code 1", err)
+	}
+	if !strings.Contains(stderr.String(), "TAG_PUSH_TOKEN must be set") {
+		t.Errorf("subprocess stderr = %q, want the missing-token error", stderr.String())
+	}
+}
+
 func setupRepo(t *testing.T, files map[string]string, message string) (repoDir, sha string) {
 	t.Helper()
 	repoDir, repo := initRepo(t)
@@ -609,6 +1075,32 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func assertLocalTag(t *testing.T, repoDir, tagName, wantSHA string) {
+	t.Helper()
+	repo, err := git.PlainOpen(repoDir)
+	if err != nil {
+		t.Fatalf("PlainOpen(%q) failed: %v", repoDir, err)
+	}
+	ref, err := repo.Tag(tagName)
+	if err != nil {
+		t.Fatalf("local tag %q missing: %v", tagName, err)
+	}
+	if got := ref.Hash().String(); got != wantSHA {
+		t.Errorf("local tag %q hash = %q, want %q", tagName, got, wantSHA)
+	}
+}
+
+func envWithout(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, item := range env {
+		if !strings.HasPrefix(item, prefix) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 // TestMainSubprocess executes main in a child process to isolate os.Exit calls.
 func TestMainSubprocess(t *testing.T) {
 	if os.Getenv("BE_AUTO_TAG") == "1" {
@@ -632,7 +1124,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainSubprocess$")
 	cmd.Env = append(os.Environ(),
 		"BE_AUTO_TAG=1",
 		"TAG_PUSH_TOKEN=unused",

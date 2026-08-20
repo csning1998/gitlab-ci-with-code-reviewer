@@ -3,9 +3,11 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -52,8 +54,13 @@ func executeAutoTag(repoPath, configPath, sha, apiBaseURL, projectID, password s
 		return 1
 	}
 
+	// Fall back to whole-repository tagging if the configuration file is missing.
+	// Parse errors remain fatal to prevent masking invalid configurations.
 	cfg, err := versiontag.LoadConfig(configPath)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
+		cfg = versiontag.DefaultConfig()
+		_, _ = fmt.Fprintf(stdout, "No versioning config at %q. Applying whole-repository defaults.\n", configPath)
+	} else if err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}

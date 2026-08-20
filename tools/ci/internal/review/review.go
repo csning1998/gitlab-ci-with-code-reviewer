@@ -18,40 +18,56 @@ type LLMClient interface {
 
 const maxTotalDiff = 300000
 
-// promptTemplate defines the system prompt instructing the LLM on review priorities,
-// file-type inspection rules, strict raw JSON response schema requirements, and treating
-// author merge request intent as authoritative context to minimize false-positive findings.
-const promptTemplate = `You are an expert software engineer reviewing a merge request.
+// promptTemplate specifies system instructions, review priorities, domain inspection rules,
+// author intent context parsing, and JSON schema constraints for LLM review responses.
+const promptTemplate = `Perform automated code review on the provided merge request diff.
 
 Review Context:
-- Below is the annotated diff for changed files.
-- Each file section starts with: === File: <path> ===
-- New file lines are prefixed with [L   N].
-- Removed lines are prefixed with [     ].
+- Annotated diff of modified files follows below.
+- File boundaries are marked by: === File: <path> ===
+- Added lines carry line numbers formatted as [L   N].
+- Deleted lines carry empty line markers [     ].
 
 Merge Request Intent:
-- A "=== Merge Request Intent ===" section may precede the diff containing the author's title and description.
-- Treat the author's stated intent and design trade-offs as authoritative context.
-- Do not raise concerns regarding intended trade-offs unless the reasoning contains factual errors or security risks.
+- An optional "=== Merge Request Intent ===" section precedes the diff containing author title and description.
+- Treat author intent and explicit trade-offs as authoritative context.
+- Suppress findings on intentional trade-offs unless flawed by factual errors or security risks.
+
+Finding Quality Requirements:
+- Omit findings where analysis indicates zero risk, existing mitigation, or intended behavior. Do not emit mitigated findings with caveats.
 
 Review Focus & Domains:
-- Core: Bugs, security vulnerabilities, performance bottlenecks, architectural flaws, and code maintainability.
-- Vue Components: Reactivity pitfalls, lifecycle issues, prop validation, and XSS vulnerabilities (e.g., unsafe v-html usage).
-- TypeScript: Type safety enforcement, implicit any types, and unsafe type assertions.
-- Infrastructure (HCL, YAML, Dockerfile): Resource constraints, security contexts, embedded secrets, and misconfigurations.
+- Core: Logic bugs, security vulnerabilities, performance bottlenecks, architectural flaws, and maintainability defects.
+- Vue Components: Reactivity flaws, lifecycle bugs, prop validation errors, and XSS vulnerabilities (e.g., unsafe v-html usage).
+- TypeScript: Type safety violations, implicit any usage, and unsafe type assertions.
+- Python (2.7 through 3.15): Python 2/3 porting defects (str/bytes confusion, integer division changes), mutable default arguments, unsound type hints against configured checker strictness, unsafe deserialization (pickle, yaml.load without SafeLoader), async/await anti-patterns, GIL-atomicity assumptions unsafe under free-threaded builds, and, for NumPy/pandas/SciPy code, unintended broadcasting, chained-assignment mutation, and floating-point precision loss in statistical aggregation.
+- C / C++: Memory safety defects (buffer overflows, use-after-free, double free), undefined behavior, standard dialect compliance violations (C89 through C23 / C++11 through C++26 against configured standard flags), pointer arithmetic errors, and unchecked POSIX/system call returns.
+- JVM Ecosystem (Java, Kotlin, Scala, Groovy): Target level/class file format compatibility violations (language feature usage exceeding specified target version/class major floor), concurrency defects, resource leaks (unclosed streams/AutoCloseable), unsafe reflection, and insecure deserialization.
+- C# / .NET: Target Framework Moniker (TFM) and language version incompatibilities, async/await anti-patterns (deadlocks, unobserved task exceptions), IDisposable leaks, improper unsafe code blocks, and allocation hot-paths.
+- Rust: Soundness violations in unsafe blocks, panicking pathways in production paths, lifetime/ownership mismatches, unchecked unwrap/expect calls, and concurrency data races.
+- Go: Goroutine leaks, channel deadlocks, data races, unhandled error returns, improper unsafe.Pointer conversions, and missing Context propagation.
+- Infrastructure (HCL, YAML, Dockerfile): Unbounded resources, insecure security contexts, embedded credentials, and misconfigurations.
+
+Mathematical Correctness:
+- Verify mathematical, statistical, and algorithmic computations against documented specifications (docstrings, comments, or MR intent) or standard definitions.
+- Report sign errors, summation or index off-by-one errors, invalid distributional or numerical assumptions, and formula deviations as defects, independent of code style.
+
+Security Labeling Policy:
+- Set "security": true strictly for: (1) Credential or secret exposure (API keys, tokens, passwords); (2) Injection vulnerabilities (XSS, SQLi, command injection, path traversal); (3) Memory-safety defects (memory leaks, use-after-free, buffer overflows).
+- Clear "security" flag for general string-handling, validation, or encoding issues lacking direct exploit vectors in the above categories.
 
 Output Format Requirements:
-- Return ONLY a raw JSON array without markdown code blocks, backticks, or conversational text wrappers.
-- If no significant issues are found across all files, return an empty array: []
+- Emit a raw JSON array exclusively. Exclude markdown code blocks, backticks, or outer text wrappers.
+- Emit an empty array [] when no actionable defects exist.
 
 JSON Element Schema:
 {
     "file": "<exact file path from the === File: <path> === header>",
     "start_line": <integer, starting line number [L N] of the problematic range>,
     "end_line": <integer, ending line number [L N] of the problematic range; equal to start_line for single-line issues>,
-    "description": "<concise markdown explanation of the defect and its technical impact>",
-    "suggestion": "<optional: exact replacement lines for start_line..end_line preserving indentation; omit if no direct code replacement applies>",
-    "security": <boolean, true only if this specific finding is a security vulnerability; omit or false otherwise>
+    "description": "<concise markdown detailing the defect and technical impact>",
+    "suggestion": "<optional: exact replacement lines for start_line..end_line maintaining indentation; omit when inapplicable>",
+    "security": <boolean, true strictly per Security Labeling Policy; false or omitted otherwise>
 }`
 
 // Comment represents a single code review finding emitted by an LLM provider.

@@ -40,6 +40,12 @@ type Config struct {
 	Modules []Module `yaml:"modules"`
 }
 
+// DefaultConfig returns a single-module configuration targeting the root directory
+// with an empty tag prefix for unconfigured repositories.
+func DefaultConfig() Config {
+	return Config{Modules: []Module{{Dir: "."}}}
+}
+
 // LoadConfig retrieves and parses the versioning specification from the specified file path.
 func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
