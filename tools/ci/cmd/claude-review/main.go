@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"ci-tools/internal/claude"
 	"ci-tools/internal/config"
+	"ci-tools/internal/providers/claude"
 	"ci-tools/internal/review"
 )
 

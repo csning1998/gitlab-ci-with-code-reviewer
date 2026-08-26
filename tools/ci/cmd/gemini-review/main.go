@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"ci-tools/internal/config"
-	"ci-tools/internal/gemini"
+	"ci-tools/internal/providers/gemini"
 	"ci-tools/internal/review"
 )
 
