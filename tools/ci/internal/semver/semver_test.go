@@ -15,6 +15,7 @@ func TestDetermineBump(t *testing.T) {
 		{"ci type yields no release", "ci(release): add automated semver tagging", BumpNone},
 		{"refactor type yields no release", "refactor(ci): consolidate includes", BumpNone},
 		{"chore type yields no release", "chore: bump dependency", BumpNone},
+		{"ad-hoc type yields no release", "ad-hoc: patch runner config on the fly", BumpNone},
 		{"feat with exclamation mark", "feat(api)!: change auth flow", BumpMajor},
 		{"fix with exclamation mark and scope", "fix(api)!: remove deprecated field", BumpMajor},
 		{"subject without a Conventional Commit header", "bump go.mod dependencies", BumpNone},

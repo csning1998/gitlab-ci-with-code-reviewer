@@ -19,7 +19,8 @@ FROM alpine:3.24
 # and Git to support commitlint tree traversal subcommands (e.g., git merge-base).
 # commitlint.config.cjs does not invoke tsc. The native TypeScript compiler is a prebuilt Go binary
 # whose stdlib still reports HIGH CVEs (CVE-2026-33818 and seven siblings) under Trivy 0.72.0.
-RUN apk add --no-cache ca-certificates nodejs npm git \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates nodejs npm git \
     && npm install -g --no-save @commitlint/cli@21.2.1 @commitlint/config-conventional@21.2.0 \
     && test -d /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript \
     && rm -rf /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript
