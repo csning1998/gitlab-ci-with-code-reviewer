@@ -1,32 +1,44 @@
-# Memorandum of Understanding: Claude API Key Provisioning Strategy
+# Claude API Key Provisioning Strategy
 
-## Section 1. Status
+## Section 1. Architectural Scope and Terminology
 
-This document records an architectural decision that remains deferred. No implementation work described below has begun. This memorandum exists to preserve the analysis for future reference.
+### Item A. Scope
 
-## Section 2. Current Architecture
+This document specifies the credential provisioning architecture for Anthropic Claude integration in the `gitlab-ci-with-code-reviewer` component. A Claude review job is a GitLab CI job which executes automated code review through the Anthropic Claude API. Every repository which includes `gitlab-ci-with-code-reviewer` MUST provide an authentication credential to the Claude review job.
 
-Each repository consuming `gitlab-ci-with-code-reviewer` supplies its own `CLAUDE_API_KEY` and `GEMINI_API_KEY` CI/CD variable, read by `internal/config.Load()` and passed to the respective provider client. The Gemini keys are provisioned through Terraform in `csning1998-lab/meta-platform/layers/40-provider-api-keys`, using the `hashicorp/google` provider's `google_apikeys_key` resource, one key per repository, each restricted to `generativelanguage.googleapis.com` under the shared Google Cloud project `gen-lang-client-0531142873`. Claude keys have no equivalent automation; each must be created manually in the Claude Console.
+### Item B. Lexicon
 
-## Section 3. Considered Alternative
+A static API key is a persistent alphanumeric credential which authorizes API requests without credential expiration. Workload Identity Federation is an authentication mechanism in which an external workload exchanges a signed identity token for a short lived access token. A federation issuer is an OpenID Connect identity provider which signs identity tokens for client verification. A service account is a nonhuman identity resource in Anthropic Console to which permissions are assigned. A federation rule is an authorization policy which binds incoming identity token claims to a specific service account.
 
-An alternative design would replace static `CLAUDE_API_KEY` values entirely with Workload Identity Federation (WIF), whereby the `claude-review` CI job exchanges a short-lived GitLab CI OIDC identity token for a short-lived Anthropic access token at runtime, eliminating any static Anthropic credential from CI/CD variables, Terraform state, or Vault. This alternative was not implemented. It was raised as a question during a design discussion and is recorded here for future evaluation.
+## Section 2. Primary Provisioning Architecture
 
-## Section 4. Feasibility Findings
+### Item A. Static Credential Flow
 
-### Task A. Automated Key Creation Is Not Available
+The primary provisioning architecture uses static API keys for Anthropic Claude authentication. Each consuming repository retrieves a repository specific `CLAUDE_API_KEY` value from HashiCorp Vault. The `internal/config.Load` function reads `CLAUDE_API_KEY` from the CI execution environment. The reviewer runtime initializes the Anthropic client using the retrieved credential.
 
-The Anthropic Admin API's `/v1/organizations/api_keys` endpoint supports only `list` and `update` (rename, activate, deactivate); it has no `create` operation. Anthropic's own documentation states this explicitly: "No, new API keys can only be created through the Claude Console for security reasons. The Admin API can only manage existing API keys." This holds regardless of client (`curl`, an SDK, or any Terraform provider); the `terraform-mars/anthropic` provider's `anthropic_api_key` resource claims a create capability in its own documentation, but that claim cannot be true against the real API and MUST NOT be relied upon.
+### Item B. Key Management and Storage
 
-### Task B. Workload Identity Federation Is a Viable Replacement, Not a Workaround
+The chosen path stores every manual `CLAUDE_API_KEY` in the central HashiCorp Vault instance. An operator creates each `CLAUDE_API_KEY` manually within the Claude Console. The Google Cloud provider supports automated key provisioning through the `google_apikeys_key` Terraform resource for `GEMINI_API_KEY`. The Anthropic platform does not provide equivalent automated key creation resources. Consequently, static Claude credentials require manual creation by an operator.
 
-WIF removes the need to create per-repository static keys at all, rather than automating their creation. It requires three Anthropic-side resources: a federation issuer (the OIDC provider), a service account (the non-human principal), and a federation rule (the match condition binding a JWT to a service account). Unlike API keys, all three ARE programmatically manageable through the Admin API ("create issuers, service accounts, and rules from infrastructure as code"), though no Terraform provider found during this investigation exposes them as resources; a direct Admin API caller (`curl`, a Go script, or Terraform's generic `http` provider) would be required.
+The cost of the chosen path comprises manual key generation overhead and credential persistence in Vault. Every key rotation requires manual intervention by an operator in the Claude Console.
 
-### Task C. GitLab CI Is a Compatible OIDC Provider
+## Section 3. Constraints on Automated Key Provisioning
 
-GitLab.com's OIDC issuer is `https://gitlab.com`, with JWKS served at `https://gitlab.com/-/jwks` via standard discovery, satisfying Anthropic's federation issuer requirements (HTTPS, port 443, public DNS hostname). GitLab is not one of Anthropic's five preset provider tiles (GitHub Actions, AWS, Google Cloud, Microsoft Entra ID, Kubernetes) and would be configured through the "Custom OIDC" path. GitLab CI's ID token exposes `project_path` as a dedicated claim (e.g. `csning1998-lab/personal/second-brain`), which maps one federation rule to one repository more directly than GitHub Actions' `sub`-string parsing.
+### Item A. Admin API Limitations
 
-The `.gitlab-ci.yml` syntax for requesting the token:
+The Anthropic Admin API restricts key operations on the `/v1/organizations/api_keys` endpoint. The endpoint supports list and update operations. The endpoint does not provide a create operation. Anthropic requires manual key generation through the Claude Console to protect administrative boundaries.
+
+### Item B. Provider Automation Constraints
+
+Third party Terraform providers do not possess a functional API key creation mechanism. The `anthropic_api_key` resource documentation in the `terraform-mars/anthropic` provider declares a creation capability. The upstream Admin API does not support programmatic key generation. Consequently, the declared creation capability in the provider cannot function against the live API. Callers MUST NOT rely on third party Terraform providers for automated `CLAUDE_API_KEY` creation.
+
+## Section 4. Workload Identity Federation Architecture
+
+### Item A. Token Exchange Mechanism
+
+Workload Identity Federation eliminates persistent credentials from CI pipeline configuration. The `claude-review` job obtains a signed JSON Web Token from GitLab CI at runtime. The job exchanges the signed JSON Web Token directly for a short lived Anthropic access token.
+
+The `.gitlab-ci.yml` configuration requests the identity token through the `id_tokens` keyword.
 
 ```yaml
 job_with_id_tokens:
@@ -37,24 +49,29 @@ job_with_id_tokens:
         - claude-review
 ```
 
-### Task D. No SDK Version Bump Is Required
+The `aud` claim in the requested token MUST equal `https://api.anthropic.com`. GitLab serves the public keys for signature verification at `https://gitlab.com/-/jwks`. Anthropic verifies the token signature against the public keys of the issuer. The GitLab token provides the dedicated `project_path` claim for repository identification.
 
-`tools/ci/go.mod` currently pins `github.com/anthropics/anthropic-sdk-go v1.48.0`. WIF support (`option.WithFederationTokenProvider`) shipped in v1.39.0 (2026-05-04), so the currently pinned version already supports it.
+### Item B. Anthropic Resource Structure
 
-### Task E. Implementation Cost
+Workload Identity Federation requires three resources within the Anthropic platform. The federation issuer defines the OpenID Connect endpoint for `https://gitlab.com`. A service account defines the nonhuman identity which executes review operations. A federation rule binds the `project_path` claim of the incoming token to the service account.
 
-Adopting WIF requires: registering one GitLab CI federation issuer (one-time, not per-repository); creating one service account and one federation rule per repository requiring isolated cost/usage attribution; adding `id_tokens` to the `claude-code-review` job in `templates/core.yml`; and replacing the static `CLAUDE_API_KEY` read in `internal/config.Load()` and `internal/claude/client.go` with the SDK's federation credential construction. This is a change to the reviewer's Go code and CI template, not confined to the Terraform layer that provisions secrets.
+The Anthropic Admin API supports programmatic management for federation issuers, service accounts, and federation rules. Administrators MAY provision these three federation resources through custom API scripts.
 
-## Section 5. Recommendation
+### Item C. SDK Compatibility
 
-Static `CLAUDE_API_KEY` provisioning SHOULD be retained for the present scale (seven repositories), using manually created Console keys stored in the shared Vault instance described in `csning1998-lab/meta-platform`. Workload Identity Federation is technically feasible and architecturally preferable at larger scale, since it removes static Anthropic credentials from CI/CD variables, Terraform state, and Vault entirely, but its implementation cost spans both the Terraform layer and the reviewer's Go codebase and is out of scope for the current provisioning work.
+The reviewer application declares dependencies within `tools/ci/go.mod`. The `tools/ci/go.mod` file pins `github.com/anthropics/anthropic-sdk-go` at version `v1.48.0`. The Anthropic Go SDK introduced the `option.WithFederationTokenProvider` option in version `v1.39.0`. The currently pinned SDK version supports token exchange without a dependency upgrade.
 
-## Section 6. Prerequisites Before Implementation
+## Section 5. Implementation Requirements and Costs
 
-Should this alternative be pursued in the future, the following MUST be completed first.
+### Item A. Tradeoff Analysis
 
-1. Register a GitLab CI federation issuer in the Claude Console (or via the Admin API) using the Custom OIDC path.
-2. Decide the service account and federation rule granularity: one service account per repository (preserving today's per-repository cost isolation) versus one shared service account with per-repository Workspace routing.
-3. Determine how federation issuers, service accounts, and federation rules will be created as infrastructure as code, since no Terraform provider was found to expose them as first-class resources.
-4. Update `templates/core.yml` to request an `id_tokens` claim with `aud: https://api.anthropic.com` on the `claude-code-review` job.
-5. Update `internal/config.Load()` and `internal/claude/client.go` to construct the Anthropic client from federation credentials instead of a static `CLAUDE_API_KEY`.
+The current architecture SHOULD retain static `CLAUDE_API_KEY` provisioning for the initial deployment scale of seven repositories. Static provisioning limits maintenance overhead to existing Vault infrastructure.
+
+Workload Identity Federation becomes preferable when deployment scale increases. Workload Identity Federation removes static secrets from CI variables, Terraform state, and Vault storage. The cost of adopting Workload Identity Federation comprises Go codebase refactoring and custom API resource automation.
+
+### Item B. Integration Steps
+
+1. **Register Federation Issuer**: The administrator MUST register a GitLab CI federation issuer for `https://gitlab.com` through the Custom OIDC workflow.
+2. **Configure Service Accounts and Rules**: The administrator MUST provision a service account and a federation rule for each consuming repository requiring isolated cost attribution.
+3. **Update CI Pipeline Configuration**: The maintainer MUST add an `id_tokens` definition with audience `https://api.anthropic.com` to the review job in `templates/core.yml`.
+4. **Update Reviewer Client Implementation**: The maintainer MUST modify `internal/config.Load` and `internal/claude/client.go` to initialize the client from federation credentials.

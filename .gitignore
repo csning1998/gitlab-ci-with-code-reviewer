@@ -7,9 +7,7 @@
 runner-config/
 
 ## Terraform
-terraform/terraform.tfvars
-terraform/backend-auth.hcl
-terraform/*.tf.bak
+terraform/**/*.tf.bak
 .terraform/
 .terraform.tfstate.lock.info
 terraform.tfstate
@@ -42,3 +40,4 @@ obj/
 
 ## Fixture build output
 fixtures/c-canary/bin/
+note.md

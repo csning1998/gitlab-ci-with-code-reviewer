@@ -1,4 +1,4 @@
-# GitLab Merge Request Reviewer
+# GitLab CI with Code Reviewer
 
 ## Section 1. Obtain API Key from AI Provider(s)
 
@@ -178,14 +178,14 @@ This project is published as a GitLab CI/CD Catalog component. Consuming project
 
 ### Step B. Reference Components in `.gitlab-ci.yml`
 
-Components are referenced using the path syntax `gitlab.com/csning1998/gitlab-ci-with-code-reviewer/<component>@<version>`. The `<version>` value must be explicitly pinned to a designated release tag. Inclusion of the `core` component is mandatory and necessitates explicit definition of the `reviewer_image` input.
+Components are referenced using the path syntax `gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/<component>@<version>`. The `<version>` value must be explicitly pinned to a designated release tag. Inclusion of the `core` component is mandatory and necessitates explicit definition of the `reviewer_image` input.
 
 ```yaml
 include:
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.0.0
       inputs:
-          reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-go@1.0.0
+          reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/lang-go@1.0.0
 ```
 
 ### Step C. Inject Inputs for Project-Specific Differences
@@ -194,24 +194,24 @@ Specify inputs to override default configurations. Operators should verify and s
 
 ```yaml
 include:
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/core@1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.0.0
       inputs:
-          reviewer_image: registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:1.0.0
+          reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.0.0
           claude_model: claude-sonnet-4-6
           gemini_model: gemini-3.5-flash
           model_k: model_v
 
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
       inputs:
           ts_globs: ['frontend/**/*', 'backend/**/*']
           frontend_dir: frontend
           backend_dir: backend
 
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-terraform@1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/iac-terraform@1.0.0
       inputs:
           checkov_skip: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21'
 
-    - component: gitlab.com/csning1998/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
 ```
 
 Supported components comprise `core`, `lang-go`, `lang-python`, `lang-typescript`, `lang-c-cpp`, `lang-jvm`, `lang-csharp`, `lang-rust`, `iac-terraform`, `iac-packer`, and `iac-ansible`. Full input schemas are defined within the respective files under `templates/`.
@@ -227,7 +227,7 @@ The `core` component unconditionally executes a `gitleaks` secret-detection job 
 The CI/CD Catalog operates on an instance-scoped architecture. Since self-hosted instances cannot resolve or include components directly from the gitlab.com catalog, template components must be replicated within the local instance environment.
 
 1. **Mirror Repository**: Import the `gitlab-ci-with-code-reviewer` repository into the self-hosted instance and designate it as a CI/CD Catalog project within **Settings > General > Visibility, project features, permissions > CI/CD Catalog project**.
-2. **Mirror Container Image**: Retrieve the container image `registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:<tag>` and publish it to the local instance registry or Harbor. Provide this internal image path to the `reviewer_image` input of the `core` component.
+2. **Mirror Container Image**: Retrieve the container image `registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:<tag>` and publish it to the local instance registry or Harbor. Provide this internal image path to the `reviewer_image` input of the `core` component.
 3. **Update Component References**: Configure consuming projects on the self-hosted instance to reference the local component path `<instance-namespace>/gitlab-ci-with-code-reviewer/<component>@<version>` rather than the gitlab.com path.
 4. **Publish Catalog Release**: Apply a version tag to the mirrored project to publish its components to the instance catalog, thereby replicating the release workflow documented in Section 7.
 

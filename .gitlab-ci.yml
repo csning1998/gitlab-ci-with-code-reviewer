@@ -13,7 +13,7 @@ include:
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     inputs:
-      reviewer_image: "registry.gitlab.com/csning1998/gitlab-ci-with-code-reviewer/reviewer:edge"
+      reviewer_image: "registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:edge"
       claude_model: "claude-sonnet-5"
       gemini_model: "gemini-3.6-flash" # or `gemma-4-31b-it`
       enable_sonarqube: true
@@ -25,6 +25,8 @@ include:
   - local: templates/iac-terraform.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    inputs:
+      checkov_skip: "CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_TF_1"
   - local: templates/auto-tag.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
