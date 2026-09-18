@@ -1,11 +1,11 @@
 module.exports = {
     extends: ['@commitlint/config-conventional'],
     rules: {
-        // Header length remains constrained by the default @commitlint/config-conventional threshold (100 characters).
-        // Disables line-length restrictions for the commit body to support detailed technical descriptions
+        // Disables line-length restrictions for commit bodies to permit detailed technical context.
+        // Header length SHALL remain constrained by the default @commitlint/config-conventional 100-character limit.
         'body-max-line-length': [0, 'always', Infinity],
-        // Extends the @commitlint/config-conventional@21.2.0 default type-enum with `ad-hoc`, aligned with
-        // the group label `type::ad-hoc`. `internal/semver.DetermineBump` already treats it as a no-release type.
+        // Appends `adhoc` to the default type-enum list for alignment with the `type::adhoc` group label.
+        // `internal/semver.DetermineBump` SHALL treat `adhoc` commits as non-releasable change types.
         'type-enum': [
             2,
             'always',
@@ -21,7 +21,7 @@ module.exports = {
                 'revert',
                 'style',
                 'test',
-                'ad-hoc',
+                'adhoc',
             ],
         ],
     },

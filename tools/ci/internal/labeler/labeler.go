@@ -11,7 +11,7 @@ import (
 )
 
 // commitTypeToLabel maps Conventional Commit types to corresponding group labels.
-// Unmapped types (build, chore, ci, revert, style) default to type::ad-hoc.
+// Routine maintenance types (build, chore, ci, revert, style) map to type::chore.
 var commitTypeToLabel = map[string]string{
 	"feat":     "type::feature",
 	"fix":      "type::fix",
@@ -19,11 +19,12 @@ var commitTypeToLabel = map[string]string{
 	"refactor": "type::refactor",
 	"test":     "type::test",
 	"perf":     "type::enhancement",
-	"build":    "type::ad-hoc",
-	"chore":    "type::ad-hoc",
-	"ci":       "type::ad-hoc",
-	"revert":   "type::ad-hoc",
-	"style":    "type::ad-hoc",
+	"adhoc":    "type::adhoc",
+	"build":    "type::chore",
+	"chore":    "type::chore",
+	"ci":       "type::chore",
+	"revert":   "type::chore",
+	"style":    "type::chore",
 }
 
 // conventionalHeaderRe parses Conventional Commit headers for type, optional scope, and breaking change indicators.

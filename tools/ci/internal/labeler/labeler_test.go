@@ -12,17 +12,18 @@ import (
 
 func TestResolveCommitTypeLabel_KnownTypes(t *testing.T) {
 	cases := map[string]string{
-		"feat: add thing":     "type::feature",
-		"fix: correct bug":    "type::fix",
-		"docs: update readme": "type::documentation",
-		"refactor: simplify":  "type::refactor",
-		"test: add coverage":  "type::test",
-		"perf: speed up":      "type::enhancement",
-		"build: bump deps":    "type::ad-hoc",
-		"chore: housekeeping": "type::ad-hoc",
-		"ci: tweak pipeline":  "type::ad-hoc",
-		"revert: undo change": "type::ad-hoc",
-		"style: reformat":     "type::ad-hoc",
+		"feat: add thing":        "type::feature",
+		"fix: correct bug":       "type::fix",
+		"docs: update readme":    "type::documentation",
+		"refactor: simplify":     "type::refactor",
+		"test: add coverage":     "type::test",
+		"perf: speed up":         "type::enhancement",
+		"build: bump deps":       "type::chore",
+		"chore: housekeeping":    "type::chore",
+		"ci: tweak pipeline":     "type::chore",
+		"revert: undo change":    "type::chore",
+		"style: reformat":        "type::chore",
+		"adhoc: temp workaround": "type::adhoc",
 	}
 	for title, want := range cases {
 		if got := resolveCommitTypeLabel(title); got != want {
