@@ -53,7 +53,7 @@ build:go:
     - go build ./...
 
 test:go:
-  stage: build
+  stage: test
   image: '$[[ inputs.go_image ]]'
   needs:
     - job: build:go
@@ -64,10 +64,13 @@ test:go:
       changes: $[[ inputs.go_globs ]]
   before_script:
     - apk add --no-cache git
+    - go install gotest.tools/gotestsum@v1.13.0
   script:
     - cd $[[ inputs.go_dir ]]
-    - go test -coverprofile=coverage.out ./...
+    - gotestsum --junitfile report.xml -- -coverprofile=coverage.out ./...
   artifacts:
+    reports:
+      junit: $[[ inputs.go_dir ]]/report.xml
     paths:
       - $[[ inputs.go_dir ]]/coverage.out
     expire_in: 1 day

@@ -70,8 +70,8 @@ stages:
   - format
   - build
   - lint
-  - security
   - test
+  - security
   - review
   - deploy
 
@@ -95,6 +95,9 @@ misc:mr-gate:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
+  needs:
+    - job: fmt:prepare-pusher
+      optional: true
   variables:
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
   rules:
@@ -118,7 +121,9 @@ lint:commit:
   stage: lint
   image: '$[[ inputs.reviewer_image ]]'
   interruptible: true
-  needs: []
+  needs:
+    - job: fmt:prepare-pusher
+      optional: true
   variables:
     GIT_DEPTH: 0
   rules:
@@ -176,7 +181,9 @@ lint:markdown:
     name: '$[[ inputs.markdownlint_image ]]'
     entrypoint: ['']
   allow_failure: true
-  needs: []
+  needs:
+    - job: fmt:prepare-pusher
+      optional: true
   interruptible: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -188,7 +195,9 @@ lint:markdown:
 lint:yaml:
   stage: lint
   image: '$[[ inputs.yamllint_image ]]'
-  needs: []
+  needs:
+    - job: fmt:prepare-pusher
+      optional: true
   interruptible: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

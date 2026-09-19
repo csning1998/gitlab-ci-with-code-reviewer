@@ -51,7 +51,9 @@ fmt:rust:
 lint:rust:
   extends: .rust-base
   stage: lint
-  needs: []
+  needs:
+    - job: fmt:rust
+      optional: true
   before_script:
     - rustup component add clippy
   script:
@@ -61,7 +63,9 @@ lint:rust:
 build:rust:
   extends: .rust-base
   stage: build
-  needs: []
+  needs:
+    - job: fmt:rust
+      optional: true
   script:
     - cd "$[[ inputs.rust_dir ]]"
     - cargo build --all-targets

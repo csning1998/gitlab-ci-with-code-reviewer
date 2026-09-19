@@ -3,6 +3,7 @@ stages:
   - format
   - build
   - lint
+  - test
   - security
   - review
   - release
@@ -22,6 +23,13 @@ include:
   - local: templates/lang-go.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    inputs:
+      go_globs:
+        - 'tools/**/*.go'
+        - 'tools/**/go.mod'
+        - 'tools/**/go.sum'
+        - 'templates/lang-go.yml'
+        - '.gitlab/golangci.yml'
   - local: templates/iac-terraform.yml
     rules:
       - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -42,6 +50,7 @@ include:
 build:reviewer-image:
   stage: build
   image: quay.io/buildah/stable:v1.43.0
+  needs: []
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

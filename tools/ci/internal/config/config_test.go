@@ -278,3 +278,12 @@ func TestApplyEnvFile_SkipsMalformedAndCommentedLines(t *testing.T) {
 		t.Errorf("ONLY_FROM_FILE = %q, want ok", got)
 	}
 }
+
+func TestDefaultModelConstants_NonEmpty(t *testing.T) {
+	if defaultGeminiModel == "" {
+		t.Error("defaultGeminiModel must not be empty")
+	}
+	if defaultClaudeModel == "" {
+		t.Error("defaultClaudeModel must not be empty")
+	}
+}

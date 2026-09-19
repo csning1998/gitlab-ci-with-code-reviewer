@@ -47,7 +47,9 @@ fmt:csharp:
 lint:csharp:
   extends: .csharp-base
   stage: lint
-  needs: []
+  needs:
+    - job: fmt:csharp
+      optional: true
   script:
     - cd "$[[ inputs.csharp_dir ]]"
     - dotnet format --verify-no-changes --severity warn
@@ -55,7 +57,9 @@ lint:csharp:
 build:csharp:
   extends: .csharp-base
   stage: build
-  needs: []
+  needs:
+    - job: fmt:csharp
+      optional: true
   script:
     - cd "$[[ inputs.csharp_dir ]]"
     - dotnet build --configuration "$[[ inputs.dotnet_configuration ]]"

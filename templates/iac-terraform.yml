@@ -42,7 +42,9 @@ security:checkov-terraform:
   image:
     name: '$[[ inputs.checkov_image ]]'
     entrypoint: ['']
-  needs: []
+  needs:
+    - job: fmt:terraform
+      optional: true
   interruptible: true
   allow_failure: true
   rules:

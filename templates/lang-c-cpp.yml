@@ -59,7 +59,9 @@ lint:c-cpp:
   extends: .c-cpp-base
   stage: lint
   image: '$[[ inputs.c_image ]]'
-  needs: []
+  needs:
+    - job: fmt:c-cpp
+      optional: true
   before_script:
     - |
       if ! command -v cpplint >/dev/null 2>&1; then
@@ -80,7 +82,9 @@ build:c-cpp:
   extends: .c-cpp-base
   stage: build
   image: '$[[ inputs.c_image ]]'
-  needs: []
+  needs:
+    - job: fmt:c-cpp
+      optional: true
   script:
     - cd "$[[ inputs.c_dir ]]"
     - make "$[[ inputs.c_build_target ]]"

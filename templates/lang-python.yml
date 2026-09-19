@@ -62,6 +62,9 @@ lint:python:
   extends: .python-base
   stage: lint
   image: '$[[ inputs.python_image ]]'
+  needs:
+    - job: fmt:python
+      optional: true
   before_script:
     - |
       if [ "$[[ inputs.package_manager ]]" = "uv" ]; then
@@ -83,6 +86,9 @@ test:python:
   extends: .python-base
   stage: '$[[ inputs.test_stage ]]'
   image: '$[[ inputs.python_image ]]'
+  needs:
+    - job: fmt:python
+      optional: true
   # Extends pipeline execution to default branch and tag pushes to verify post-merge integration stability.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

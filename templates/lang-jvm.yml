@@ -69,7 +69,9 @@ fmt:jvm:
 lint:jvm:
   extends: .jvm-base
   stage: lint
-  needs: []
+  needs:
+    - job: fmt:jvm
+      optional: true
   variables:
     JVM_LINT_CMD: '$[[ inputs.jvm_lint_cmd ]]'
   rules:
@@ -82,7 +84,9 @@ lint:jvm:
 build:jvm:
   extends: .jvm-base
   stage: build
-  needs: []
+  needs:
+    - job: fmt:jvm
+      optional: true
   script:
     - cd "$[[ inputs.jvm_dir ]]"
     - |

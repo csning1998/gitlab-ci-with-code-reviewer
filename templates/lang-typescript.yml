@@ -62,6 +62,9 @@ lint:typescript-frontend:
   stage: lint
   image: '$[[ inputs.bun_image ]]'
   interruptible: true
+  needs:
+    - job: fmt:typescript
+      optional: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.ts_globs ]]
@@ -74,6 +77,9 @@ lint:typescript-backend:
   stage: lint
   image: '$[[ inputs.bun_image ]]'
   interruptible: true
+  needs:
+    - job: fmt:typescript
+      optional: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes: $[[ inputs.ts_globs ]]
