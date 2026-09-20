@@ -2,9 +2,12 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -694,5 +697,285 @@ func verifyApprovedModel(t *testing.T, provider, model string) {
 	}
 	if err := Validate(opts); err != nil {
 		t.Errorf("Validate(%q, %q) unexpected error: %v", provider, model, err)
+	}
+}
+
+// TestValidate_TemperatureBoundaries verifies exact floating point limits across providers.
+func TestValidate_TemperatureBoundaries(t *testing.T) {
+	t.Parallel()
+
+	fPtr := func(v float64) *float64 { return &v }
+
+	cases := []struct {
+		name      string
+		provider  string
+		temp      *float64
+		wantError bool
+	}{
+		{name: "exact minimum zero", provider: "openai", temp: fPtr(0.0), wantError: false},
+		{name: "exact maximum two", provider: "openai", temp: fPtr(2.0), wantError: false},
+		{name: "negative boundary epsilon", provider: "openai", temp: fPtr(-0.000001), wantError: true},
+		{name: "positive boundary epsilon", provider: "openai", temp: fPtr(2.000001), wantError: true},
+		{name: "claude exact limit one", provider: "claude", temp: fPtr(1.0), wantError: false},
+		{name: "claude exceeding limit epsilon", provider: "claude", temp: fPtr(1.000001), wantError: true},
+		{name: "claude zero temperature", provider: "claude", temp: fPtr(0.0), wantError: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			model := "gpt-4o"
+			if tc.provider == "claude" {
+				model = "claude-sonnet-4-6"
+			}
+			opts := ModelOptions{
+				Provider:    tc.provider,
+				Model:       model,
+				Temperature: tc.temp,
+			}
+			err := Validate(opts)
+			if (err != nil) != tc.wantError {
+				t.Errorf("Validate() for %s error = %v, wantError = %v", tc.name, err, tc.wantError)
+			}
+		})
+	}
+}
+
+// TestValidate_TopPBoundaries verifies exact probability boundaries between 0.0 and 1.0.
+func TestValidate_TopPBoundaries(t *testing.T) {
+	t.Parallel()
+
+	fPtr := func(v float64) *float64 { return &v }
+
+	cases := []struct {
+		name      string
+		topP      *float64
+		wantError bool
+	}{
+		{name: "exact minimum zero", topP: fPtr(0.0), wantError: false},
+		{name: "exact maximum one", topP: fPtr(1.0), wantError: false},
+		{name: "below zero epsilon", topP: fPtr(-0.000001), wantError: true},
+		{name: "above one epsilon", topP: fPtr(1.000001), wantError: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := ModelOptions{
+				Provider: "openai",
+				Model:    "gpt-4o",
+				TopP:     tc.topP,
+			}
+			err := Validate(opts)
+			if (err != nil) != tc.wantError {
+				t.Errorf("Validate() for %s error = %v, wantError = %v", tc.name, err, tc.wantError)
+			}
+		})
+	}
+}
+
+// TestValidate_ThinkingBudgetBoundaries verifies non-negative constraints on thinking token quotas.
+func TestValidate_ThinkingBudgetBoundaries(t *testing.T) {
+	t.Parallel()
+
+	iPtr := func(v int) *int { return &v }
+
+	cases := []struct {
+		name      string
+		budget    *int
+		wantError bool
+	}{
+		{name: "zero budget valid", budget: iPtr(0), wantError: false},
+		{name: "positive budget valid", budget: iPtr(4096), wantError: false},
+		{name: "negative budget rejected", budget: iPtr(-1), wantError: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := ModelOptions{
+				Provider:       "claude",
+				Model:          "claude-sonnet-4-6",
+				ThinkingBudget: tc.budget,
+			}
+			err := Validate(opts)
+			if (err != nil) != tc.wantError {
+				t.Errorf("Validate() for %s error = %v, wantError = %v", tc.name, err, tc.wantError)
+			}
+		})
+	}
+}
+
+// TestValidate_PromptMutualExclusion_DeMorgan verifies the mutual exclusion truth table:
+// not(hasPrompt and hasPromptFile) evaluates whether the configuration is valid.
+func TestValidate_PromptMutualExclusion_DeMorgan(t *testing.T) {
+	t.Parallel()
+
+	truthTable := []struct {
+		name       string
+		prompt     string
+		promptFile string
+		hasPrompt  bool
+		hasFile    bool
+	}{
+		{name: "neither set", prompt: "", promptFile: "", hasPrompt: false, hasFile: false},
+		{name: "whitespace only treated as unset", prompt: "   \t", promptFile: "\n  ", hasPrompt: false, hasFile: false},
+		{name: "prompt only set", prompt: "instructions", promptFile: "", hasPrompt: true, hasFile: false},
+		{name: "prompt file only set", prompt: "", promptFile: "/tmp/p.md", hasPrompt: false, hasFile: true},
+		{name: "both set concurrently", prompt: "instructions", promptFile: "/tmp/p.md", hasPrompt: true, hasFile: true},
+	}
+
+	for _, tt := range truthTable {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := ModelOptions{
+				Provider:   "openai",
+				Model:      "gpt-4o",
+				Prompt:     tt.prompt,
+				PromptFile: tt.promptFile,
+			}
+			err := Validate(opts)
+			// De Morgan validation: mutually exclusive iff !hasPrompt || !hasFile.
+			expectedValid := !tt.hasPrompt || !tt.hasFile
+			gotValid := err == nil
+			if gotValid != expectedValid {
+				t.Errorf("De Morgan evaluation failed for %s: gotValid=%v, expectedValid=%v, err=%v",
+					tt.name, gotValid, expectedValid, err)
+			}
+		})
+	}
+}
+
+// TestValidate_EnumCaseSensitivity verifies that enum values require exact casing.
+func TestValidate_EnumCaseSensitivity(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		opts ModelOptions
+	}{
+		{name: "uppercase reasoning_level", opts: ModelOptions{Provider: "openai", Model: "o3-mini", ReasoningLevel: "HIGH"}},
+		{name: "titlecase thinking_type", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.1-pro-preview", ThinkingType: "Adaptive"}},
+		{name: "uppercase verbosity", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", Verbosity: "LOW"}},
+		{name: "lowercase media_resolution", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.1-pro-preview", MediaResolution: "media_resolution_high"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if err := Validate(tc.opts); err == nil {
+				t.Errorf("Validate(%s) expected error due to non-standard casing, got nil", tc.name)
+			}
+		})
+	}
+}
+
+// TestGenerateJSONSchema_ConcurrentSafe verifies concurrent schema reflections without data races.
+func TestGenerateJSONSchema_ConcurrentSafe(t *testing.T) {
+	t.Parallel()
+
+	const workers = 30
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for range workers {
+		wg.Go(func() {
+			data, err := GenerateJSONSchema()
+			if err != nil {
+				errCh <- fmt.Errorf("GenerateJSONSchema failed: %w", err)
+				return
+			}
+			var schema map[string]interface{}
+			if err := json.Unmarshal(data, &schema); err != nil {
+				errCh <- fmt.Errorf("unmarshal generated schema: %w", err)
+				return
+			}
+		})
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent schema failure: %v", err)
+	}
+}
+
+// TestSupportedModels_ConcurrentSafe verifies concurrent reads against model registries.
+func TestSupportedModels_ConcurrentSafe(t *testing.T) {
+	t.Parallel()
+
+	providers := []string{"claude", "gemini", "openai", "azure-openai", "grok", "local"}
+	const iterations = 50
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(providers)*iterations)
+
+	for _, p := range providers {
+		for i := range iterations {
+			wg.Go(func() {
+				models := SupportedModels(p)
+				if len(models) == 0 {
+					errCh <- fmt.Errorf("provider %q iteration %d returned empty slice", p, i)
+				}
+			})
+		}
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent model registry failure: %v", err)
+	}
+}
+
+// TestNormalizeModel_EdgeCases verifies whitespace trimming and casing around alias mapping.
+func TestNormalizeModel_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		provider string
+		input    string
+		want     string
+		wantErr  bool
+	}{
+		{provider: "claude", input: "  claude-sonnet-5  ", want: "claude-sonnet-5", wantErr: false},
+		{provider: "gemini", input: "gemini-3-flash", want: "gemini-3-flash-preview", wantErr: false},
+		{provider: "gemini", input: "gemini-3-pro", want: "gemini-3.1-pro-preview", wantErr: false},
+		{provider: "openai", input: "gpt-5.6", want: "gpt-5.6-sol", wantErr: false},
+		{provider: "openai", input: "GPT-4o", want: "", wantErr: true},
+		{provider: "azure-openai", input: "gpt-4o", want: "gpt-4o", wantErr: false},
+		{provider: "unknown-provider", input: "any-model", want: "", wantErr: true},
+		{provider: "claude", input: "", want: "", wantErr: true},
+		{provider: "claude", input: "   ", want: "", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s/%s", tc.provider, tc.input), func(t *testing.T) {
+			t.Parallel()
+			got, err := NormalizeModel(tc.provider, tc.input)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NormalizeModel(%q, %q) error = %v, wantErr = %v", tc.provider, tc.input, err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("NormalizeModel(%q, %q) = %q, want %q", tc.provider, tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestValidate_MissingModelFieldRejected verifies mandatory validation rules.
+func TestValidate_MissingModelFieldRejected(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{"", "   ", "\t\n"}
+	for _, m := range cases {
+		opts := ModelOptions{
+			Provider: "claude",
+			Model:    m,
+		}
+		if err := Validate(opts); err == nil {
+			t.Errorf("Validate() with empty model %q expected error, got nil", m)
+		}
 	}
 }

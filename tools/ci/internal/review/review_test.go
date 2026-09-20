@@ -3,10 +3,13 @@ package review
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"ci-tools/internal/gitlab"
@@ -748,5 +751,254 @@ func TestResolvePrompt_PromptFileExceedsLimitReturnsError(t *testing.T) {
 	_, err := ResolvePrompt("", path)
 	if err == nil {
 		t.Errorf("ResolvePrompt with prompt file exceeding %d bytes expected error, got nil", MaxPromptSizeBytes)
+	}
+}
+
+// TestResolveMaxTotalDiff_BoundaryValues tests numerical boundaries, edge string values,
+// and overflow inputs to ensure robust fallback behavior.
+func TestResolveMaxTotalDiff_BoundaryValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		envVal   string
+		expected int
+	}{
+		{name: "empty string defaults", envVal: "", expected: DefaultMaxTotalDiff},
+		{name: "whitespace defaults", envVal: "   \t\n", expected: DefaultMaxTotalDiff},
+		{name: "zero defaults", envVal: "0", expected: DefaultMaxTotalDiff},
+		{name: "negative one defaults", envVal: "-1", expected: DefaultMaxTotalDiff},
+		{name: "large negative defaults", envVal: "-99999999", expected: DefaultMaxTotalDiff},
+		{name: "non numeric text defaults", envVal: "one_hundred", expected: DefaultMaxTotalDiff},
+		{name: "overflow integer defaults", envVal: "9999999999999999999999999999999999999999999", expected: DefaultMaxTotalDiff},
+		{name: "minimum positive valid integer", envVal: "1", expected: 1},
+		{name: "leading and trailing whitespace trimmed", envVal: "  50000  ", expected: 50000},
+		{name: "explicit default equivalent", envVal: "300000", expected: 300000},
+		{name: "max int32 representation", envVal: "2147483647", expected: 2147483647},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("MAX_TOTAL_DIFF", tc.envVal)
+			got := ResolveMaxTotalDiff()
+			if got != tc.expected {
+				t.Errorf("ResolveMaxTotalDiff() for %s = %d, expected %d", tc.name, got, tc.expected)
+			}
+		})
+	}
+}
+
+// TestResolvePrompt_ExactByteBoundaries checks file size threshold behaviors
+// precisely at MaxPromptSizeBytes - 1, MaxPromptSizeBytes, and MaxPromptSizeBytes + 1.
+func TestResolvePrompt_ExactByteBoundaries(t *testing.T) {
+	dir := t.TempDir()
+
+	cases := []struct {
+		name      string
+		sizeDelta int
+		wantError bool
+	}{
+		{name: "one byte below limit", sizeDelta: -1, wantError: false},
+		{name: "exact limit byte size", sizeDelta: 0, wantError: false},
+		{name: "one byte above limit", sizeDelta: 1, wantError: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			filePath := filepath.Join(dir, tc.name+".txt")
+			size := MaxPromptSizeBytes + tc.sizeDelta
+			payload := make([]byte, size)
+			if err := os.WriteFile(filePath, payload, 0o600); err != nil {
+				t.Fatalf("write payload file: %v", err)
+			}
+
+			_, err := ResolvePrompt("", filePath)
+			if (err != nil) != tc.wantError {
+				t.Errorf("ResolvePrompt() for %s error = %v, wantError = %v", tc.name, err, tc.wantError)
+			}
+		})
+	}
+}
+
+// TestResolvePrompt_PriorityChain verifies exact evaluation order across
+// inline options, file options, and environment variables.
+func TestResolvePrompt_PriorityChain(t *testing.T) {
+	dir := t.TempDir()
+	promptFile := filepath.Join(dir, "prompt_file.md")
+	envPromptFile := filepath.Join(dir, "env_prompt_file.md")
+
+	if err := os.WriteFile(promptFile, []byte("from_prompt_file"), 0o600); err != nil {
+		t.Fatalf("write promptFile: %v", err)
+	}
+	if err := os.WriteFile(envPromptFile, []byte("from_env_prompt_file"), 0o600); err != nil {
+		t.Fatalf("write envPromptFile: %v", err)
+	}
+
+	cases := []struct {
+		name          string
+		inlinePrompt  string
+		promptFile    string
+		envFile       string
+		envPrompt     string
+		expectedMatch string
+	}{
+		{
+			name:          "inline overrides all subsequent tiers",
+			inlinePrompt:  "tier_1_inline",
+			promptFile:    promptFile,
+			envFile:       envPromptFile,
+			envPrompt:     "tier_4_env_prompt",
+			expectedMatch: "tier_1_inline",
+		},
+		{
+			name:          "prompt file overrides env tiers",
+			inlinePrompt:  "",
+			promptFile:    promptFile,
+			envFile:       envPromptFile,
+			envPrompt:     "tier_4_env_prompt",
+			expectedMatch: "from_prompt_file",
+		},
+		{
+			name:          "env prompt file overrides env prompt string",
+			inlinePrompt:  "   ",
+			promptFile:    "   ",
+			envFile:       envPromptFile,
+			envPrompt:     "tier_4_env_prompt",
+			expectedMatch: "from_env_prompt_file",
+		},
+		{
+			name:          "env prompt string overrides default fallback",
+			inlinePrompt:  "",
+			promptFile:    "",
+			envFile:       "",
+			envPrompt:     "tier_4_env_prompt",
+			expectedMatch: "tier_4_env_prompt",
+		},
+		{
+			name:          "all tiers empty falls back to DefaultPromptTemplate",
+			inlinePrompt:  "",
+			promptFile:    "",
+			envFile:       "",
+			envPrompt:     "",
+			expectedMatch: DefaultPromptTemplate,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("REVIEWER_PROMPT_FILE", tc.envFile)
+			t.Setenv("REVIEWER_PROMPT", tc.envPrompt)
+
+			got, err := ResolvePrompt(tc.inlinePrompt, tc.promptFile)
+			if err != nil {
+				t.Fatalf("ResolvePrompt() unexpected error: %v", err)
+			}
+			if got != tc.expectedMatch {
+				t.Errorf("ResolvePrompt() = %q, expected %q", got, tc.expectedMatch)
+			}
+		})
+	}
+}
+
+// TestResolvePrompt_FilesystemEdgeCases tests directory targets and missing paths.
+func TestResolvePrompt_FilesystemEdgeCases(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("directory path passed as file", func(t *testing.T) {
+		_, err := ResolvePrompt("", dir)
+		if err == nil {
+			t.Errorf("ResolvePrompt() targeting directory path expected error, got nil")
+		}
+	})
+
+	t.Run("non existent file path", func(t *testing.T) {
+		_, err := ResolvePrompt("", filepath.Join(dir, "missing.md"))
+		if err == nil {
+			t.Errorf("ResolvePrompt() targeting non-existent path expected error, got nil")
+		}
+	})
+}
+
+// TestResolvePrompt_ConcurrentSafe verifies concurrent evaluation safety across multiple goroutines.
+func TestResolvePrompt_ConcurrentSafe(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	promptPath := filepath.Join(dir, "concurrent_prompt.md")
+	expectedContent := "concurrent_test_prompt_content"
+	if err := os.WriteFile(promptPath, []byte(expectedContent), 0o600); err != nil {
+		t.Fatalf("write concurrent prompt file: %v", err)
+	}
+
+	const iterations = 50
+	var wg sync.WaitGroup
+	errCh := make(chan error, iterations)
+
+	for i := range iterations {
+		wg.Go(func() {
+			if err := executeConcurrentPromptCheck(i, promptPath, expectedContent); err != nil {
+				errCh <- err
+			}
+		})
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent prompt resolution failure: %v", err)
+	}
+}
+
+func executeConcurrentPromptCheck(idx int, promptPath, expectedContent string) error {
+	if idx%2 == 0 {
+		got, err := ResolvePrompt("", promptPath)
+		if err != nil {
+			return fmt.Errorf("worker %d: %w", idx, err)
+		}
+		if got != expectedContent {
+			return fmt.Errorf("worker %d got %q, want %q", idx, got, expectedContent)
+		}
+		return nil
+	}
+
+	got, err := ResolvePrompt(fmt.Sprintf("inline_%d", idx), "")
+	if err != nil {
+		return fmt.Errorf("worker %d: %w", idx, err)
+	}
+	if !strings.HasPrefix(got, "inline_") {
+		return fmt.Errorf("worker %d unexpected prefix: %q", idx, got)
+	}
+	return nil
+}
+
+// TestReviewer_WithPrompt_MutationChain verifies fluent builder behavior under varied inputs.
+func TestReviewer_WithPrompt_MutationChain(t *testing.T) {
+	r := New(nil, nil)
+	if r.prompt != DefaultPromptTemplate {
+		t.Fatalf("initial prompt = %q, want DefaultPromptTemplate", r.prompt)
+	}
+
+	// Empty prompt does not overwrite existing template
+	r.WithPrompt("")
+	if r.prompt != DefaultPromptTemplate {
+		t.Errorf("WithPrompt(\"\") mutated prompt to %q", r.prompt)
+	}
+
+	// Whitespace prompt does not overwrite existing template
+	r.WithPrompt("   \t\n")
+	if r.prompt != DefaultPromptTemplate {
+		t.Errorf("WithPrompt(whitespace) mutated prompt to %q", r.prompt)
+	}
+
+	// Valid prompt updates state
+	custom := "Custom review guidelines"
+	r.WithPrompt(custom)
+	if r.prompt != custom {
+		t.Errorf("WithPrompt(%q) = %q, want %q", custom, r.prompt, custom)
+	}
+
+	// Secondary empty does not clobber custom
+	r.WithPrompt("")
+	if r.prompt != custom {
+		t.Errorf("secondary WithPrompt(\"\") clobbered prompt to %q", r.prompt)
 	}
 }

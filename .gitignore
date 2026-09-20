@@ -23,8 +23,8 @@ fmt-commit-pusher
 claude-review
 
 ## Go
-tools/ci/coverage.out
-tools/ci/coverage.raw.out
+coverage.out
+coverage.raw.out
 
 ## Miscellaneous
 merge-request.md
