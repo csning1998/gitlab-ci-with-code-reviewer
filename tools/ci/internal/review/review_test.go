@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -96,8 +97,7 @@ func TestExtractJSONArray_UnclosedArray(t *testing.T) {
 }
 
 func TestExtractJSONArray_BracketInsideProseBeforeRealArray(t *testing.T) {
-	// The first "[" candidate (inside "list [of stuff]") fails to decode as a JSON array, so
-	// extraction must continue scanning for a later "[" that succeeds.
+	// Prose containing unparseable bracket characters MUST NOT abort candidate search prior to valid payload arrays.
 	raw := `Findings list [of stuff] follow: [{"file":"a.go"}]`
 	arr, err := extractJSONArray(raw)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestFormatMRIntent_TitleOnly(t *testing.T) {
 
 func TestFormatMRIntent_TruncatesLongDescription(t *testing.T) {
 	description := strings.Repeat("a", 50)
-	// Budget must exceed the truncation marker length so the marker fits verbatim.
+	// Truncation budget MUST exceed marker length to ensure the marker fits verbatim without recursive truncation.
 	got := formatMRIntent("", description, 30)
 	if !strings.Contains(got, "... [truncated]") {
 		t.Errorf("formatMRIntent(...) = %q, want a truncation marker", got)
@@ -148,7 +148,8 @@ func TestFormatMRIntent_TruncatesLongDescription(t *testing.T) {
 }
 
 func TestFormatMRIntent_MaxRunesShorterThanMarker_DoesNotPanic(t *testing.T) {
-	// maxRunes below the marker length previously sliced with a negative index.
+	// Truncation slice arithmetic MUST guard against negative indices when
+	// maxRunes is smaller than the truncation marker length.
 	got := formatMRIntent("", strings.Repeat("a", 50), 5)
 	if got == "" {
 		t.Fatal("formatMRIntent(...) = empty, want a non-empty intent block")
@@ -167,19 +168,19 @@ func TestFormatMRIntent_DescriptionExactlyAtLimit_NotTruncated(t *testing.T) {
 }
 
 func TestFormatMRIntent_CJKRuneCountingNotByteCounting(t *testing.T) {
-	// Each CJK character occupies 3 bytes in UTF-8; truncation must operate on rune counts so a
-	// budget of 25 runes is not interpreted as 25 bytes (which would split a multi-byte rune).
-	description := strings.Repeat("測", 40)
+	// Truncation MUST count Unicode code points (runes) rather than raw bytes because
+	// multibyte UTF-8 characters span up to 3 bytes, preventing boundary corruption.
+	testRune := "\u6e2c"
+	description := strings.Repeat(testRune, 40)
 	got := formatMRIntent("", description, 25)
 	if !strings.Contains(got, "[truncated]") {
 		t.Errorf("formatMRIntent(...) = %q, want a truncation marker", got)
 	}
-	if strings.Contains(got, strings.Repeat("測", 40)) {
+	if strings.Contains(got, strings.Repeat(testRune, 40)) {
 		t.Errorf("formatMRIntent(...) = %q, want the description truncated", got)
 	}
-	// 40 CJK runes are 120 UTF-8 bytes; a byte-oriented cut at 25 would corrupt the string.
-	if !strings.Contains(got, "測") {
-		t.Errorf("formatMRIntent(...) = %q, want intact CJK runes after rune-based truncation", got)
+	if !strings.Contains(got, testRune) {
+		t.Errorf("formatMRIntent(...) = %q, want intact multibyte runes after rune-based truncation", got)
 	}
 }
 
@@ -224,8 +225,8 @@ func TestBuildPosition_ExactEndLineMatch(t *testing.T) {
 func TestBuildPosition_EndLineMissingFallsBackToStart(t *testing.T) {
 	n := 3
 	info := fileInfo{lines: map[int]linePos{3: {newLine: &n}}}
-	// end=9 does not exist in the diff's line map, but start=3 does, so the position must
-	// resolve to the start line instead of failing outright.
+	// Positions for multi-line findings whose end line is unmapped in the diff MUST
+	// fallback to the start line to preserve inline discussion placement.
 	pos := buildPosition(gitlab.DiffRefs{}, "a.go", info, 3, 9)
 	if pos == nil {
 		t.Fatal("buildPosition(...) = nil, want it to fall back to the start line")
@@ -284,7 +285,7 @@ func TestBuildCombinedDiff_SkipsEmptyDiff(t *testing.T) {
 
 func TestBuildCombinedDiff_TotalDiffLimitReached(t *testing.T) {
 	changes := []gitlab.Change{
-		{NewPath: "big.go", Diff: strings.Repeat("x", maxTotalDiff+1)},
+		{NewPath: "big.go", Diff: strings.Repeat("x", DefaultMaxTotalDiff+1)},
 	}
 	_, meta, skipped := buildCombinedDiff(changes, "TestLLM")
 	if skipped != 1 || len(meta) != 0 {
@@ -317,8 +318,8 @@ func TestBuildCombinedDiff_BothPathsEmpty_UsesUnknownPlaceholder(t *testing.T) {
 }
 
 func TestBuildCombinedDiff_LineMapAggregatesAcrossMultipleHunks(t *testing.T) {
-	// A single file's diff commonly carries several discontiguous hunks; fileMeta's line index
-	// must accumulate entries from every hunk, not just retain whichever hunk was parsed last.
+	// File line indexing MUST accumulate position mappings across all discontiguous hunks
+	// to prevent subsequent hunks from overwriting earlier line indices.
 	diff := "@@ -1,1 +1,1 @@\n+top of file\n@@ -50,1 +50,1 @@\n+bottom of file\n"
 	changes := []gitlab.Change{{NewPath: "main.go", OldPath: "main.go", Diff: diff}}
 
@@ -339,9 +340,8 @@ func TestBuildCombinedDiff_LineMapAggregatesAcrossMultipleHunks(t *testing.T) {
 }
 
 func TestBuildCombinedDiff_RenameOnlyDiff_NonEmptyDiffFieldButNoHunk(t *testing.T) {
-	// A pure rename's Diff field is non-empty (it carries rename metadata), so the empty-diff skip
-	// check does not trigger; the file is still queued for review, but its line index ends up
-	// empty since parseDiff finds no "@@" hunk to anchor against.
+	// Pure file renames MUST be queued for review based on non-empty metadata diffs even when
+	// lacking content hunks to anchor line numbers.
 	diff := "diff --git a/old_name.go b/new_name.go\nsimilarity index 100%\nrename from old_name.go\nrename to new_name.go\n"
 	changes := []gitlab.Change{{NewPath: "new_name.go", OldPath: "old_name.go", Diff: diff}}
 
@@ -360,7 +360,7 @@ func TestBuildCombinedDiff_RenameOnlyDiff_NonEmptyDiffFieldButNoHunk(t *testing.
 
 func TestBuildCombinedDiff_ExactlyAtTotalDiffLimit_NotSkipped(t *testing.T) {
 	changes := []gitlab.Change{
-		{NewPath: "big.go", Diff: strings.Repeat("x", maxTotalDiff)},
+		{NewPath: "big.go", Diff: strings.Repeat("x", DefaultMaxTotalDiff)},
 	}
 	_, meta, skipped := buildCombinedDiff(changes, "TestLLM")
 	if skipped != 0 {
@@ -372,11 +372,10 @@ func TestBuildCombinedDiff_ExactlyAtTotalDiffLimit_NotSkipped(t *testing.T) {
 }
 
 func TestBuildCombinedDiff_SecondFileConsumesRemainingBudget(t *testing.T) {
-	// The running total accumulates across files within the same call; a second file that would
-	// individually fit under maxTotalDiff can still be skipped once the first file has already
-	// consumed most of the shared budget.
+	// Diff budget accounting MUST accumulate character counts across files to enforce the global payload budget
+	// across all reviewed files in a single invocation.
 	changes := []gitlab.Change{
-		{NewPath: "first.go", Diff: strings.Repeat("x", maxTotalDiff-10)},
+		{NewPath: "first.go", Diff: strings.Repeat("x", DefaultMaxTotalDiff-10)},
 		{NewPath: "second.go", Diff: strings.Repeat("y", 20)},
 	}
 	_, meta, skipped := buildCombinedDiff(changes, "TestLLM")
@@ -399,7 +398,7 @@ func TestBuildCombinedDiff_NoReviewableFiles_EmptyResult(t *testing.T) {
 	}
 }
 
-// fakeLLM is a stub LLMClient recording the prompt it received and returning a scripted response.
+// fakeLLM stubs LLMClient by capturing prompts and returning configured responses.
 type fakeLLM struct {
 	name     string
 	response string
@@ -413,8 +412,7 @@ func (f *fakeLLM) Review(prompt string) (string, error) {
 	return f.response, f.err
 }
 
-// newTestGitLabServer wires an httptest server implementing the minimal GitLab MR API surface
-// FetchMR/PostDiscussion/PostNote/AddLabels depend on, recording every request path and body.
+// newTestGitLabServer returns a test HTTP server simulating GitLab MR endpoints.
 func newTestGitLabServer(t *testing.T, detail, diffs string) (*httptest.Server, *[]string) {
 	t.Helper()
 	var calls []string
@@ -549,8 +547,8 @@ func TestReviewer_Execute_UnknownFileFallsBackToNote(t *testing.T) {
 		`{"title":"feat: x","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`,
 		`[{"new_path":"main.go","old_path":"main.go","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
-	// The finding references a file absent from fileMeta (not part of this MR's diff), so deliver
-	// must skip inline positioning entirely and fall back to a general note.
+	// Findings referencing files absent from MR diff metadata MUST fallback to general discussion notes
+	// to avoid GitLab API position validation errors.
 	response := `[{"file":"other.go","start_line":1,"end_line":1,"description":"issue"}]`
 	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", response: response})
 
@@ -575,9 +573,8 @@ func TestReviewer_Execute_UnknownFileFallsBackToNote(t *testing.T) {
 }
 
 func TestReviewer_Execute_RenameOnlyFile_CommentFallsBackToNote(t *testing.T) {
-	// The file is present in fileMeta (queued for review) but its line index is empty since the
-	// diff carries no content hunk, so buildPosition must return nil and deliver must fall back
-	// to a general note rather than posting an inline discussion at a nonexistent position.
+	// Review comments on rename-only files lacking diff hunks MUST fallback to general discussion notes
+	// because line anchoring is unavailable.
 	renameDiff := "diff --git a/old_name.go b/new_name.go\\nsimilarity index 100%\\nrename from old_name.go\\nrename to new_name.go\\n"
 	server, calls := newTestGitLabServer(t,
 		`{"title":"chore: rename","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`,
@@ -653,7 +650,7 @@ func TestReviewer_Execute_GitLabFetchFails(t *testing.T) {
 	}
 }
 
-// Sanity check that Comment JSON tags line up with the schema the LLM is instructed to emit.
+// Comment struct JSON tags MUST align with provider response schema field definitions to preserve optional zero values.
 func TestComment_JSONUnmarshal_OptionalFieldsDefaultZeroValue(t *testing.T) {
 	var c Comment
 	if err := json.Unmarshal([]byte(`{"file":"a.go","description":"d"}`), &c); err != nil {
@@ -664,5 +661,92 @@ func TestComment_JSONUnmarshal_OptionalFieldsDefaultZeroValue(t *testing.T) {
 	}
 	if c.Security {
 		t.Error("Comment.Security = true, want false when omitted from the JSON payload")
+	}
+}
+
+func TestResolveMaxTotalDiff_DefaultWhenUnset(t *testing.T) {
+	t.Setenv("MAX_TOTAL_DIFF", "")
+	if got := ResolveMaxTotalDiff(); got != DefaultMaxTotalDiff {
+		t.Errorf("ResolveMaxTotalDiff() = %d, want default %d", got, DefaultMaxTotalDiff)
+	}
+}
+
+func TestResolveMaxTotalDiff_CustomValidValue(t *testing.T) {
+	t.Setenv("MAX_TOTAL_DIFF", "500000")
+	if got := ResolveMaxTotalDiff(); got != 500000 {
+		t.Errorf("ResolveMaxTotalDiff() = %d, want 500000", got)
+	}
+}
+
+func TestResolveMaxTotalDiff_InvalidValueFallsBackToDefault(t *testing.T) {
+	invalidValues := []string{"invalid", "0", "-100", "  "}
+	for _, val := range invalidValues {
+		t.Run("val_"+val, func(t *testing.T) {
+			t.Setenv("MAX_TOTAL_DIFF", val)
+			if got := ResolveMaxTotalDiff(); got != DefaultMaxTotalDiff {
+				t.Errorf("ResolveMaxTotalDiff() for %q = %d, want default %d", val, got, DefaultMaxTotalDiff)
+			}
+		})
+	}
+}
+
+func TestResolvePrompt_DefaultWhenUnset(t *testing.T) {
+	t.Setenv("REVIEWER_PROMPT", "")
+	t.Setenv("REVIEWER_PROMPT_FILE", "")
+	got, err := ResolvePrompt("", "")
+	if err != nil {
+		t.Fatalf("ResolvePrompt(\"\", \"\") unexpected error: %v", err)
+	}
+	if got != DefaultPromptTemplate {
+		t.Errorf("ResolvePrompt(\"\", \"\") = %q, want DefaultPromptTemplate", got)
+	}
+}
+
+func TestResolvePrompt_CustomInlinePrompt(t *testing.T) {
+	custom := "Custom instructions for review"
+	got, err := ResolvePrompt(custom, "")
+	if err != nil {
+		t.Fatalf("ResolvePrompt(%q, \"\") unexpected error: %v", custom, err)
+	}
+	if got != custom {
+		t.Errorf("ResolvePrompt(%q, \"\") = %q, want %q", custom, got, custom)
+	}
+}
+
+func TestResolvePrompt_CustomPromptFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/prompt.md"
+	custom := "File-based review prompt"
+	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+		t.Fatalf("write prompt file: %v", err)
+	}
+
+	got, err := ResolvePrompt("", path)
+	if err != nil {
+		t.Fatalf("ResolvePrompt(\"\", %q) unexpected error: %v", path, err)
+	}
+	if got != custom {
+		t.Errorf("ResolvePrompt(\"\", %q) = %q, want %q", path, got, custom)
+	}
+}
+
+func TestResolvePrompt_MissingPromptFileReturnsError(t *testing.T) {
+	_, err := ResolvePrompt("", "/nonexistent/prompt/path.md")
+	if err == nil {
+		t.Errorf("ResolvePrompt with nonexistent file expected error, got nil")
+	}
+}
+
+func TestResolvePrompt_PromptFileExceedsLimitReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/oversized_prompt.md"
+	oversized := make([]byte, MaxPromptSizeBytes+1)
+	if err := os.WriteFile(path, oversized, 0o600); err != nil {
+		t.Fatalf("write oversized prompt: %v", err)
+	}
+
+	_, err := ResolvePrompt("", path)
+	if err == nil {
+		t.Errorf("ResolvePrompt with prompt file exceeding %d bytes expected error, got nil", MaxPromptSizeBytes)
 	}
 }

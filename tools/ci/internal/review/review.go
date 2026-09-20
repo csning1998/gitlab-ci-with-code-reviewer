@@ -3,7 +3,9 @@ package review
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"ci-tools/internal/gate"
@@ -16,11 +18,25 @@ type LLMClient interface {
 	Review(prompt string) (string, error)
 }
 
-const maxTotalDiff = 300000
+// DefaultMaxTotalDiff establishes the fallback upper bound on combined diff characters.
+const DefaultMaxTotalDiff = 300000
 
-// promptTemplate specifies system instructions, review priorities, domain inspection rules,
-// author intent context parsing, and JSON schema constraints for LLM review responses.
-const promptTemplate = `Perform automated code review on the provided merge request diff.
+// ResolveMaxTotalDiff parses MAX_TOTAL_DIFF from the environment or returns DefaultMaxTotalDiff.
+func ResolveMaxTotalDiff() int {
+	val := strings.TrimSpace(os.Getenv("MAX_TOTAL_DIFF"))
+	if val == "" {
+		return DefaultMaxTotalDiff
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil || n <= 0 {
+		return DefaultMaxTotalDiff
+	}
+	return n
+}
+
+// DefaultPromptTemplate specifies default review instructions, domain checks,
+// and JSON schema requirements when a custom prompt configuration is omitted.
+const DefaultPromptTemplate = `Perform automated code review on the provided merge request diff.
 
 Review Context:
 - Annotated diff of modified files follows below.
@@ -70,6 +86,42 @@ JSON Element Schema:
     "security": <boolean, true strictly per Security Labeling Policy; false or omitted otherwise>
 }`
 
+// MaxPromptSizeBytes defines the upper bound on custom prompt file byte length.
+const MaxPromptSizeBytes = 1048576
+
+// ResolvePrompt determines the effective review prompt instructions by evaluating
+// inline overrides, external file sources, environment variables, or fallback defaults.
+func ResolvePrompt(inlinePrompt, promptFile string) (string, error) {
+	if trimmed := strings.TrimSpace(inlinePrompt); trimmed != "" {
+		return trimmed, nil
+	}
+
+	targetFile := strings.TrimSpace(promptFile)
+	if targetFile == "" {
+		targetFile = strings.TrimSpace(os.Getenv("REVIEWER_PROMPT_FILE"))
+	}
+	if targetFile != "" {
+		stat, err := os.Stat(targetFile)
+		if err != nil {
+			return "", fmt.Errorf("stat prompt file %q: %w", targetFile, err)
+		}
+		if stat.Size() > MaxPromptSizeBytes {
+			return "", fmt.Errorf("prompt file %q size (%d bytes) exceeds maximum limit of %d bytes", targetFile, stat.Size(), MaxPromptSizeBytes)
+		}
+		data, err := os.ReadFile(targetFile)
+		if err != nil {
+			return "", fmt.Errorf("read prompt file %q: %w", targetFile, err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+
+	if envPrompt := strings.TrimSpace(os.Getenv("REVIEWER_PROMPT")); envPrompt != "" {
+		return envPrompt, nil
+	}
+
+	return DefaultPromptTemplate, nil
+}
+
 // Comment represents a single code review finding emitted by an LLM provider.
 // Pointer types for line numbers safely accommodate null or missing JSON attributes during unmarshaling.
 type Comment struct {
@@ -85,10 +137,23 @@ type Comment struct {
 type Reviewer struct {
 	gitlab *gitlab.Client
 	llm    LLMClient
+	prompt string
 }
 
 func New(gl *gitlab.Client, llm LLMClient) *Reviewer {
-	return &Reviewer{gitlab: gl, llm: llm}
+	return &Reviewer{
+		gitlab: gl,
+		llm:    llm,
+		prompt: DefaultPromptTemplate,
+	}
+}
+
+// WithPrompt overrides default review instructions with custom prompt guidelines.
+func (r *Reviewer) WithPrompt(prompt string) *Reviewer {
+	if strings.TrimSpace(prompt) != "" {
+		r.prompt = strings.TrimSpace(prompt)
+	}
+	return r
 }
 
 // ExecuteCodeReview serves as the common execution entrypoint for reviewer executables,
@@ -121,7 +186,11 @@ func (r *Reviewer) Execute() error {
 		return nil
 	}
 
-	raw, err := r.llm.Review(promptTemplate + "\n\n" + formatMRIntent(mr.Title, mr.Description, maxDesc) + combined)
+	prompt := r.prompt
+	if prompt == "" {
+		prompt = DefaultPromptTemplate
+	}
+	raw, err := r.llm.Review(prompt + "\n\n" + formatMRIntent(mr.Title, mr.Description, maxDesc) + combined)
 	if err != nil {
 		return fmt.Errorf("llm call failed: %w", err)
 	}
@@ -314,6 +383,7 @@ func buildCombinedDiff(changes []gitlab.Change, llmName string) (string, map[str
 	fileMeta := map[string]fileInfo{}
 	var sections []string
 	total, skipped := 0, 0
+	maxDiff := ResolveMaxTotalDiff()
 
 	for _, ch := range changes {
 		newPath := ch.NewPath
@@ -337,7 +407,7 @@ func buildCombinedDiff(changes []gitlab.Change, llmName string) (string, map[str
 			fmt.Printf("Skip %s (empty diff)\n", newPath)
 			skipped++
 			continue
-		case total+len(ch.Diff) > maxTotalDiff:
+		case total+len(ch.Diff) > maxDiff:
 			fmt.Printf("Skip %s (total diff limit reached)\n", newPath)
 			skipped++
 			continue
