@@ -190,15 +190,17 @@ include:
 
 ### Step C. Inject Inputs for Project-Specific Differences
 
-Specify inputs to override default configurations. Operators should verify and specify the latest published version number for both the component and the container image. The `claude_model` and `gemini_model` variables default to empty strings; providing a model identifier activates the corresponding review pipeline. Representative implementation example:
+Specify inputs to override default configurations. Operators should verify and specify the latest published version number for both the component and the container image. The `review_models` array defaults to a single empty entry. Each supplied entry produces one manual review job and selects its provider from the compile-time allowlist. Per-model parameters reside in `.gitlab/reviewer.yml`. Representative implementation example:
 
 ```yaml
 include:
     - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.0.0
       inputs:
           reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.0.0
-          claude_model: claude-sonnet-4-6
-          gemini_model: gemini-3.5-flash
+          review_models:
+              - claude-sonnet-4-6
+              - gemini-3.5-flash
+              - grok-4.6
           model_k: model_v
 
     - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0

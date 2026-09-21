@@ -1,9 +1,17 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+)
+
+// Provider identifiers of the two platforms which publish an identical model catalogue.
+// A reverse lookup of a shared identifier requires the api-version to pick the owner.
+const (
+	providerOpenAI      = "openai"
+	providerAzureOpenAI = "azure-openai"
 )
 
 var openAICanonicalModels = map[string]struct{}{
@@ -127,7 +135,7 @@ var aliasRegistry = map[string]map[string]string{
 }
 
 // NormalizeModel validates and maps a model string to its canonical identifier.
-// It returns an error if the model is not present in the compile-time allowlist.
+// A model absent from the compile-time allowlist produces an error.
 func NormalizeModel(provider, model string) (string, error) {
 	trimmedProvider := strings.TrimSpace(provider)
 	trimmedModel := strings.TrimSpace(model)
@@ -173,4 +181,55 @@ func SupportedModels(provider string) []string {
 	}
 	sort.Strings(models)
 	return models
+}
+
+// ResolveProvider identifies which provider publishes model, reading the same compile-time
+// allowlist as NormalizeModel. An api-version routes a shared OpenAI identifier to Azure.
+func ResolveProvider(model, apiVersion string) (string, error) {
+	trimmedModel := strings.TrimSpace(model)
+	if trimmedModel == "" {
+		return "", errors.New("mandatory field 'model' is required")
+	}
+
+	owners := findModelOwners(trimmedModel)
+	switch {
+	case len(owners) == 0:
+		return "", fmt.Errorf("unsupported or unapproved model %q", trimmedModel)
+	case len(owners) == 1:
+		return owners[0], nil
+	case isOpenAIFamily(owners):
+		if strings.TrimSpace(apiVersion) != "" {
+			return providerAzureOpenAI, nil
+		}
+		return providerOpenAI, nil
+	}
+	return "", fmt.Errorf("ambiguous model %q across providers %s", trimmedModel, strings.Join(owners, ", "))
+}
+
+// findModelOwners returns every provider which publishes model as a canonical identifier or
+// as an alias, sorted for deterministic reporting.
+func findModelOwners(model string) []string {
+	seen := map[string]struct{}{}
+	for provider, canonicalSet := range canonicalRegistry {
+		if _, ok := canonicalSet[model]; ok {
+			seen[provider] = struct{}{}
+		}
+	}
+	for provider, aliases := range aliasRegistry {
+		if _, ok := aliases[model]; ok {
+			seen[provider] = struct{}{}
+		}
+	}
+
+	owners := make([]string, 0, len(seen))
+	for provider := range seen {
+		owners = append(owners, provider)
+	}
+	sort.Strings(owners)
+	return owners
+}
+
+// isOpenAIFamily reports whether owners is exactly the OpenAI and Azure OpenAI pair.
+func isOpenAIFamily(owners []string) bool {
+	return len(owners) == 2 && owners[0] == providerAzureOpenAI && owners[1] == providerOpenAI
 }

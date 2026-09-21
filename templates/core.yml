@@ -3,12 +3,52 @@ spec:
   inputs:
     reviewer_image:
       description: 'Required; prebuilt reviewer image pinned to a version (no default, no floating tag).'
-    claude_model:
+    review_models:
+      type: array
+      default: []
+      description: >-
+        Model ids or reviewer.yml keys. Each entry becomes one manual review job. The provider
+        is derived from each entry against the compile-time allowlist. An empty list emits no
+        review job at all.
+    review_config_file:
       default: ''
-      description: 'Claude model id for the Claude reviewer. Leave empty to disable the job.'
-    gemini_model:
+      description: >-
+        Path to the reviewer declaration carrying per-model parameters.
+        Defaults to .gitlab/reviewer.yml when left empty.
+    review_vault_addr:
       default: ''
-      description: 'Gemini model id for the Gemini reviewer, including Gemma. Leave empty to disable the job.'
+      description: >-
+        Vault address. A non-empty value selects Workload Identity Federation and removes the
+        static provider API key requirement.
+    review_vault_audience:
+      default: 'vault'
+      description: >-
+        Audience claim of the requested CI identity token. The value MUST match the
+        bound_audiences of the Vault JWT auth role when that role binds an audience.
+    review_vault_auth_mount:
+      default: 'gitlab-saas-jwt'
+      description: 'Vault JWT auth backend mount path.'
+    review_vault_role:
+      default: ''
+      description: 'Vault JWT auth role name. Required when review_vault_addr is set.'
+    review_vault_kv_mount:
+      default: 'secret'
+      description: 'Vault KV-v2 engine mount path.'
+    review_vault_secret_path:
+      default: ''
+      description: >-
+        Vault KV-v2 secret path holding one field per provider, for example claude_api_key.
+        Required when review_vault_addr is set.
+    review_base_url:
+      default: ''
+      description: >-
+        Endpoint override. Required for Azure OpenAI and for a local inference server.
+        Leave empty for the vendor default endpoint.
+    review_api_version:
+      default: ''
+      description: >-
+        Azure OpenAI api-version. A non-empty value routes an OpenAI model id to Azure OpenAI
+        and selects the deployment request shape.
     markdownlint_image:
       default: 'markdownlint/markdownlint:0.17.0'
       description: 'Ruby mdl image for Markdown linting.'
@@ -19,17 +59,17 @@ spec:
       type: number
       default: 5000
       description: 'Max MR description length sent to the reviewer; the pipeline fails if exceeded.'
-    claude_max_tokens:
+    review_max_tokens:
       type: number
       default: 16384
       description: >-
-        Max output tokens for the Claude Messages API request; raise this if large diffs
+        Max output tokens for the provider request. Raise this value when large diffs
         truncate the JSON response.
-    claude_timeout_minutes:
+    review_timeout_minutes:
       type: number
       default: 10
       description: >-
-        Timeout, in minutes, for the Claude Messages API request; raise this if large diffs
+        Timeout, in minutes, for the provider request. Raise this value when large diffs
         exceed the deadline before the response completes.
     enable_commitlint:
       type: boolean
@@ -76,7 +116,7 @@ stages:
   - deploy
 
 # Exports fmt-commit-pusher binary from reviewer_image as a build artifact.
-# Tool-specific format jobs lack this binary and retrieve it via stage artifact dependencies.
+# Tool-specific format jobs lack this binary and retrieve the binary via stage artifact dependencies.
 fmt:prepare-pusher:
   stage: format
   image: '$[[ inputs.reviewer_image ]]'
@@ -208,32 +248,31 @@ lint:yaml:
     - yamllint .
 
 # Omits explicit job dependencies (`needs`) to preserve compatibility across optional language component inclusions.
-review:claude-code:
+review:code:
   stage: review
   image: '$[[ inputs.reviewer_image ]]'
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: '$[[ inputs.review_vault_audience ]]'
+  parallel:
+    matrix:
+      - REVIEW_MODEL: $[[ inputs.review_models ]]
   variables:
-    CLAUDE_MODEL: '$[[ inputs.claude_model ]]'
+    REVIEW_BASE_URL: '$[[ inputs.review_base_url ]]'
+    REVIEW_API_VERSION: '$[[ inputs.review_api_version ]]'
+    REVIEW_MAX_TOKENS: '$[[ inputs.review_max_tokens ]]'
+    REVIEW_TIMEOUT_MINUTES: '$[[ inputs.review_timeout_minutes ]]'
+    REVIEW_CONFIG_FILE: '$[[ inputs.review_config_file ]]'
     MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
-    CLAUDE_MAX_TOKENS: '$[[ inputs.claude_max_tokens ]]'
-    CLAUDE_TIMEOUT_MINUTES: '$[[ inputs.claude_timeout_minutes ]]'
+    VAULT_ADDR: '$[[ inputs.review_vault_addr ]]'
+    VAULT_AUTH_MOUNT: '$[[ inputs.review_vault_auth_mount ]]'
+    VAULT_ROLE: '$[[ inputs.review_vault_role ]]'
+    VAULT_KV_MOUNT: '$[[ inputs.review_vault_kv_mount ]]'
+    VAULT_SECRET_PATH: '$[[ inputs.review_vault_secret_path ]]'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CLAUDE_MODEL != ""'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: manual
       allow_failure: true
   interruptible: true
   script:
-    - claude-review
-
-review:gemini-code:
-  stage: review
-  image: '$[[ inputs.reviewer_image ]]'
-  variables:
-    GEMINI_MODEL: '$[[ inputs.gemini_model ]]'
-    MAX_DESCRIPTION_CHARS: '$[[ inputs.max_description_chars ]]'
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $GEMINI_MODEL != ""'
-      when: manual
-      allow_failure: true
-  interruptible: true
-  script:
-    - gemini-review
+    - review

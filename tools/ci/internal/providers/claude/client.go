@@ -2,54 +2,94 @@ package claude
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/tokensource"
 )
+
+// DefaultMaxTokens bounds the visible response when ModelOptions omits an explicit limit.
+// max_tokens is a mandatory Messages API field. A zero value MUST NOT reach the wire.
+const DefaultMaxTokens = 16384
+
+// Config declares the injection surface shared by every provider package. The calling binary
+// resolves both members from the CI job environment.
+type Config struct {
+	ModelOptions config.ModelOptions
+	Tokens       tokensource.Provider
+}
 
 // Client encapsulates Anthropic Messages API operations for a configured model.
 type Client struct {
-	client    sdk.Client
-	model     sdk.Model
-	maxTokens int64
-	timeout   time.Duration
+	model        sdk.Model
+	maxTokens    int64
+	timeout      time.Duration
+	baseURL      string
+	tokens       tokensource.Provider
+	modelOptions config.ModelOptions
+	thinking     thinkingPlan
 }
 
-func New(model, apiKey string, maxTokens int, timeout time.Duration) *Client {
-	return &Client{
-		client:    sdk.NewClient(option.WithAPIKey(apiKey)),
-		model:     sdk.Model(model),
-		maxTokens: int64(maxTokens),
-		timeout:   timeout,
+// New constructs a Client from Config, applying fallbacks for the fields the Messages API
+// requires and ModelOptions leaves optional.
+func New(cfg Config) (*Client, error) {
+	if cfg.Tokens == nil {
+		return nil, errors.New("claude: tokens provider is required")
 	}
+	model := strings.TrimSpace(cfg.ModelOptions.Model)
+	if model == "" {
+		return nil, errors.New("claude: model is required")
+	}
+
+	maxTokens := cfg.ModelOptions.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = DefaultMaxTokens
+	}
+	timeout := cfg.ModelOptions.Timeout
+	if timeout <= 0 {
+		timeout = config.DefaultTimeout
+	}
+
+	cfg.ModelOptions.MaxTokens = maxTokens
+	plan, err := planThinking(model, cfg.ModelOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{
+		model:        sdk.Model(model),
+		maxTokens:    int64(maxTokens),
+		timeout:      timeout,
+		baseURL:      strings.TrimSpace(cfg.ModelOptions.BaseURL),
+		tokens:       cfg.Tokens,
+		modelOptions: cfg.ModelOptions,
+		thinking:     plan,
+	}, nil
 }
 
 func (c *Client) Name() string { return "Claude" }
 
-// Review executes a streaming request to the Claude Messages API guarded by c.timeout,
-// mitigating HTTP request timeouts on large review payloads.
-//
-// Adaptive thinking is disabled so max_tokens applies only to visible response text.
-// Sonnet 5 enables adaptive thinking by default; thinking tokens share the max_tokens
-// budget with text and can exhaust that budget on large review prompts, yielding an
-// empty TextBlock and a downstream JSON parse failure.
+// Review executes a streaming Messages API request guarded by c.timeout.
+// Thinking stays disabled because thinking tokens share the max_tokens budget with text
+// and can exhaust that budget on large prompts, yielding an empty TextBlock.
 func (c *Client) Review(prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	disabled := sdk.NewThinkingConfigDisabledParam()
-	stream := c.client.Messages.NewStreaming(ctx, sdk.MessageNewParams{
-		Model:     c.model,
-		MaxTokens: c.maxTokens,
-		Thinking: sdk.ThinkingConfigParamUnion{
-			OfDisabled: &disabled,
-		},
-		Messages: []sdk.MessageParam{
-			sdk.NewUserMessage(sdk.NewTextBlock(prompt)),
-		},
-	})
+
+	token, err := c.tokens.Token(ctx)
+	if err != nil {
+		return "", fmt.Errorf("claude: resolve credential: %w", err)
+	}
+
+	client := c.newSDKClient(token)
+	stream := client.Messages.NewStreaming(ctx, c.buildParams(prompt))
 	message := sdk.Message{}
 	for stream.Next() {
 		if err := message.Accumulate(stream.Current()); err != nil {
@@ -70,6 +110,53 @@ func (c *Client) Review(prompt string) (string, error) {
 		)
 	}
 	return text, nil
+}
+
+// buildParams assembles the Messages API request. Sampling overrides stay out of the payload
+// while thinking is active, since the API rejects a non default value in that mode.
+func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
+	params := sdk.MessageNewParams{
+		Model:     c.model,
+		MaxTokens: c.maxTokens,
+		Thinking:  c.thinking.config,
+		Messages: []sdk.MessageParam{
+			sdk.NewUserMessage(sdk.NewTextBlock(prompt)),
+		},
+	}
+
+	if c.thinking.effort != "" {
+		params.OutputConfig = sdk.OutputConfigParam{Effort: c.thinking.effort}
+	}
+	if len(c.modelOptions.Stop) > 0 {
+		params.StopSequences = c.modelOptions.Stop
+	}
+	if serviceTier := strings.TrimSpace(c.modelOptions.ServiceTier); serviceTier != "" {
+		params.ServiceTier = sdk.MessageNewParamsServiceTier(serviceTier)
+	}
+
+	if c.thinking.active {
+		return params
+	}
+	if c.modelOptions.Temperature != nil {
+		params.Temperature = param.NewOpt(*c.modelOptions.Temperature)
+	}
+	if c.modelOptions.TopP != nil {
+		params.TopP = param.NewOpt(*c.modelOptions.TopP)
+	}
+	if c.modelOptions.TopK != nil {
+		params.TopK = param.NewOpt(int64(*c.modelOptions.TopK))
+	}
+	return params
+}
+
+// newSDKClient builds a per-request SDK client. The resolved credential is never retained
+// between calls. An empty baseURL selects the SDK default endpoint.
+func (c *Client) newSDKClient(token string) sdk.Client {
+	opts := []option.RequestOption{option.WithAPIKey(token)}
+	if c.baseURL != "" {
+		opts = append(opts, option.WithBaseURL(c.baseURL))
+	}
+	return sdk.NewClient(opts...)
 }
 
 // extractTextBlocks concatenates TextBlock payloads from a Messages API content list.

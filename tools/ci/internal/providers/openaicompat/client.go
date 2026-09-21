@@ -1,76 +1,163 @@
 // Package openaicompat implements review.LLMClient against the OpenAI Chat Completions wire
 // format, which Azure OpenAI Service, xAI, and local inference servers all accept. A single
-// client covers every such provider; only the base URL, model, and credential source differ.
+// client covers every such provider. Only the base URL, model, and credential source differ.
 package openaicompat
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
+	"ci-tools/internal/config"
 	"ci-tools/internal/tokensource"
 )
 
-// Config declares the per-provider parameters resolved by the calling binary from the CI job
-// environment. APIVersion selects the Azure OpenAI request shape; an empty value selects the
-// standard shape used by every other provider.
+// Config declares the injection surface shared by every provider package. The calling binary
+// resolves both members from the CI job environment.
 type Config struct {
-	Name       string
-	BaseURL    string
-	Model      string
-	APIVersion string
-	MaxTokens  int
-	Timeout    time.Duration
-	Tokens     tokensource.Provider
+	ModelOptions config.ModelOptions
+	Tokens       tokensource.Provider
+}
+
+// displayNames maps a ModelOptions provider identifier to the label shown in review output.
+var displayNames = map[string]string{
+	"openai":       "OpenAI",
+	"azure-openai": "Azure OpenAI",
+	"grok":         "Grok",
+	"local":        "Local",
 }
 
 // Client issues Chat Completions requests to a single configured provider endpoint.
 type Client struct {
-	name      string
-	url       string
-	model     string
-	maxTokens int
-	tokens    tokensource.Provider
-	http      *http.Client
+	name         string
+	url          string
+	modelOptions config.ModelOptions
+	tokens       tokensource.Provider
+	http         *http.Client
 }
 
-func New(cfg Config) *Client {
+// New constructs a Client from Config, resolving the display name, endpoint shape, and timeout.
+func New(cfg Config) (*Client, error) {
 	if cfg.Tokens == nil {
-		panic("openaicompat: Config.Tokens must not be nil")
+		return nil, errors.New("openaicompat: tokens provider is required")
 	}
+	cfg.ModelOptions.Model = strings.TrimSpace(cfg.ModelOptions.Model)
+	if cfg.ModelOptions.Model == "" {
+		return nil, errors.New("openaicompat: model is required")
+	}
+
+	if cfg.ModelOptions.Timeout <= 0 {
+		cfg.ModelOptions.Timeout = config.DefaultTimeout
+	}
+
 	return &Client{
-		name:      cfg.Name,
-		url:       resolveEndpoint(cfg),
-		model:     cfg.Model,
-		maxTokens: cfg.MaxTokens,
-		tokens:    cfg.Tokens,
-		http:      &http.Client{Timeout: cfg.Timeout},
+		name:         resolveDisplayName(cfg.ModelOptions.Provider),
+		url:          resolveEndpoint(cfg.ModelOptions),
+		modelOptions: cfg.ModelOptions,
+		tokens:       cfg.Tokens,
+		http:         &http.Client{Timeout: cfg.ModelOptions.Timeout},
+	}, nil
+}
+
+// resolveDisplayName maps a provider identifier to its label. An unknown value passes through
+// verbatim, which keeps an added provider reporting a usable name.
+func resolveDisplayName(provider string) string {
+	if name, ok := displayNames[strings.TrimSpace(provider)]; ok {
+		return name
 	}
+	return strings.TrimSpace(provider)
 }
 
 // resolveEndpoint builds the Chat Completions URL. Azure OpenAI addresses a named deployment
-// and requires an explicit api-version, whereas the other providers expose the model as a
-// request body attribute under a fixed path.
-func resolveEndpoint(cfg Config) string {
-	base := strings.TrimSuffix(cfg.BaseURL, "/")
-	if cfg.APIVersion == "" {
+// and requires an explicit api-version, whereas other providers expose model as request body.
+func resolveEndpoint(modelOptions config.ModelOptions) string {
+	base := strings.TrimSuffix(modelOptions.BaseURL, "/")
+	if modelOptions.APIVersion == "" {
 		return base + "/v1/chat/completions"
 	}
 	return fmt.Sprintf(
 		"%s/openai/deployments/%s/chat/completions?api-version=%s",
-		base, cfg.Model, cfg.APIVersion,
+		base, modelOptions.Model, modelOptions.APIVersion,
 	)
 }
 
 func (c *Client) Name() string { return c.name }
 
-// truncate bounds an upstream response body before it enters an error message, preventing
-// verbose provider diagnostics from propagating unbounded into CI logs.
+func isReasoningModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "o1") ||
+		strings.HasPrefix(m, "o3") ||
+		strings.HasPrefix(m, "o4") ||
+		strings.HasPrefix(m, "grok-4.5") ||
+		strings.HasPrefix(m, "grok-4.6")
+}
+
+func shouldUseMaxCompletionTokens(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "o1") ||
+		strings.HasPrefix(m, "o3") ||
+		strings.HasPrefix(m, "o4") ||
+		strings.HasPrefix(m, "gpt-5")
+}
+
+func (c *Client) buildPayload(prompt string) map[string]any {
+	payload := map[string]any{
+		"model": c.modelOptions.Model,
+		"messages": []any{
+			map[string]any{"role": "user", "content": prompt},
+		},
+	}
+
+	if c.modelOptions.MaxTokens > 0 {
+		if shouldUseMaxCompletionTokens(c.modelOptions.Model) {
+			payload["max_completion_tokens"] = c.modelOptions.MaxTokens
+		} else {
+			payload["max_tokens"] = c.modelOptions.MaxTokens
+		}
+	}
+
+	if c.modelOptions.Temperature != nil {
+		payload["temperature"] = *c.modelOptions.Temperature
+	}
+	if c.modelOptions.TopP != nil {
+		payload["top_p"] = *c.modelOptions.TopP
+	}
+	if c.modelOptions.Seed != nil {
+		payload["seed"] = *c.modelOptions.Seed
+	}
+
+	if c.modelOptions.ReasoningLevel != "" && c.modelOptions.ReasoningLevel != "none" {
+		payload["reasoning_effort"] = c.modelOptions.ReasoningLevel
+	}
+
+	if c.modelOptions.RepetitionPenalty != nil {
+		payload["repetition_penalty"] = *c.modelOptions.RepetitionPenalty
+	}
+	if c.modelOptions.MinP != nil {
+		payload["min_p"] = *c.modelOptions.MinP
+	}
+
+	if !isReasoningModel(c.modelOptions.Model) && c.modelOptions.ReasoningLevel == "" {
+		if c.modelOptions.FrequencyPenalty != nil {
+			payload["frequency_penalty"] = *c.modelOptions.FrequencyPenalty
+		}
+		if c.modelOptions.PresencePenalty != nil {
+			payload["presence_penalty"] = *c.modelOptions.PresencePenalty
+		}
+		if len(c.modelOptions.Stop) > 0 {
+			payload["stop"] = c.modelOptions.Stop
+		}
+	}
+
+	return payload
+}
+
+// truncate bounds an upstream response body before the body enters an error message.
 func truncate(data []byte, limit int) []byte {
 	if len(data) <= limit {
 		return data
@@ -78,13 +165,9 @@ func truncate(data []byte, limit int) []byte {
 	return data[:limit]
 }
 
-// Review submits the prompt and returns the first choice's message content.
-//
-// The response_format attribute is omitted because the reviewer prompt requires a top-level
-// JSON array, which the json_object mode of this API rejects. Fence and prose tolerance is
-// already provided by review.extractJSONArray.
+// Review submits the prompt and returns the message content of the first choice.
 func (c *Client) Review(prompt string) (result string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.http.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), c.modelOptions.Timeout)
 	defer cancel()
 
 	token, err := c.tokens.Token(ctx)
@@ -92,15 +175,7 @@ func (c *Client) Review(prompt string) (result string, err error) {
 		return "", fmt.Errorf("%s: resolve credential: %w", c.name, err)
 	}
 
-	payload := map[string]any{
-		"model": c.model,
-		"messages": []any{
-			map[string]any{"role": "user", "content": prompt},
-		},
-	}
-	if c.maxTokens > 0 {
-		payload["max_tokens"] = c.maxTokens
-	}
+	payload := c.buildPayload(prompt)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
