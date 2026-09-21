@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"ci-tools/internal/config"
+	"ci-tools/internal/httpguard"
 	"ci-tools/internal/tokensource"
 )
 
@@ -172,6 +173,9 @@ func (c *Client) Review(prompt string) (result string, err error) {
 
 	token, err := c.tokens.Token(ctx)
 	if err != nil {
+		return "", fmt.Errorf("%s: resolve credential: %w", c.name, err)
+	}
+	if err := httpguard.ValidateCredential(token); err != nil {
 		return "", fmt.Errorf("%s: resolve credential: %w", c.name, err)
 	}
 

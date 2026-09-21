@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -12,12 +13,16 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
 	"ci-tools/internal/config"
+	"ci-tools/internal/httpguard"
 	"ci-tools/internal/tokensource"
 )
 
 // DefaultMaxTokens bounds the visible response when ModelOptions omits an explicit limit.
 // max_tokens is a mandatory Messages API field. A zero value MUST NOT reach the wire.
 const DefaultMaxTokens = 16384
+
+// responseHeaderTimeout mirrors the SDK default bound on the wait for response headers.
+const responseHeaderTimeout = 10 * time.Minute
 
 // Config declares the injection surface shared by every provider package. The calling binary
 // resolves both members from the CI job environment.
@@ -33,6 +38,7 @@ type Client struct {
 	timeout      time.Duration
 	baseURL      string
 	tokens       tokensource.Provider
+	http         *http.Client
 	modelOptions config.ModelOptions
 	thinking     thinkingPlan
 }
@@ -69,6 +75,7 @@ func New(cfg Config) (*Client, error) {
 		timeout:      timeout,
 		baseURL:      strings.TrimSpace(cfg.ModelOptions.BaseURL),
 		tokens:       cfg.Tokens,
+		http:         newHTTPClient(),
 		modelOptions: cfg.ModelOptions,
 		thinking:     plan,
 	}, nil
@@ -85,6 +92,9 @@ func (c *Client) Review(prompt string) (string, error) {
 
 	token, err := c.tokens.Token(ctx)
 	if err != nil {
+		return "", fmt.Errorf("claude: resolve credential: %w", err)
+	}
+	if err := httpguard.ValidateCredential(token); err != nil {
 		return "", fmt.Errorf("claude: resolve credential: %w", err)
 	}
 
@@ -149,10 +159,27 @@ func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 	return params
 }
 
+// newHTTPClient builds the transport shared by every request. The SDK default client is
+// replaced to attach the redirect guard, and its response header timeout is kept.
+func newHTTPClient() *http.Client {
+	transport := http.DefaultTransport
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		clone := base.Clone()
+		clone.ResponseHeaderTimeout = responseHeaderTimeout
+		transport = clone
+	}
+	return &http.Client{Transport: transport, CheckRedirect: httpguard.RefuseCrossHostRedirect}
+}
+
 // newSDKClient builds a per-request SDK client. The resolved credential is never retained
-// between calls. An empty baseURL selects the SDK default endpoint.
+// between calls. WithoutEnvironmentDefaults keeps ANTHROPIC_* variables from replacing the
+// configured endpoint or credential. An empty baseURL selects the SDK default endpoint.
 func (c *Client) newSDKClient(token string) sdk.Client {
-	opts := []option.RequestOption{option.WithAPIKey(token)}
+	opts := []option.RequestOption{
+		option.WithoutEnvironmentDefaults(),
+		option.WithHTTPClient(c.http),
+		option.WithAPIKey(token),
+	}
 	if c.baseURL != "" {
 		opts = append(opts, option.WithBaseURL(c.baseURL))
 	}

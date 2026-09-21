@@ -399,6 +399,10 @@ func buildCombinedDiff(changes []gitlab.Change, llmName string) (string, map[str
 		}
 
 		switch {
+		case containsControlCharacter(newPath):
+			fmt.Printf("Skip %q (control character in path)\n", newPath)
+			skipped++
+			continue
 		case matchesReviewExclusion(newPath):
 			fmt.Printf("Skip %s (lock/binary/generated)\n", newPath)
 			skipped++

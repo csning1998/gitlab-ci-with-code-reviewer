@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"slices"
 	"time"
+
+	"ci-tools/internal/httpguard"
 )
 
 // Prevents CI runner stalls by terminating unresponsive HTTP requests after 30s.
@@ -19,7 +21,7 @@ const requestTimeout = 30 * time.Second
 // Limits response body reads to 4 KiB to prevent log buffer exhaustion from excessive API responses.
 const maxResponseBodyBytes = 4096
 
-var httpClient = &http.Client{Timeout: requestTimeout}
+var httpClient = &http.Client{Timeout: requestTimeout, CheckRedirect: httpguard.RefuseCrossHostRedirect}
 
 // CreateTag creates a Git tag at the specified target reference in a GitLab project.
 //

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"ci-tools/internal/httpguard"
 )
 
 type Change struct {
@@ -40,7 +42,7 @@ func New(apiURL, projectID, mrIID, token string) *Client {
 	return &Client{
 		mrURL: fmt.Sprintf("%s/projects/%s/merge_requests/%s", apiURL, projectID, mrIID),
 		token: token,
-		http:  &http.Client{Timeout: 30 * time.Second},
+		http:  &http.Client{Timeout: 30 * time.Second, CheckRedirect: httpguard.RefuseCrossHostRedirect},
 	}
 }
 

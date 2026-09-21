@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // File extensions and filenames excluded from LLM code reviews to optimize prompt token limits
@@ -103,6 +104,11 @@ func annotateDiff(lines []diffLine) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// containsControlCharacter reports whether path holds a character which could end a file header line.
+func containsControlCharacter(path string) bool {
+	return strings.IndexFunc(path, unicode.IsControl) >= 0
 }
 
 // matchesReviewExclusion reports whether path is omitted from LLM review

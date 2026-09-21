@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ci-tools/internal/config"
+	"ci-tools/internal/httpguard"
 	"ci-tools/internal/tokensource"
 )
 
@@ -59,7 +60,7 @@ func New(cfg Config) (*Client, error) {
 		timeout:          timeout,
 		tokens:           cfg.Tokens,
 		generationConfig: buildGenerationConfig(model, cfg.ModelOptions),
-		http:             &http.Client{Timeout: timeout},
+		http:             &http.Client{Timeout: timeout, CheckRedirect: httpguard.RefuseCrossHostRedirect},
 	}, nil
 }
 
@@ -73,6 +74,9 @@ func (c *Client) Review(prompt string) (result string, err error) {
 
 	token, err := c.tokens.Token(ctx)
 	if err != nil {
+		return "", fmt.Errorf("gemini: resolve credential: %w", err)
+	}
+	if err := httpguard.ValidateCredential(token); err != nil {
 		return "", fmt.Errorf("gemini: resolve credential: %w", err)
 	}
 
