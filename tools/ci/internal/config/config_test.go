@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ci-tools/internal/testutil"
 )
@@ -849,7 +850,7 @@ func TestValidate_PromptMutualExclusion_DeMorgan(t *testing.T) {
 	}
 }
 
-// TestValidate_EnumCaseSensitivity verifies that enum values require exact casing.
+// TestValidate_EnumCaseSensitivity verifies exact casing on enum values.
 func TestValidate_EnumCaseSensitivity(t *testing.T) {
 	t.Parallel()
 
@@ -1076,6 +1077,42 @@ func TestParseConfigFile_RejectsUnknownKeys(t *testing.T) {
 	}
 }
 
+func TestParseConfigFile_TimeoutScalarBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want time.Duration
+	}{
+		{name: "duration string", body: "timeout: 5m", want: 5 * time.Minute},
+		{name: "compound duration", body: "timeout: 1h30m", want: 90 * time.Minute},
+		{name: "seconds", body: "timeout: 45s", want: 45 * time.Second},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeDeclaration(t, "models:\n  a:\n    model: grok-4.6\n    "+tc.body+"\n")
+			decl, err := ParseConfigFile(path)
+			if err != nil {
+				t.Fatalf("ParseConfigFile returned an unexpected error: %v", err)
+			}
+			if got := decl.Models["a"].Timeout; got != tc.want {
+				t.Errorf("Timeout = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("bare integer is not nanoseconds", func(t *testing.T) {
+		path := writeDeclaration(t, "models:\n  a:\n    model: grok-4.6\n    timeout: 5\n")
+		_, err := ParseConfigFile(path)
+		if err == nil {
+			t.Fatal("ParseConfigFile succeeded unexpectedly on a bare integer timeout; want a type-mismatch rejection")
+		}
+		if !strings.Contains(err.Error(), "time.Duration") {
+			t.Errorf("ParseConfigFile error = %q, want it to name the time.Duration type mismatch", err.Error())
+		}
+	})
+}
+
 func TestParseConfigFile_TypeMismatchIsRejected(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1099,4 +1136,85 @@ func TestParseConfigFile_TypeMismatchIsRejected(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseConfigFile_DocumentShapes(t *testing.T) {
+	bom := "\xef\xbb\xbf"
+	tests := []struct {
+		name      string
+		body      string
+		wantErr   bool
+		wantModel string
+	}{
+		{name: "empty file"},
+		{name: "comments only", body: "# nothing here\n"},
+		{name: "byte order mark", body: bom + "models:\n  a:\n    model: grok-4.6\n", wantModel: "grok-4.6"},
+		{name: "tab indentation", body: "models:\n\ta:\n\t\tmodel: grok-4.6\n", wantErr: true},
+		{name: "duplicate model key", body: "models:\n  a:\n    model: grok-4.6\n  a:\n    model: grok-4.5\n", wantErr: true},
+		{name: "duplicate field", body: "models:\n  a:\n    model: grok-4.6\n    model: grok-4.5\n", wantErr: true},
+		{name: "crlf line endings", body: "models:\r\n  a:\r\n    model: grok-4.6\r\n", wantModel: "grok-4.6"},
+		{name: "merge key anchor", body: "defaults: &d\n  max_tokens: 100\nmodels:\n  a:\n    <<: *d\n    model: grok-4.6\n", wantModel: "grok-4.6"},
+		{name: "undefined alias", body: "models:\n  a: *missing\n", wantErr: true},
+		{name: "top level scalar", body: "just a string\n", wantErr: true},
+		{name: "top level list", body: "- a\n- b\n", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			decl, err := ParseConfigFile(writeDeclaration(t, tc.body))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("ParseConfigFile succeeded unexpectedly")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseConfigFile returned an unexpected error: %v", err)
+			}
+			if tc.wantModel != "" && decl.Models["a"].Model != tc.wantModel {
+				t.Errorf("Model = %q, want %q", decl.Models["a"].Model, tc.wantModel)
+			}
+		})
+	}
+}
+
+func TestParseConfigFile_HostileDocumentsFinishQuickly(t *testing.T) {
+	aliasBomb := func() string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "a0: &a0 [%s]\n", strings.TrimSuffix(strings.Repeat(`"lol",`, 9), ","))
+		for level := 1; level <= 6; level++ {
+			refs := strings.TrimSuffix(strings.Repeat(fmt.Sprintf("*a%d,", level-1), 9), ",")
+			fmt.Fprintf(&b, "a%d: &a%d [%s]\n", level, level, refs)
+		}
+		return b.String()
+	}()
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "alias expansion", body: aliasBomb},
+		{name: "deep flow nesting", body: "models:\n  a:\n    stop: " + strings.Repeat("[", 5000) + strings.Repeat("]", 5000) + "\n"},
+		{name: "long scalar", body: "models:\n  a:\n    prompt: " + strings.Repeat("a", 4<<20) + "\n"},
+		{name: "many keys", body: "models:\n" + manyModelEntries(20000)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeDeclaration(t, tc.body)
+			start := time.Now()
+			_, _ = ParseConfigFile(path)
+			if elapsed := time.Since(start); elapsed > 5*time.Second {
+				t.Errorf("ParseConfigFile took %v", elapsed)
+			}
+		})
+	}
+}
+
+func manyModelEntries(count int) string {
+	var b strings.Builder
+	for i := 0; i < count; i++ {
+		fmt.Fprintf(&b, "  k%d:\n    model: grok-4.6\n", i)
+	}
+	return b.String()
 }

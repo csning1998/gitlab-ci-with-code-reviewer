@@ -89,45 +89,45 @@ func TestResolveCommitTypeLabel_BreakingBangDoesNotAffectTypeMapping(t *testing.
 	}
 }
 
-func TestDetectBreakingChange_BangInTitle(t *testing.T) {
-	if !detectBreakingChange("feat!: breaking change", "") {
-		t.Error("detectBreakingChange(...) = false, want true for a \"!\" following the type")
+func TestHasBreakingChange_BangInTitle(t *testing.T) {
+	if !hasBreakingChange("feat!: breaking change", "") {
+		t.Error("hasBreakingChange(...) = false, want true for a \"!\" following the type")
 	}
 }
 
-func TestDetectBreakingChange_BangAfterScope(t *testing.T) {
-	if !detectBreakingChange("fix(api)!: breaking change", "") {
-		t.Error("detectBreakingChange(...) = false, want true for a \"!\" following a scoped type")
+func TestHasBreakingChange_BangAfterScope(t *testing.T) {
+	if !hasBreakingChange("fix(api)!: breaking change", "") {
+		t.Error("hasBreakingChange(...) = false, want true for a \"!\" following a scoped type")
 	}
 }
 
-func TestDetectBreakingChange_FooterInDescription(t *testing.T) {
-	if !detectBreakingChange("feat: add thing", "Some notes.\n\nBREAKING CHANGE: removes old API") {
-		t.Error("detectBreakingChange(...) = false, want true when the description carries a BREAKING CHANGE footer")
+func TestHasBreakingChange_FooterInDescription(t *testing.T) {
+	if !hasBreakingChange("feat: add thing", "Some notes.\n\nBREAKING CHANGE: removes old API") {
+		t.Error("hasBreakingChange(...) = false, want true when the description carries a BREAKING CHANGE footer")
 	}
 }
 
-func TestDetectBreakingChange_HyphenatedFooterVariant(t *testing.T) {
-	if !detectBreakingChange("feat: add thing", "BREAKING-CHANGE: removes old API") {
-		t.Error("detectBreakingChange(...) = false, want true for the BREAKING-CHANGE hyphenated spelling")
+func TestHasBreakingChange_HyphenatedFooterVariant(t *testing.T) {
+	if !hasBreakingChange("feat: add thing", "BREAKING-CHANGE: removes old API") {
+		t.Error("hasBreakingChange(...) = false, want true for the BREAKING-CHANGE hyphenated spelling")
 	}
 }
 
-func TestDetectBreakingChange_FooterMustBeAtLineStart(t *testing.T) {
-	if detectBreakingChange("feat: add thing", "This is not a BREAKING CHANGE: footer, just prose") {
-		t.Error("detectBreakingChange(...) = true, want false when the marker is not anchored to a line start")
+func TestHasBreakingChange_FooterMustBeAtLineStart(t *testing.T) {
+	if hasBreakingChange("feat: add thing", "This is not a BREAKING CHANGE: footer, just prose") {
+		t.Error("hasBreakingChange(...) = true, want false when the marker is not anchored to a line start")
 	}
 }
 
-func TestDetectBreakingChange_NeitherMarkerPresent(t *testing.T) {
-	if detectBreakingChange("feat: add thing", "No breaking changes here.") {
-		t.Error("detectBreakingChange(...) = true, want false with no breaking-change indicator")
+func TestHasBreakingChange_NeitherMarkerPresent(t *testing.T) {
+	if hasBreakingChange("feat: add thing", "No breaking changes here.") {
+		t.Error("hasBreakingChange(...) = true, want false with no breaking-change indicator")
 	}
 }
 
-func TestDetectBreakingChange_BangWithoutConventionalType(t *testing.T) {
-	if detectBreakingChange("Just a title!", "") {
-		t.Error("detectBreakingChange(...) = true, want false since the title never matches the header pattern")
+func TestHasBreakingChange_BangWithoutConventionalType(t *testing.T) {
+	if hasBreakingChange("Just a title!", "") {
+		t.Error("hasBreakingChange(...) = true, want false since the title never matches the header pattern")
 	}
 }
 
@@ -315,4 +315,95 @@ func TestHeaderParsers_AgreeOnReleaseTypeAndTypeLabel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveAreaLabels_PathBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want []string
+	}{
+		{name: "uppercase terraform directory", path: "Terraform/main.tf", want: []string{"area::infrastructure"}},
+		{name: "terraform extension only", path: "deploy/network.tf", want: []string{"area::infrastructure"}},
+		{name: "tf suffix inside name", path: "docs/notes.tf.md"},
+		{name: "hcl suffix inside name", path: "docs/config.hcl.example"},
+		{name: "tfvars with dot directory", path: "envs/prod/.tfvars", want: []string{"area::infrastructure"}},
+		{name: "gitlab ci at root", path: ".gitlab-ci.yml", want: []string{"area::CI"}},
+		{name: "gitlab ci yaml spelling", path: ".gitlab-ci.yaml"},
+		{name: "nested gitlab ci", path: "sub/.gitlab-ci.yml", want: []string{"area::CI"}},
+		{name: "templates yml", path: "templates/core.yml", want: []string{"area::CI"}},
+		{name: "templates yaml", path: "templates/core.yaml", want: []string{"area::CI"}},
+		{name: "templates non yaml", path: "templates/core.txt"},
+		{name: "templates prefix sibling", path: "templates-old/core.yml"},
+		{name: "frontend prefix sibling", path: "frontend-old/app.ts"},
+		{name: "backend nested", path: "services/backend/main.go", want: []string{"area::backend"}},
+		{name: "backend file named backend", path: "docs/backend"},
+		{name: "grafana directory", path: "ops/grafana/dash.json", want: []string{"area::observability"}},
+		{name: "windows separator", path: "terraform\\main.tf", want: []string{"area::infrastructure"}},
+		{name: "empty path"},
+		{name: "path with newline", path: "a/frontend/\nb.ts", want: []string{"area::frontend"}},
+		{name: "unicode directory", path: "前端/frontend/app.ts", want: []string{"area::frontend"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveAreaLabels([]gitlab.Change{{NewPath: tc.path}})
+			if len(got) != len(tc.want) {
+				t.Fatalf("resolveAreaLabels(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("resolveAreaLabels(%q)[%d] = %q, want %q", tc.path, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestHasBreakingChange_FooterBoundaries(t *testing.T) {
+	tests := []struct {
+		name        string
+		title       string
+		description string
+		want        bool
+	}{
+		{name: "footer with CRLF line endings", description: "body\r\nBREAKING CHANGE: x", want: true},
+		{name: "footer lowercase", description: "breaking change: x"},
+		{name: "footer without colon", description: "BREAKING CHANGE x"},
+		{name: "footer with space before colon", description: "BREAKING CHANGE : x"},
+		{name: "footer indented", description: "  BREAKING CHANGE: x"},
+		{name: "footer in code fence", description: "```\nBREAKING CHANGE: x\n```", want: true},
+		{name: "footer as last line without newline", description: "a\nBREAKING-CHANGE: x", want: true},
+		{name: "title bang with tab", title: "feat!:\tx", want: true},
+		{name: "title bang without space", title: "feat!:x"},
+		{name: "title bang capitalized type", title: "Feat!: x"},
+		{name: "empty inputs"},
+		{name: "both markers", title: "fix!: x", description: "BREAKING CHANGE: y", want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasBreakingChange(tc.title, tc.description); got != tc.want {
+				t.Errorf("hasBreakingChange(%q, %q) = %t, want %t", tc.title, tc.description, got, tc.want)
+			}
+		})
+	}
+}
+
+func FuzzResolveCommitTypeLabel(f *testing.F) {
+	for _, seed := range []string{"feat: x", "fix(a)!: y", "", "\x00", "feat(\n): x", "  chore: z  "} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, title string) {
+		label := resolveCommitTypeLabel(title)
+		if label == "" {
+			return
+		}
+		for _, known := range commitTypeToLabel {
+			if known == label {
+				return
+			}
+		}
+		t.Fatalf("resolveCommitTypeLabel(%q) = %q, want a label declared in commitTypeToLabel", title, label)
+	})
 }

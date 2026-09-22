@@ -1,11 +1,15 @@
 package gemini
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -429,6 +433,12 @@ func assertThinkingConfigField(t *testing.T, body map[string]any, wantKey string
 	}
 }
 
+type tokenFunc func(context.Context) (string, error)
+
+func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
+
+// hostRewriteTransport redirects only the production API host to the fixture server. Every
+// other host, such as a redirect target, is contacted directly.
 type hostRewriteTransport struct {
 	target string
 }
@@ -459,6 +469,139 @@ func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.P
 	})
 	client.http.Transport = hostRewriteTransport{target: server.URL}
 	return client
+}
+
+func echoPromptHandler(seen *sync.Map) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		seen.Store(r.Header.Get("x-goog-api-key"), struct{}{})
+		var payload struct {
+			Contents []struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"contents"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &payload)
+		text := ""
+		if len(payload.Contents) > 0 && len(payload.Contents[0].Parts) > 0 {
+			text = payload.Contents[0].Parts[0].Text
+		}
+		reply, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{"content": map[string]any{"parts": []any{map[string]any{"text": text}}}}}})
+		_, _ = w.Write(reply)
+	}
+}
+
+func TestReview_ConcurrentCallsKeepPromptsAndCredentialsSeparate(t *testing.T) {
+	const callers = 48
+
+	var issued atomic.Int64
+	tokens := tokenFunc(func(context.Context) (string, error) {
+		return fmt.Sprintf("key-%d", issued.Add(1)), nil
+	})
+	var seen sync.Map
+	client := newBoundaryClient(t, 10*time.Second, tokens, echoPromptHandler(&seen))
+
+	start := make(chan struct{})
+	results := make([]string, callers)
+	errs := make([]error, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = client.Review(fmt.Sprintf("prompt-%d", i))
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 0; i < callers; i++ {
+		if errs[i] != nil {
+			t.Errorf("caller %d returned an unexpected error: %v", i, errs[i])
+			continue
+		}
+		if want := fmt.Sprintf("prompt-%d", i); results[i] != want {
+			t.Errorf("caller %d received %q, want %q", i, results[i], want)
+		}
+	}
+
+	distinct := 0
+	seen.Range(func(_, _ any) bool { distinct++; return true })
+	if distinct != callers {
+		t.Errorf("server observed %d distinct credentials, want %d", distinct, callers)
+	}
+}
+
+func TestReview_TimeoutBoundsSlowServer(t *testing.T) {
+	release := make(chan struct{})
+	client := newBoundaryClient(t, 150*time.Millisecond, tokensource.Static("key"), func(http.ResponseWriter, *http.Request) {
+		<-release
+	})
+	t.Cleanup(func() { close(release) })
+
+	start := time.Now()
+	if _, err := client.Review("prompt"); err == nil {
+		t.Fatal("Review succeeded unexpectedly against a stalled server")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("Review took %v, want a bound near the 150ms timeout", elapsed)
+	}
+}
+
+func TestReview_MalformedCredentialNeverReachesServer(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{name: "empty", token: ""},
+		{name: "whitespace only", token: "   "},
+		{name: "carriage return line feed injection", token: "abc\r\nX-Injected: 1"},
+		{name: "nul byte", token: "abc\x00def"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var reached atomic.Bool
+			client := newBoundaryClient(t, 5*time.Second,
+				tokenFunc(func(context.Context) (string, error) { return tc.token, nil }),
+				func(w http.ResponseWriter, r *http.Request) {
+					reached.Store(true)
+					if r.Header.Get("X-Injected") != "" {
+						t.Error("server observed an injected header")
+					}
+					_, _ = w.Write([]byte(`{"candidates":[]}`))
+				})
+
+			_, err := client.Review("prompt")
+			if err == nil && reached.Load() {
+				t.Errorf("Review sent a request with credential %q", tc.token)
+			}
+		})
+	}
+}
+
+// The API key travels in a custom header, which the standard library forwards on a redirect to
+// another host. The client MUST NOT forward the key to that host.
+func TestReview_CrossHostRedirectDoesNotForwardCredential(t *testing.T) {
+	var leaked atomic.Value
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Store(r.Header.Get("x-goog-api-key"))
+		_, _ = w.Write([]byte(`{"candidates":[]}`))
+	}))
+	t.Cleanup(target.Close)
+	targetURL := strings.Replace(target.URL, "127.0.0.1", "localhost", 1)
+
+	client := newBoundaryClient(t, 5*time.Second, tokensource.Static("secret-key"), func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetURL+r.URL.Path, http.StatusTemporaryRedirect)
+	})
+
+	_, _ = client.Review("prompt")
+
+	if got, _ := leaked.Load().(string); got != "" {
+		t.Errorf("redirect target received x-goog-api-key %q", got)
+	}
 }
 
 func TestReview_OversizedErrorBodyIsBounded(t *testing.T) {

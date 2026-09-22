@@ -45,7 +45,7 @@ var areaRules = []areaRule{
 	{"area::observability", regexp.MustCompile(`(^|/)(grafana|prometheus|monitoring|observability)/`)},
 }
 
-// commitTypeLabel extracts the type::* label from the merge request title, returning "" if unmapped or invalid.
+// resolveCommitTypeLabel extracts the type::* label from the merge request title, returning "" if unmapped or invalid.
 func resolveCommitTypeLabel(title string) string {
 	header, ok := conventional.ParseHeader(title)
 	if !ok {
@@ -54,8 +54,8 @@ func resolveCommitTypeLabel(title string) string {
 	return commitTypeToLabel[header.Type]
 }
 
-// isBreakingChange identifies breaking changes via title header "!" markers or description footers.
-func detectBreakingChange(title, description string) bool {
+// hasBreakingChange identifies breaking changes via title header "!" markers or description footers.
+func hasBreakingChange(title, description string) bool {
 	if header, ok := conventional.ParseHeader(title); ok && header.Breaking {
 		return true
 	}
@@ -105,7 +105,7 @@ func (l *Labeler) Execute() error {
 	if lbl := resolveCommitTypeLabel(mr.Title); lbl != "" {
 		labels = append(labels, lbl)
 	}
-	if detectBreakingChange(mr.Title, mr.Description) {
+	if hasBreakingChange(mr.Title, mr.Description) {
 		labels = append(labels, "breaking-change")
 	}
 	labels = append(labels, resolveAreaLabels(mr.Changes)...)

@@ -232,7 +232,7 @@ func (r *Reviewer) Execute() error {
 		if c.Security {
 			foundSecurity = true
 		}
-		if r.postReviewComments(mr.DiffRefs, fileMeta, c) {
+		if r.postReviewComment(mr.DiffRefs, fileMeta, c) {
 			posted++
 		}
 	}
@@ -399,9 +399,9 @@ func stripTrailingCommas(s string) string {
 	return b.String()
 }
 
-// postReviewComments posts a single review finding, attempting inline discussion placement
-// before falling back to a general merge request note if line-anchoring is unavailable.
-func (r *Reviewer) postReviewComments(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c Comment) bool {
+// postReviewComment posts a single review finding, attempting inline discussion placement
+// before falling back to a general merge request note if line anchoring is unavailable.
+func (r *Reviewer) postReviewComment(refs gitlab.DiffRefs, fileMeta map[string]fileInfo, c Comment) bool {
 	file := strings.TrimSpace(c.File)
 	description := strings.TrimSpace(c.Description)
 	suggestion := strings.TrimSpace(c.Suggestion)

@@ -13,13 +13,13 @@ var gemmaThinkingLevels = map[string]bool{"high": true, "minimal": true}
 // thinkingLevels lists the levels the 3.x generation accepts.
 var thinkingLevels = map[string]bool{"minimal": true, "low": true, "medium": true, "high": true}
 
-// checkThinkingLevelSupport reports whether model accepts thinkingLevel over thinkingBudget.
-func checkThinkingLevelSupport(model string) bool {
+// supportsThinkingLevel reports whether model accepts thinkingLevel over thinkingBudget.
+func supportsThinkingLevel(model string) bool {
 	return strings.HasPrefix(model, "gemini-3") || strings.HasPrefix(model, "gemma-")
 }
 
-// matchGemmaModel reports whether model represents open-weights Gemma hosted on Gemini API.
-func matchGemmaModel(model string) bool {
+// isGemmaModel reports whether model represents open-weights Gemma hosted on Gemini API.
+func isGemmaModel(model string) bool {
 	return strings.HasPrefix(model, "gemma-")
 }
 
@@ -28,7 +28,7 @@ func validateGeneration(model string, opts config.ModelOptions) error {
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	hasBudget := opts.ThinkingBudget != nil && *opts.ThinkingBudget > 0
 
-	if checkThinkingLevelSupport(model) {
+	if supportsThinkingLevel(model) {
 		if hasBudget {
 			return fmt.Errorf(
 				"gemini: model %q carries thinking_level and rejects thinking_budget", model)
@@ -48,7 +48,7 @@ func validateThinkingLevel(model, level string) error {
 	if level == "" || level == "none" {
 		return nil
 	}
-	if matchGemmaModel(model) {
+	if isGemmaModel(model) {
 		if !gemmaThinkingLevels[level] {
 			return fmt.Errorf(
 				"gemini: model %q accepts reasoning_level high or minimal only, got %q", model, level)
@@ -110,7 +110,7 @@ func buildGenerationConfig(model string, opts config.ModelOptions) map[string]an
 // buildThinkingConfig emits the single thinking control the generation of model accepts.
 func buildThinkingConfig(model string, opts config.ModelOptions) map[string]any {
 	level := strings.TrimSpace(opts.ReasoningLevel)
-	if checkThinkingLevelSupport(model) {
+	if supportsThinkingLevel(model) {
 		if level == "" || level == "none" {
 			return nil
 		}

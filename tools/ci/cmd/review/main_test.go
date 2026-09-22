@@ -222,6 +222,23 @@ models:
 	}
 }
 
+func TestReview_MalformedDeclarationFailsFastWithoutFallback(t *testing.T) {
+	// A raw model id MUST NOT bypass a broken declaration, because the fallback would drop the
+	// per-model parameters the declaration carries.
+	dir := writeDeclarationDir(t, "models: [unclosed\n")
+
+	code, _, stderr := executeReviewSubprocessInDir(t, dir,
+		"REVIEW_MODEL=gpt-4o",
+		"REVIEW_API_KEY=mock-provider-key",
+	)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "unmarshal config yaml") {
+		t.Errorf("stderr = %q, want the declaration parse failure", stderr)
+	}
+}
+
 func TestReview_SlotBoundToUndeclaredModelNamesTheDanglingBinding(t *testing.T) {
 	// The failure MUST name the undeclared model. The fallback message names the slot as an
 	// unapproved model id, which hides the broken binding.
@@ -480,5 +497,70 @@ func assertPromptFileOutsideWorkspaceRejected(
 	}
 	if strings.Contains(llmBody(), "OUTSIDE-SECRET-MARKER") {
 		t.Error("content of a file outside the working directory reached the language model")
+	}
+}
+
+func TestReview_MalformedTunableExitsNonzeroNamingVariable(t *testing.T) {
+	tests := []struct {
+		env  string
+		want string
+	}{
+		{env: "REVIEW_MAX_TOKENS=abc", want: "REVIEW_MAX_TOKENS"},
+		{env: "REVIEW_TIMEOUT_MINUTES=10m", want: "REVIEW_TIMEOUT_MINUTES"},
+		{env: "REVIEW_TEMPERATURE=NaN", want: "REVIEW_TEMPERATURE"},
+		{env: "REVIEW_TOP_P=Inf", want: "REVIEW_TOP_P"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.env, func(t *testing.T) {
+			code, _, stderr := executeReviewSubprocess(t, tc.env)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1", code)
+			}
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("stderr = %q, want %s named", stderr, tc.want)
+			}
+		})
+	}
+}
+
+func TestReview_ModelSpellingBoundaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+	}{
+		{name: "uppercase", model: "CLAUDE-SONNET-5"},
+		{name: "interior space", model: "claude sonnet-5"},
+		{name: "trailing hyphen", model: "claude-sonnet-5-"},
+		{name: "path traversal", model: "../claude-sonnet-5"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, stderr := executeReviewSubprocess(t, "REVIEW_MODEL="+tc.model)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
+			}
+		})
+	}
+}
+
+func TestReview_CredentialWhitespaceBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+	}{
+		{name: "whitespace only neutral key", env: []string{"REVIEW_API_KEY=   ", "CLAUDE_API_KEY="}},
+		{name: "tab only provider key", env: []string{"REVIEW_API_KEY=", "CLAUDE_API_KEY=\t"}},
+		{name: "whitespace only gitlab token", env: []string{"REVIEW_MR_REVIEWER=  "}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, stderr := executeReviewSubprocess(t, tc.env...)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
+			}
+		})
 	}
 }

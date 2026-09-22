@@ -3,6 +3,7 @@ package semver
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -121,6 +122,62 @@ func TestParseVersion_RejectsNonCanonicalInput(t *testing.T) {
 	}
 }
 
+func TestParseVersion_AcceptsCanonicalInput(t *testing.T) {
+	tests := []struct {
+		input                           string
+		wantMajor, wantMinor, wantPatch int
+	}{
+		{input: "0.0.0"},
+		{input: "1.2.3", wantMajor: 1, wantMinor: 2, wantPatch: 3},
+		{input: "10.20.30", wantMajor: 10, wantMinor: 20, wantPatch: 30},
+		{input: fmt.Sprintf("%d.0.0", math.MaxInt), wantMajor: math.MaxInt},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			major, minor, patch, err := ParseVersion(tc.input)
+			if err != nil {
+				t.Fatalf("ParseVersion(%q) returned an unexpected error: %v", tc.input, err)
+			}
+			if major != tc.wantMajor || minor != tc.wantMinor || patch != tc.wantPatch {
+				t.Errorf("ParseVersion(%q) = %d.%d.%d, want %d.%d.%d",
+					tc.input, major, minor, patch, tc.wantMajor, tc.wantMinor, tc.wantPatch)
+			}
+		})
+	}
+}
+
+func TestNextVersion_RejectsIntegerOverflow(t *testing.T) {
+	tests := []struct {
+		name   string
+		latest string
+		bump   Bump
+	}{
+		{name: "patch at max", latest: fmt.Sprintf("0.0.%d", math.MaxInt), bump: BumpPatch},
+		{name: "minor at max", latest: fmt.Sprintf("0.%d.0", math.MaxInt), bump: BumpMinor},
+		{name: "major at max", latest: fmt.Sprintf("%d.0.0", math.MaxInt), bump: BumpMajor},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NextVersion(tc.latest, tc.bump)
+			if err == nil {
+				t.Fatalf("NextVersion(%q, %q) = %q, want a rejection instead of a wrapped negative component", tc.latest, tc.bump, got)
+			}
+		})
+	}
+}
+
+func TestNextVersion_RejectsUnknownBump(t *testing.T) {
+	for _, bump := range []Bump{"", BumpNone, "MAJOR", "Major", "major ", "minor\n", "patch.1"} {
+		t.Run(string(bump), func(t *testing.T) {
+			if got, err := NextVersion("1.2.3", bump); err == nil {
+				t.Fatalf("NextVersion(\"1.2.3\", %q) = %q, want a rejection", bump, got)
+			}
+		})
+	}
+}
+
 func TestDetermineBump_SubjectBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -160,25 +217,28 @@ func TestDetermineBump_SubjectBoundaries(t *testing.T) {
 	}
 }
 
-func TestNextVersion_RejectsIntegerOverflow(t *testing.T) {
-	tests := []struct {
-		name   string
-		latest string
-		bump   Bump
-	}{
-		{name: "patch at max", latest: fmt.Sprintf("0.0.%d", math.MaxInt), bump: BumpPatch},
-		{name: "minor at max", latest: fmt.Sprintf("0.%d.0", math.MaxInt), bump: BumpMinor},
-		{name: "major at max", latest: fmt.Sprintf("%d.0.0", math.MaxInt), bump: BumpMajor},
+func TestDetermineBump_LargeSubjectCompletesWithinBound(t *testing.T) {
+	subjects := []string{
+		strings.Repeat("a", 1<<20),
+		"feat(" + strings.Repeat("(", 1<<18) + "): x",
+		strings.Repeat("feat", 1<<18) + ": x",
 	}
+	for _, subject := range subjects {
+		_ = DetermineBump(subject)
+	}
+}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := NextVersion(tc.latest, tc.bump)
-			if err == nil {
-				t.Fatalf("NextVersion(%q, %q) = %q, want a rejection instead of a wrapped negative component", tc.latest, tc.bump, got)
-			}
-		})
+func FuzzDetermineBump(f *testing.F) {
+	for _, seed := range []string{"feat: x", "fix!: y", "feat(a)!: z", "", "\x00", "feat(\n): x"} {
+		f.Add(seed)
 	}
+	f.Fuzz(func(t *testing.T, subject string) {
+		switch got := DetermineBump(subject); got {
+		case BumpMajor, BumpMinor, BumpPatch, BumpNone:
+		default:
+			t.Fatalf("DetermineBump(%q) = %q, want a declared Bump value", subject, got)
+		}
+	})
 }
 
 func FuzzParseVersionRoundTrip(f *testing.F) {

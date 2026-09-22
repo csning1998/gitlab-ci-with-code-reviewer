@@ -65,8 +65,8 @@ type tokenSelf struct {
 	Revoked bool     `json:"revoked"`
 }
 
-// VerifyScope validates that a personal access token is active, unrevoked, and possesses
-// requiredScope via GET /personal_access_tokens/self. Performs no write operations.
+// VerifyScope validates an active, unrevoked personal access token possessing
+// requiredScope via GET /personal_access_tokens/self. The check executes no write operations.
 func VerifyScope(apiBaseURL, token, requiredScope string) (err error) {
 	endpoint := fmt.Sprintf("%s/personal_access_tokens/self", strings.TrimRight(apiBaseURL, "/"))
 

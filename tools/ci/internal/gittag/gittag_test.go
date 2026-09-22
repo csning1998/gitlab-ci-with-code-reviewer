@@ -278,8 +278,8 @@ func TestCreateTag_ConcurrentWritersOfOneName_ExactlyOneWins(t *testing.T) {
 	}
 }
 
-// raceCreateTag starts writers goroutines that call CreateTag for tag at the same instant and
-// returns the result of each goroutine in writer order.
+// raceCreateTag launches concurrent goroutines invoking CreateTag for tag simultaneously.
+// The helper returns errors from all writers in deterministic order.
 func raceCreateTag(dir, tag string, shas []string, writers int) []error {
 	start := make(chan struct{})
 	results := make([]error, writers)
@@ -326,5 +326,105 @@ func assertExactlyOneTagWinner(t *testing.T, dir, tag string, shas []string, res
 	}
 	if got := ref.Hash().String(); got != wonBy {
 		t.Fatalf("round %d: tag %q targets %s, but writer %d reported success for %s", round, tag, got, winner, wonBy)
+	}
+}
+
+func TestCreateTag_ConcurrentWritersOfDistinctNames_AllSucceed(t *testing.T) {
+	const writers = 16
+
+	dir := t.TempDir()
+	sha := newRepoWithCommit(t, dir)
+
+	start := make(chan struct{})
+	results := make([]error, writers)
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i] = CreateTag(dir, fmt.Sprintf("2.0.%d", i), sha)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range results {
+		if err != nil {
+			t.Errorf("writer %d: CreateTag returned an unexpected error: %v", i, err)
+		}
+	}
+}
+
+func TestCreateTag_TagNameBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		tag     string
+		wantErr bool
+	}{
+		{name: "single character", tag: "v"},
+		{name: "dotted semver", tag: "1.2.3"},
+		{name: "prefixed semver", tag: "terraform/v1.2.3"},
+		{name: "unicode name", tag: "版本-1"},
+		{name: "space inside", tag: "release candidate", wantErr: true},
+		{name: "double dot", tag: "a..b", wantErr: true},
+		{name: "leading dash", tag: "-x", wantErr: true},
+		{name: "trailing dot", tag: "x.", wantErr: true},
+		{name: "trailing slash", tag: "x/", wantErr: true},
+		{name: "lock suffix", tag: "x.lock", wantErr: true},
+		{name: "at brace sequence", tag: "x@{1}", wantErr: true},
+		{name: "control character", tag: "x\x01y", wantErr: true},
+		{name: "tilde", tag: "x~1", wantErr: true},
+		{name: "caret", tag: "x^", wantErr: true},
+		{name: "colon", tag: "x:y", wantErr: true},
+		{name: "question mark", tag: "x?", wantErr: true},
+		{name: "asterisk", tag: "x*", wantErr: true},
+		{name: "open bracket", tag: "x[", wantErr: true},
+		{name: "backslash", tag: "x\\y", wantErr: true},
+		{name: "consecutive slashes", tag: "a//b", wantErr: true},
+		{name: "single at sign", tag: "@", wantErr: true},
+		{name: "newline", tag: "x\ny", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			sha := newRepoWithCommit(t, dir)
+
+			err := CreateTag(dir, tc.tag, sha)
+			if tc.wantErr && err == nil {
+				t.Errorf("CreateTag(%q) succeeded unexpectedly; want a rejection", tc.tag)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("CreateTag(%q) returned an unexpected error: %v", tc.tag, err)
+			}
+		})
+	}
+}
+
+func TestCreateTag_SHABoundaries(t *testing.T) {
+	dir := t.TempDir()
+	sha := newRepoWithCommit(t, dir)
+
+	tests := []struct {
+		name string
+		sha  string
+	}{
+		{name: "empty", sha: ""},
+		{name: "abbreviated", sha: sha[:7]},
+		{name: "one character short", sha: sha[:39]},
+		{name: "one character long", sha: sha + "0"},
+		{name: "non hex character", sha: sha[:39] + "g"},
+		{name: "reference name", sha: "HEAD"},
+		{name: "leading space", sha: " " + sha},
+		{name: "nul byte", sha: sha[:39] + "\x00"},
+	}
+
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := CreateTag(dir, fmt.Sprintf("s%d", i), tc.sha); err == nil {
+				t.Errorf("CreateTag with SHA %q succeeded unexpectedly; want a rejection", tc.sha)
+			}
+		})
 	}
 }

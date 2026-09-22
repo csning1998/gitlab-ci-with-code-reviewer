@@ -436,3 +436,42 @@ func TestParseDiff_ContextLineImmediatelyAfterAddition_IndependentCounters(t *te
 		t.Errorf("second context line = newLine %d oldLine %d, want newLine=12 oldLine=11 (new side advanced one extra for the addition)", *ctx2.newLine, *ctx2.oldLine)
 	}
 }
+
+func assertDiffLineInvariants(t *testing.T, l diffLine) {
+	t.Helper()
+	switch l.prefix {
+	case "+":
+		if l.newLine == nil {
+			t.Fatalf("added line %q has no new line number", l.content)
+		}
+	case "-":
+		if l.oldLine == nil {
+			t.Fatalf("deleted line %q has no old line number", l.content)
+		}
+	case " ":
+		if l.newLine == nil || l.oldLine == nil {
+			t.Fatalf("context line %q lacks a line number", l.content)
+		}
+	}
+}
+
+func FuzzParseDiff(f *testing.F) {
+	seeds := []string{
+		"@@ -1,2 +1,2 @@\n a\n-b\n+c\n",
+		"@@ -0,0 +1 @@\n+x\n\\ No newline at end of file\n",
+		"@@ -99999999999999999999,1 +1 @@\n+x",
+		"",
+		"+",
+		"@@ -1 +1 @@\n\n",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, diff string) {
+		lines := parseDiff(diff)
+		for _, l := range lines {
+			assertDiffLineInvariants(t, l)
+		}
+		_ = annotateDiff(lines)
+	})
+}

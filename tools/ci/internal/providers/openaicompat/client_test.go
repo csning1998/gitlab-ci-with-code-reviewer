@@ -1,11 +1,15 @@
 package openaicompat
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -403,6 +407,10 @@ func assertBodyField(t *testing.T, body map[string]any, key string, want any) {
 	}
 }
 
+type tokenFunc func(context.Context) (string, error)
+
+func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
+
 func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.Provider, handler http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)
@@ -420,6 +428,181 @@ func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.P
 	})
 }
 
+func echoPromptHandler(seen *sync.Map) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		seen.Store(r.Header.Get("Authorization"), struct{}{})
+		var payload struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &payload)
+		content := ""
+		if len(payload.Messages) > 0 {
+			content = payload.Messages[0].Content
+		}
+		reply, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": content}}}})
+		_, _ = w.Write(reply)
+	}
+}
+
+// One Client serves many goroutines. Each response MUST match the prompt of its own call, and
+// each call MUST send the credential issued for that call.
+func TestReview_ConcurrentCallsKeepPromptsAndCredentialsSeparate(t *testing.T) {
+	const callers = 48
+
+	var issued atomic.Int64
+	tokens := tokenFunc(func(context.Context) (string, error) {
+		return fmt.Sprintf("token-%d", issued.Add(1)), nil
+	})
+	var seen sync.Map
+	client := newBoundaryClient(t, 10*time.Second, tokens, echoPromptHandler(&seen))
+
+	start := make(chan struct{})
+	results := make([]string, callers)
+	errs := make([]error, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = client.Review(fmt.Sprintf("prompt-%d", i))
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 0; i < callers; i++ {
+		if errs[i] != nil {
+			t.Errorf("caller %d returned an unexpected error: %v", i, errs[i])
+			continue
+		}
+		if want := fmt.Sprintf("prompt-%d", i); results[i] != want {
+			t.Errorf("caller %d received %q, want %q", i, results[i], want)
+		}
+	}
+
+	distinct := 0
+	seen.Range(func(_, _ any) bool { distinct++; return true })
+	if distinct != callers {
+		t.Errorf("server observed %d distinct credentials, want %d", distinct, callers)
+	}
+}
+
+func TestReview_TimeoutBoundsSlowServer(t *testing.T) {
+	release := make(chan struct{})
+	client := newBoundaryClient(t, 150*time.Millisecond, tokensource.Static("token"), func(http.ResponseWriter, *http.Request) {
+		<-release
+	})
+	t.Cleanup(func() { close(release) })
+
+	start := time.Now()
+	_, err := client.Review("prompt")
+	if err == nil {
+		t.Fatal("Review succeeded unexpectedly against a stalled server")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("Review took %v, want a bound near the 150ms timeout", elapsed)
+	}
+}
+
+func TestReview_CredentialResolutionHonoursDeadline(t *testing.T) {
+	tokens := tokenFunc(func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	client := newBoundaryClient(t, 150*time.Millisecond, tokens, func(http.ResponseWriter, *http.Request) {
+		t.Error("request reached the server without a credential")
+	})
+
+	start := time.Now()
+	if _, err := client.Review("prompt"); err == nil {
+		t.Fatal("Review succeeded unexpectedly without a credential")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("Review took %v, want a bound near the 150ms timeout", elapsed)
+	}
+}
+
+func TestReview_MalformedCredentialNeverReachesServer(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{name: "empty", token: ""},
+		{name: "whitespace only", token: "   "},
+		{name: "carriage return line feed injection", token: "abc\r\nX-Injected: 1"},
+		{name: "line feed injection", token: "abc\nX-Injected: 1"},
+		{name: "nul byte", token: "abc\x00def"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var reached atomic.Bool
+			client := newBoundaryClient(t, 5*time.Second,
+				tokenFunc(func(context.Context) (string, error) { return tc.token, nil }),
+				func(w http.ResponseWriter, r *http.Request) {
+					reached.Store(true)
+					if r.Header.Get("X-Injected") != "" {
+						t.Error("server observed an injected header")
+					}
+					_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+				})
+
+			_, err := client.Review("prompt")
+			if err == nil && reached.Load() {
+				t.Errorf("Review sent a request with credential %q", tc.token)
+			}
+		})
+	}
+}
+
+func TestReview_ResponseBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		wantErr bool
+	}{
+		{name: "null content", body: `{"choices":[{"message":{"content":null}}]}`},
+		{name: "missing message", body: `{"choices":[{}]}`},
+		{name: "empty object", body: `{}`, wantErr: true},
+		{name: "null choices", body: `{"choices":null}`, wantErr: true},
+		{name: "choices as object", body: `{"choices":{}}`, wantErr: true},
+		{name: "content as number", body: `{"choices":[{"message":{"content":5}}]}`, wantErr: true},
+		{name: "content as parts array", body: `{"choices":[{"message":{"content":[{"type":"text","text":"x"}]}}]}`, wantErr: true},
+		{name: "unicode content", body: `{"choices":[{"message":{"content":"設定 😀"}}]}`, want: "設定 \U0001F600"},
+		{name: "escaped nul", body: `{"choices":[{"message":{"content":"a\u0000b"}}]}`, want: "a\x00b"},
+		{name: "trailing garbage", body: `{"choices":[{"message":{"content":"x"}}]} tail`, wantErr: true},
+		{name: "byte order mark prefix", body: "\xef\xbb\xbf{\"choices\":[{\"message\":{\"content\":\"x\"}}]}", wantErr: true},
+		{name: "only whitespace", body: "  \n", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newBoundaryClient(t, 5*time.Second, tokensource.Static("token"), func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			})
+
+			got, err := client.Review("prompt")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Review succeeded unexpectedly with %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Review returned an unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Review = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReview_ErrorBodyExcerptStaysValidUTF8(t *testing.T) {
 	// The excerpt limit is 512 bytes. A two byte rune straddling the limit MUST NOT be split.
 	body := strings.Repeat("a", 511) + "é" + strings.Repeat("b", 100)
@@ -434,5 +617,81 @@ func TestReview_ErrorBodyExcerptStaysValidUTF8(t *testing.T) {
 	}
 	if !utf8.ValidString(err.Error()) {
 		t.Errorf("error message contains an invalid UTF-8 sequence: %q", err.Error()[len(err.Error())-20:])
+	}
+}
+
+func TestTruncate_LimitBoundaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		limit int
+		want  string
+	}{
+		{name: "shorter than limit", input: "abc", limit: 5, want: "abc"},
+		{name: "exactly limit", input: "abcde", limit: 5, want: "abcde"},
+		{name: "one over limit", input: "abcdef", limit: 5, want: "abcde"},
+		{name: "zero limit", input: "abc", limit: 0, want: ""},
+		{name: "empty input", input: "", limit: 5, want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(truncate([]byte(tc.input), tc.limit)); got != tc.want {
+				t.Errorf("truncate(%q, %d) = %q, want %q", tc.input, tc.limit, got, tc.want)
+			}
+		})
+	}
+}
+
+// The standard library strips Authorization when a redirect changes the host.
+func TestReview_CrossHostRedirectDoesNotForwardCredential(t *testing.T) {
+	var leaked atomic.Value
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Store(r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+	}))
+	t.Cleanup(target.Close)
+	targetURL := strings.Replace(target.URL, "127.0.0.1", "localhost", 1)
+
+	client := newBoundaryClient(t, 5*time.Second, tokensource.Static("secret-token"), func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetURL+r.URL.Path, http.StatusTemporaryRedirect)
+	})
+
+	_, _ = client.Review("prompt")
+
+	if got, _ := leaked.Load().(string); got != "" {
+		t.Errorf("redirect target received Authorization %q", got)
+	}
+}
+
+func TestBuildPayload_NumericBoundariesSerialize(t *testing.T) {
+	tests := []struct {
+		name string
+		opts config.ModelOptions
+		key  string
+		want any
+	}{
+		{name: "zero temperature is sent", opts: config.ModelOptions{Temperature: testutil.Ptr(0.0)}, key: "temperature", want: float64(0)},
+		{name: "zero top p is sent", opts: config.ModelOptions{TopP: testutil.Ptr(0.0)}, key: "top_p", want: float64(0)},
+		{name: "zero seed is sent", opts: config.ModelOptions{Seed: testutil.Ptr(int64(0))}, key: "seed", want: float64(0)},
+		{name: "negative seed is sent", opts: config.ModelOptions{Seed: testutil.Ptr(int64(-1))}, key: "seed", want: float64(-1)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.opts.Model = "gpt-4o"
+			c := mustNewClient(t, Config{ModelOptions: tc.opts, Tokens: tokensource.Static("t")})
+			raw, err := json.Marshal(c.buildPayload("prompt"))
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+			var decoded map[string]any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatalf("decode payload: %v", err)
+			}
+			if got, ok := decoded[tc.key]; !ok || got != tc.want {
+				t.Errorf("%s = %v (present %t), want %v", tc.key, got, ok, tc.want)
+			}
+		})
 	}
 }

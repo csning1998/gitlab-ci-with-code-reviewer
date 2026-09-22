@@ -3,6 +3,7 @@ package tokensource_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"ci-tools/internal/tokensource"
@@ -43,5 +44,29 @@ func TestNewVaultKV_Delegation(t *testing.T) {
 	}
 	if vk == nil {
 		t.Fatal("NewVaultKV() returned nil instance")
+	}
+}
+
+func TestStatic_ConcurrentCallsReturnTheSameCredential(t *testing.T) {
+	const callers = 128
+
+	source := tokensource.Static("shared-credential")
+	results := make([]string, callers)
+	errs := make([]error, callers)
+
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = source.Token(context.Background())
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < callers; i++ {
+		if errs[i] != nil || results[i] != "shared-credential" {
+			t.Errorf("caller %d: Token() = %q, %v", i, results[i], errs[i])
+		}
 	}
 }

@@ -21,7 +21,7 @@ type tokenFunc func(context.Context) (string, error)
 
 func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
 
-func streamFor(text string, complete bool) string {
+func buildSSEStream(text string, complete bool) string {
 	quoted, _ := json.Marshal(text)
 	var b strings.Builder
 	b.WriteString("event: message_start\n")
@@ -70,7 +70,7 @@ func echoPromptHandler(seen *sync.Map) http.HandlerFunc {
 			text = payload.Messages[0].Content[0].Text
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(streamFor(text, true)))
+		_, _ = w.Write([]byte(buildSSEStream(text, true)))
 	}
 }
 
@@ -120,7 +120,7 @@ func TestReview_TimeoutBoundsStalledStream(t *testing.T) {
 	release := make(chan struct{})
 	client := newBoundaryClient(t, 300*time.Millisecond, tokensource.Static("key"), func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(streamFor("[", false)))
+		_, _ = w.Write([]byte(buildSSEStream("[", false)))
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
 		}
@@ -140,7 +140,7 @@ func TestReview_TimeoutBoundsStalledStream(t *testing.T) {
 func TestReview_TruncatedStreamIsAnError(t *testing.T) {
 	client := newBoundaryClient(t, 10*time.Second, tokensource.Static("key"), func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(streamFor(`[{"file":"a.go"`, false)))
+		_, _ = w.Write([]byte(buildSSEStream(`[{"file":"a.go"`, false)))
 	})
 
 	got, err := client.Review("prompt")
@@ -171,7 +171,7 @@ func TestReview_MalformedCredentialNeverReachesServer(t *testing.T) {
 						t.Error("server observed an injected header")
 					}
 					w.Header().Set("Content-Type", "text/event-stream")
-					_, _ = w.Write([]byte(streamFor("[]", true)))
+					_, _ = w.Write([]byte(buildSSEStream("[]", true)))
 				})
 
 			_, err := client.Review("prompt")
@@ -189,7 +189,7 @@ func TestReview_CrossHostRedirectDoesNotForwardCredential(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		leaked.Store(r.Header.Get("X-Api-Key"))
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(streamFor("[]", true)))
+		_, _ = w.Write([]byte(buildSSEStream("[]", true)))
 	}))
 	t.Cleanup(target.Close)
 	targetURL := strings.Replace(target.URL, "127.0.0.1", "localhost", 1)
@@ -210,7 +210,7 @@ func TestReview_HostileEnvironmentDoesNotRedirectRequests(t *testing.T) {
 	hostile := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hijacked.Store(true)
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(streamFor("[]", true)))
+		_, _ = w.Write([]byte(buildSSEStream("[]", true)))
 	}))
 	t.Cleanup(hostile.Close)
 	t.Setenv("ANTHROPIC_BASE_URL", hostile.URL)
@@ -223,7 +223,7 @@ func TestReview_HostileEnvironmentDoesNotRedirectRequests(t *testing.T) {
 			sawAmbient.Store(true)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(streamFor("[]", true)))
+		_, _ = w.Write([]byte(buildSSEStream("[]", true)))
 	}))
 	t.Cleanup(intended.Close)
 
@@ -269,9 +269,9 @@ func TestReview_ResponseBoundaries(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "unicode text", stream: streamFor("設定 \U0001F600", true), want: "設定 \U0001F600"},
-		{name: "embedded nul", stream: streamFor("a\x00b", true), want: "a\x00b"},
-		{name: "empty text block", stream: streamFor("", true), wantErr: true},
+		{name: "unicode text", stream: buildSSEStream("設定 \U0001F600", true), want: "設定 \U0001F600"},
+		{name: "embedded nul", stream: buildSSEStream("a\x00b", true), want: "a\x00b"},
+		{name: "empty text block", stream: buildSSEStream("", true), wantErr: true},
 		{name: "not an event stream", stream: `{"type":"error"}`, wantErr: true},
 		{name: "empty body", stream: "", wantErr: true},
 	}

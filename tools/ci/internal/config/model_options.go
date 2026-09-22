@@ -16,7 +16,7 @@ import (
 	yaml "go.yaml.in/yaml/v4"
 )
 
-// ErrSlotNotConfigured indicates that a model slot was queried without an underlying configuration.
+// ErrSlotNotConfigured indicates an unconfigured model slot query.
 var ErrSlotNotConfigured = errors.New("model slot is not configured")
 
 // DefaultTimeout establishes fallback HTTP transport duration when unspecified.
@@ -97,9 +97,17 @@ func GenerateJSONSchema() ([]byte, error) {
 	return data, nil
 }
 
+// maxDeclarationSizeBytes bounds a reviewer declaration file since the YAML decoder parses a
+// document with many sibling keys in quadratic time.
+const maxDeclarationSizeBytes = 64 * 1024
+
+// declarationReadTimeout bounds the wait for opening and reading a reviewer declaration file,
+// because a FIFO with no writer blocks the underlying open and read syscalls indefinitely.
+const declarationReadTimeout = 5 * time.Second
+
 // ParseConfigFile unmarshals a YAML reviewer declaration file.
 func ParseConfigFile(path string) (*ConfigDeclaration, error) {
-	data, err := os.ReadFile(path)
+	data, err := readBoundedDeclarationFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
@@ -116,6 +124,50 @@ func ParseConfigFile(path string) (*ConfigDeclaration, error) {
 	}
 
 	return &decl, nil
+}
+
+// readBoundedDeclarationFile reads path under declarationReadTimeout and rejects content past
+// maxDeclarationSizeBytes, mirroring the bounded-read style of the readBoundedFile helper in
+// internal/review.
+func readBoundedDeclarationFile(path string) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		data, err := openAndReadDeclarationFile(path)
+		resultCh <- result{data, err}
+	}()
+
+	select {
+	case r := <-resultCh:
+		return r.data, r.err
+	case <-time.After(declarationReadTimeout):
+		return nil, fmt.Errorf("reading declaration file %q exceeded %v", path, declarationReadTimeout)
+	}
+}
+
+// openAndReadDeclarationFile opens path and reads content past maxDeclarationSizeBytes.
+func openAndReadDeclarationFile(path string) (data []byte, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	data, err = io.ReadAll(io.LimitReader(file, maxDeclarationSizeBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxDeclarationSizeBytes {
+		return nil, fmt.Errorf("size exceeds the maximum limit of %d bytes", maxDeclarationSizeBytes)
+	}
+	return data, nil
 }
 
 // integerFieldNames lists the YAML keys of ModelOptions which hold an integer. The decoder

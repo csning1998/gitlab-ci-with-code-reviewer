@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -113,7 +114,7 @@ func TestCreateTag_NestedNamespaceProjectIDEscaped(t *testing.T) {
 }
 
 func TestCreateTag_TagNameWithSlashRoundTrips(t *testing.T) {
-	// Slashes represent valid Git ref path segments. Validate that query encoding preserves
+	// Slashes represent valid Git ref path segments. Query encoding MUST preserve
 	// slash characters to prevent ref path corruption on remote endpoints.
 	var gotTagName string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -212,8 +213,8 @@ func TestCreateTag_ErrorStatusWithEmptyBody(t *testing.T) {
 }
 
 func TestCreateTag_FollowsRedirect(t *testing.T) {
-	// Intermediate reverse proxies may issue redirects. Validate that HTTP 307 redirects
-	// preserve the original POST method and payload without client-side downgrade to GET.
+	// Intermediate reverse proxies may issue redirects. Redirect processing MUST preserve
+	// the original POST method and payload without client side downgrade to GET.
 	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -358,6 +359,46 @@ func TestCreateTag_EmptyToken(t *testing.T) {
 	}
 }
 
+func newCrossHostRedirector(t *testing.T, leaked *atomic.Value) *httptest.Server {
+	t.Helper()
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Store(r.Header.Get("PRIVATE-TOKEN"))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"active":true,"scopes":["api"]}`))
+	}))
+	t.Cleanup(target.Close)
+	targetURL := strings.Replace(target.URL, "127.0.0.1", "localhost", 1)
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetURL+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+	return redirector
+}
+
+// A redirect to a different host MUST NOT carry the PRIVATE-TOKEN header.
+func TestCreateTag_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
+	var leaked atomic.Value
+	redirector := newCrossHostRedirector(t, &leaked)
+
+	_ = CreateTag(redirector.URL, "1", "1.0.0", "abc", "secret-token")
+
+	if got, _ := leaked.Load().(string); got != "" {
+		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
+	}
+}
+
+func TestVerifyScope_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
+	var leaked atomic.Value
+	redirector := newCrossHostRedirector(t, &leaked)
+
+	_ = VerifyScope(redirector.URL, "secret-token", "api")
+
+	if got, _ := leaked.Load().(string); got != "" {
+		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
+	}
+}
+
 func TestCreateTag_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.T) {
 	var gotPath atomic.Value
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -370,5 +411,140 @@ func TestCreateTag_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.
 
 	if path, _ := gotPath.Load().(string); strings.Contains(path, "//") {
 		t.Errorf("request path %q contains an empty segment", path)
+	}
+}
+
+// Two release jobs create one tag name. The API reports the loser with a client error, and
+// CreateTag MUST surface that error to the caller.
+func TestCreateTag_ConflictingWriterReceivesError(t *testing.T) {
+	const writers = 16
+
+	var created atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if created.CompareAndSwap(false, true) {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		http.Error(w, `{"message":"Tag 1.0.0 already exists"}`, http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+
+	results := make([]error, writers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i] = CreateTag(server.URL, "1", "1.0.0", "abc", "token")
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	successes := 0
+	for _, err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Errorf("%d writers reported success, want exactly 1", successes)
+	}
+}
+
+func TestCreateTag_ParameterEscapingBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		tag  string
+		ref  string
+	}{
+		{name: "ampersand in tag", tag: "a&b=c", ref: "abc"},
+		{name: "hash in tag", tag: "a#b", ref: "abc"},
+		{name: "percent in tag", tag: "a%2Fb", ref: "abc"},
+		{name: "space in tag", tag: "a b", ref: "abc"},
+		{name: "newline in tag", tag: "a\nb", ref: "abc"},
+		{name: "unicode ref", tag: "1.0.0", ref: "主線"},
+		{name: "empty tag", tag: "", ref: "abc"},
+		{name: "empty ref", tag: "1.0.0", ref: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotTag, gotRef atomic.Value
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotTag.Store(r.URL.Query().Get("tag_name"))
+				gotRef.Store(r.URL.Query().Get("ref"))
+				w.WriteHeader(http.StatusCreated)
+			}))
+			t.Cleanup(server.Close)
+
+			if err := CreateTag(server.URL, "1", tc.tag, tc.ref, "token"); err != nil {
+				t.Fatalf("CreateTag returned an unexpected error: %v", err)
+			}
+			if got, _ := gotTag.Load().(string); got != tc.tag {
+				t.Errorf("tag_name = %q, want %q", got, tc.tag)
+			}
+			if got, _ := gotRef.Load().(string); got != tc.ref {
+				t.Errorf("ref = %q, want %q", got, tc.ref)
+			}
+		})
+	}
+}
+
+func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(strings.Repeat("x", 5<<20)))
+	}))
+	t.Cleanup(server.Close)
+
+	err := CreateTag(server.URL, "1", "1.0.0", "abc", "token")
+	if err == nil {
+		t.Fatal("CreateTag succeeded unexpectedly")
+	}
+	if len(err.Error()) > 8192 {
+		t.Errorf("error message holds %d bytes, want a bounded excerpt", len(err.Error()))
+	}
+}
+
+func TestVerifyScope_ScopeListBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{name: "scope present", body: `{"scopes":["api"],"active":true,"revoked":false}`},
+		{name: "scope among many", body: `{"scopes":["read_api","api","read_user"],"active":true}`},
+		{name: "scope case differs", body: `{"scopes":["API"],"active":true}`, wantErr: true},
+		{name: "scope with padding", body: `{"scopes":[" api"],"active":true}`, wantErr: true},
+		{name: "empty scopes", body: `{"scopes":[],"active":true}`, wantErr: true},
+		{name: "null scopes", body: `{"scopes":null,"active":true}`, wantErr: true},
+		{name: "missing scopes", body: `{"active":true}`, wantErr: true},
+		{name: "inactive", body: `{"scopes":["api"],"active":false}`, wantErr: true},
+		{name: "missing active", body: `{"scopes":["api"]}`, wantErr: true},
+		{name: "revoked and active", body: `{"scopes":["api"],"active":true,"revoked":true}`, wantErr: true},
+		{name: "scopes as string", body: `{"scopes":"api","active":true}`, wantErr: true},
+		{name: "trailing garbage after object", body: `{"scopes":["api"],"active":true} garbage`},
+		{name: "empty body", body: ``, wantErr: true},
+		{name: "array body", body: `[]`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			t.Cleanup(server.Close)
+
+			err := VerifyScope(server.URL, "token", "api")
+			if tc.wantErr && err == nil {
+				t.Error("VerifyScope succeeded unexpectedly")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("VerifyScope returned an unexpected error: %v", err)
+			}
+		})
 	}
 }

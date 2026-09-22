@@ -2,9 +2,11 @@ package gitlab
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -363,6 +365,30 @@ func TestExecuteHTTPRequest_ErrorStatusIncludesResponseBodyVerbatim(t *testing.T
 	}
 }
 
+// A redirect to a different host MUST NOT carry the PRIVATE-TOKEN header. The standard library
+// strips Authorization on a host change and forwards every other header.
+func TestExecuteHTTPRequest_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
+	var leaked atomic.Value
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Store(r.Header.Get("PRIVATE-TOKEN"))
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(target.Close)
+	targetURL := strings.Replace(target.URL, "127.0.0.1", "localhost", 1)
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetURL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+
+	client := New(redirector.URL, "1", "2", "secret-token")
+	_, _ = client.FetchMRDescription()
+
+	if got, _ := leaked.Load().(string); got != "" {
+		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
+	}
+}
+
 func TestNew_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.T) {
 	var gotPath atomic.Value
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -377,5 +403,252 @@ func TestNew_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.T) {
 	path, _ := gotPath.Load().(string)
 	if strings.Contains(path, "//") {
 		t.Errorf("request path %q contains an empty segment", path)
+	}
+}
+
+func TestClient_ConcurrentCallsShareOneClientSafely(t *testing.T) {
+	const callers = 64
+
+	var served atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served.Add(1)
+		if r.Header.Get("PRIVATE-TOKEN") != "token" {
+			http.Error(w, "missing token", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := New(server.URL, "1", "2", "token")
+	start := make(chan struct{})
+	errs := make([]error, callers)
+
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			if i%2 == 0 {
+				_, errs[i] = client.PostNote(fmt.Sprintf("note %d", i))
+				return
+			}
+			_, errs[i] = client.AddLabels([]string{fmt.Sprintf("label-%d", i)})
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("caller %d returned an unexpected error: %v", i, err)
+		}
+	}
+	if got := served.Load(); got != callers {
+		t.Errorf("server handled %d requests, want %d", got, callers)
+	}
+}
+
+type executeHTTPStatusCase struct {
+	status  int
+	wantErr bool
+}
+
+func TestExecuteHTTPRequest_StatusBoundaries(t *testing.T) {
+	tests := []executeHTTPStatusCase{
+		{status: http.StatusOK},
+		{status: http.StatusCreated},
+		{status: http.StatusNoContent},
+		{status: 399},
+		{status: http.StatusBadRequest, wantErr: true},
+		{status: http.StatusUnauthorized, wantErr: true},
+		{status: http.StatusTooManyRequests, wantErr: true},
+		{status: http.StatusInternalServerError, wantErr: true},
+		{status: 599, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+			assertExecuteHTTPRequestStatusCase(t, tc)
+		})
+	}
+}
+
+// assertExecuteHTTPRequestStatusCase fails the test unless PostNote returns an error
+// matching tc.wantErr when the fixture server responds with tc.status.
+func assertExecuteHTTPRequestStatusCase(t *testing.T, tc executeHTTPStatusCase) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(tc.status)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := New(server.URL, "1", "2", "token").PostNote("body")
+	if tc.wantErr && err == nil {
+		t.Errorf("status %d succeeded unexpectedly", tc.status)
+	}
+	if !tc.wantErr && err != nil {
+		t.Errorf("status %d returned an unexpected error: %v", tc.status, err)
+	}
+}
+
+func TestExecuteHTTPRequest_ErrorDoesNotEchoToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "denied", http.StatusForbidden)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := New(server.URL, "1", "2", "secret-token-value").PostNote("body")
+	if err == nil {
+		t.Fatal("PostNote succeeded unexpectedly")
+	}
+	if strings.Contains(err.Error(), "secret-token-value") {
+		t.Errorf("error %q discloses the token", err)
+	}
+}
+
+type fetchMRDiffsCase struct {
+	name    string
+	diffs   string
+	wantErr bool
+	wantLen int
+}
+
+func TestFetchMR_DiffsResponseShapeBoundaries(t *testing.T) {
+	tests := []fetchMRDiffsCase{
+		{name: "null diffs array", diffs: `null`},
+		{name: "empty diffs array", diffs: `[]`},
+		{name: "object instead of array", diffs: `{}`, wantErr: true},
+		{name: "empty body", diffs: ``, wantErr: true},
+		{name: "html error page", diffs: `<html>`, wantErr: true},
+		{name: "unknown fields ignored", diffs: `[{"new_path":"a","extra":true}]`, wantLen: 1},
+		{name: "wrong field type", diffs: `[{"new_path":5}]`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertFetchMRDiffsCase(t, tc)
+		})
+	}
+}
+
+// assertFetchMRDiffsCase fails the test unless a FetchMR call against a fixture server
+// returning tc.diffs from the /diffs endpoint matches tc.wantErr, and, on success, unless
+// the returned change count equals tc.wantLen.
+func assertFetchMRDiffsCase(t *testing.T, tc fetchMRDiffsCase) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/diffs") {
+			_, _ = w.Write([]byte(tc.diffs))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(server.Close)
+
+	mr, err := New(server.URL, "1", "2", "token").FetchMR()
+	if tc.wantErr {
+		if err == nil {
+			t.Fatalf("FetchMR succeeded unexpectedly with %+v", mr)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("FetchMR returned an unexpected error: %v", err)
+	}
+	if len(mr.Changes) != tc.wantLen {
+		t.Errorf("Changes = %d, want %d", len(mr.Changes), tc.wantLen)
+	}
+}
+
+type fetchMRDetailCase struct {
+	name    string
+	detail  string
+	wantErr bool
+}
+
+func TestFetchMR_DetailResponseShapeBoundaries(t *testing.T) {
+	tests := []fetchMRDetailCase{
+		{name: "detail array", detail: `[]`, wantErr: true},
+		{name: "detail empty body", detail: ``, wantErr: true},
+		{name: "truncated json", detail: `{"title":"x"`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertFetchMRDetailCase(t, tc)
+		})
+	}
+}
+
+// assertFetchMRDetailCase fails the test unless a FetchMR call against a fixture server
+// returning tc.detail from the MR detail endpoint matches tc.wantErr.
+func assertFetchMRDetailCase(t *testing.T, tc fetchMRDetailCase) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/diffs") {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		_, _ = w.Write([]byte(tc.detail))
+	}))
+	t.Cleanup(server.Close)
+
+	mr, err := New(server.URL, "1", "2", "token").FetchMR()
+	if tc.wantErr {
+		if err == nil {
+			t.Fatalf("FetchMR succeeded unexpectedly with %+v", mr)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("FetchMR returned an unexpected error: %v", err)
+	}
+}
+
+type addLabelsCase struct {
+	name   string
+	labels []string
+	want   string
+}
+
+func TestAddLabels_LabelCharacterBoundaries(t *testing.T) {
+	tests := []addLabelsCase{
+		{name: "unicode label", labels: []string{"安全"}, want: "安全"},
+		{name: "label with spaces", labels: []string{"type::feature", "needs review"}, want: "type::feature,needs review"},
+		{name: "nil slice", labels: nil, want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertAddLabelsCase(t, tc)
+		})
+	}
+}
+
+// assertAddLabelsCase fails the test unless AddLabels delivers a comma-joined payload
+// equal to tc.want.
+func assertAddLabelsCase(t *testing.T, tc addLabelsCase) {
+	t.Helper()
+
+	var got atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		got.Store(payload["add_labels"])
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(server.Close)
+
+	if _, err := New(server.URL, "1", "2", "token").AddLabels(tc.labels); err != nil {
+		t.Fatalf("AddLabels returned an unexpected error: %v", err)
+	}
+	if value, _ := got.Load().(string); value != tc.want {
+		t.Errorf("add_labels = %q, want %q", value, tc.want)
 	}
 }
