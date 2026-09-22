@@ -16,6 +16,9 @@ import (
 	"ci-tools/internal/tokensource"
 )
 
+// maxErrorBodyBytes bounds an upstream error body before the body enters an error message.
+const maxErrorBodyBytes = 512
+
 // Config declares the injection surface shared by every provider package. The calling binary
 // resolves both members from the CI job environment.
 type Config struct {
@@ -109,14 +112,15 @@ func (c *Client) Review(prompt string) (result string, err error) {
 		return "", err
 	}
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("gemini api %d: %s", resp.StatusCode, data)
+		return "", fmt.Errorf("gemini api %d: %s", resp.StatusCode, httpguard.TruncateUTF8(data, maxErrorBodyBytes))
 	}
 
 	var parsed struct {
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					Text string `json:"text"`
+					Text    string `json:"text"`
+					Thought bool   `json:"thought"`
 				} `json:"parts"`
 			} `json:"content"`
 		} `json:"candidates"`
@@ -129,6 +133,9 @@ func (c *Client) Review(prompt string) (result string, err error) {
 	}
 	var sb strings.Builder
 	for _, p := range parsed.Candidates[0].Content.Parts {
+		if p.Thought {
+			continue
+		}
 		sb.WriteString(p.Text)
 	}
 	return sb.String(), nil

@@ -6,11 +6,64 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"ci-tools/internal/config"
+	"ci-tools/internal/gitlab"
 	"ci-tools/internal/providers"
 	"ci-tools/internal/review"
 )
+
+// resolvePrompt reads the review prompt declared for the model. A prompt_file MUST stay inside
+// the working directory, since the declaration comes from the repository under review.
+func resolvePrompt(opts config.ModelOptions) (string, error) {
+	file := strings.TrimSpace(opts.PromptFile)
+	if file != "" {
+		confined, err := confinePromptFile(file)
+		if err != nil {
+			return "", fmt.Errorf("prompt_file %q: %w", file, err)
+		}
+		file = confined
+	}
+	return review.ResolvePrompt(opts.Prompt, file)
+}
+
+// confinePromptFile resolves symlinks before the containment check, because a link inside the
+// working directory can point at any file of the runner.
+func confinePromptFile(path string) (string, error) {
+	if !filepath.IsLocal(path) {
+		return "", errors.New("path must be relative and stay inside the working directory")
+	}
+	workDir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	root, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	inside := filepath.IsLocal(resolved)
+	if filepath.IsAbs(resolved) {
+		rel, err := filepath.Rel(root, resolved)
+		inside = err == nil && filepath.IsLocal(rel)
+	}
+	if !inside {
+		return "", errors.New("path resolves outside the working directory")
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("path must name a regular file")
+	}
+	return resolved, nil
+}
 
 // resolveOptions reads REVIEW_MODEL as a declaration key first and as a model id second. The
 // declaration carries per-model parameters which a CI input cannot express.
@@ -51,13 +104,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	prompt, err := resolvePrompt(opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
+
 	llm, err := providers.New(opts, tokens)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 
-	if err := review.ExecuteCodeReview(cfg.APIURL, cfg.ProjectID, cfg.MRIID, gitLabToken, llm); err != nil {
+	reviewer := review.New(gitlab.New(cfg.APIURL, cfg.ProjectID, cfg.MRIID, gitLabToken), llm).WithPrompt(prompt)
+	if err := reviewer.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -25,6 +25,9 @@ type Config struct {
 	Tokens       tokensource.Provider
 }
 
+// maxErrorBodyBytes bounds an upstream error body before the body enters an error message.
+const maxErrorBodyBytes = 512
+
 // displayNames maps a ModelOptions provider identifier to the label shown in review output.
 var displayNames = map[string]string{
 	"openai":       "OpenAI",
@@ -158,12 +161,9 @@ func (c *Client) buildPayload(prompt string) map[string]any {
 	return payload
 }
 
-// truncate bounds an upstream response body before the body enters an error message.
+// truncate bounds data to at most limit bytes without splitting a multi-byte UTF-8 sequence.
 func truncate(data []byte, limit int) []byte {
-	if len(data) <= limit {
-		return data
-	}
-	return data[:limit]
+	return httpguard.TruncateUTF8(data, limit)
 }
 
 // Review submits the prompt and returns the message content of the first choice.
@@ -207,7 +207,7 @@ func (c *Client) Review(prompt string) (result string, err error) {
 		return "", err
 	}
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("%s api %d: %s", c.name, resp.StatusCode, truncate(data, 512))
+		return "", fmt.Errorf("%s api %d: %s", c.name, resp.StatusCode, truncate(data, maxErrorBodyBytes))
 	}
 
 	var parsed struct {

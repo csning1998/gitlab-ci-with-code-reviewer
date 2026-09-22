@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -271,4 +274,211 @@ func newEmptyChangesGitLabServer(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+// newReviewFixtureServers serves one changed file to the reviewer and records the body of the
+// single chat completion request sent to the language model endpoint.
+func newReviewFixtureServers(t *testing.T) (gitlabURL, llmURL string, llmBody func() string) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var recorded string
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		recorded = string(raw)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+	}))
+	t.Cleanup(llm.Close)
+
+	gitlab := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/diffs") {
+			_, _ = w.Write([]byte(`[{"new_path":"a.go","old_path":"a.go","diff":"@@ -0,0 +1 @@\n+x\n"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"title":"feat: t","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`))
+	}))
+	t.Cleanup(gitlab.Close)
+
+	return gitlab.URL, llm.URL, func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return recorded
+	}
+}
+
+func TestReview_DeclaredPromptReachesLanguageModel(t *testing.T) {
+	tests := []struct {
+		name        string
+		declaration string
+		promptFile  string
+		marker      string
+	}{
+		{
+			name:        "inline prompt",
+			declaration: "    prompt: CUSTOM-INLINE-MARKER\n",
+			marker:      "CUSTOM-INLINE-MARKER",
+		},
+		{
+			name:        "prompt file",
+			declaration: "    prompt_file: prompt.md\n",
+			promptFile:  "CUSTOM-FILE-MARKER",
+			marker:      "CUSTOM-FILE-MARKER",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertDeclaredPromptReachesLanguageModel(t, tc.declaration, tc.promptFile, tc.marker)
+		})
+	}
+}
+
+// assertDeclaredPromptReachesLanguageModel fails the test unless a review subprocess run against
+// declaration (and, when promptFile is non-empty, a prompt.md file holding promptFile) exits 0
+// and the request recorded by the fixture language model contains marker.
+func assertDeclaredPromptReachesLanguageModel(t *testing.T, declaration, promptFile, marker string) {
+	t.Helper()
+
+	gitlabURL, llmURL, llmBody := newReviewFixtureServers(t)
+	dir := writeDeclarationDir(t, fmt.Sprintf(
+		"models:\n  custom:\n    model: llama-3.3-70b\n    base_url: %s\n%s", llmURL, declaration))
+	if promptFile != "" {
+		if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(promptFile), 0o600); err != nil {
+			t.Fatalf("write prompt file: %v", err)
+		}
+	}
+
+	code, _, stderr := executeReviewSubprocessInDir(t, dir,
+		"CI_API_V4_URL="+gitlabURL,
+		"REVIEW_MODEL=custom",
+		"REVIEW_API_KEY=",
+		"LOCAL_API_KEY=mock-local-key",
+	)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if llmBody() == "" {
+		t.Fatal("no request reached the language model endpoint")
+	}
+	if !strings.Contains(llmBody(), marker) {
+		t.Errorf("language model request lacks the declared prompt %q", marker)
+	}
+}
+
+// The declaration comes from the repository under review. A prompt_file outside the working
+// directory MUST be rejected before any file content reaches the language model.
+
+// EvalSymlinks returns an absolute path when a symlink target is itself absolute, even for a
+// relative input path.
+func TestConfinePromptFile_RelativeSymlinkToAbsoluteOutsidePathIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.md")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	link := filepath.Join(dir, "link.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	if _, err := confinePromptFile("link.md"); err == nil {
+		t.Error("confinePromptFile(\"link.md\") succeeded unexpectedly for a relative symlink whose target resolves outside the working directory")
+	}
+}
+
+func TestReview_PromptFileOutsideWorkspaceIsRejected(t *testing.T) {
+	tests := []struct {
+		name  string
+		value func(dir, outside string) string
+		setup func(t *testing.T, dir, outside string)
+	}{
+		{
+			name:  "absolute path",
+			value: func(_, outside string) string { return outside },
+		},
+		{
+			name: "parent traversal",
+			value: func(dir, outside string) string {
+				rel, err := filepath.Rel(dir, outside)
+				if err != nil {
+					t.Fatalf("relative path: %v", err)
+				}
+				return filepath.ToSlash(rel)
+			},
+		},
+		{
+			name:  "symlink to an outside file",
+			value: func(_, _ string) string { return "link.md" },
+			setup: func(t *testing.T, dir, outside string) {
+				if err := os.Symlink(outside, filepath.Join(dir, "link.md")); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+			},
+		},
+		{
+			name:  "working directory itself",
+			value: func(_, _ string) string { return "." },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertPromptFileOutsideWorkspaceRejected(t, tc.value, tc.setup)
+		})
+	}
+}
+
+// assertPromptFileOutsideWorkspaceRejected fails the test unless a review subprocess run with a
+// declared prompt_file computed by value (after an optional setup step) exits 1, names
+// prompt_file in stderr, and never forwards the content of the outside file to the language model.
+func assertPromptFileOutsideWorkspaceRejected(
+	t *testing.T,
+	value func(dir, outside string) string,
+	setup func(t *testing.T, dir, outside string),
+) {
+	t.Helper()
+
+	gitlabURL, llmURL, llmBody := newReviewFixtureServers(t)
+	outside := filepath.Join(t.TempDir(), "secret.md")
+	if err := os.WriteFile(outside, []byte("OUTSIDE-SECRET-MARKER"), 0o600); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	dir := writeDeclarationDir(t, "models:\n  custom:\n    model: llama-3.3-70b\n    base_url: "+llmURL+"\n")
+	if setup != nil {
+		setup(t, dir, outside)
+	}
+	declaration := fmt.Sprintf("models:\n  custom:\n    model: llama-3.3-70b\n    base_url: %s\n    prompt_file: %q\n",
+		llmURL, value(dir, outside))
+	if err := os.WriteFile(filepath.Join(dir, ".gitlab", "reviewer.yml"), []byte(declaration), 0o600); err != nil {
+		t.Fatalf("rewrite declaration: %v", err)
+	}
+
+	code, _, stderr := executeReviewSubprocessInDir(t, dir,
+		"CI_API_V4_URL="+gitlabURL,
+		"REVIEW_MODEL=custom",
+		"REVIEW_API_KEY=",
+		"LOCAL_API_KEY=mock-local-key",
+	)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "prompt_file") {
+		t.Errorf("stderr = %q, want prompt_file named", stderr)
+	}
+	if strings.Contains(llmBody(), "OUTSIDE-SECRET-MARKER") {
+		t.Error("content of a file outside the working directory reached the language model")
+	}
 }

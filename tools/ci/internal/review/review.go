@@ -3,8 +3,8 @@ package review
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -101,16 +101,9 @@ func ResolvePrompt(inlinePrompt, promptFile string) (string, error) {
 		targetFile = strings.TrimSpace(os.Getenv("REVIEWER_PROMPT_FILE"))
 	}
 	if targetFile != "" {
-		stat, err := os.Stat(targetFile)
+		data, err := readBoundedFile(targetFile, MaxPromptSizeBytes)
 		if err != nil {
-			return "", fmt.Errorf("stat prompt file %q: %w", targetFile, err)
-		}
-		if stat.Size() > MaxPromptSizeBytes {
-			return "", fmt.Errorf("prompt file %q size (%d bytes) exceeds maximum limit of %d bytes", targetFile, stat.Size(), MaxPromptSizeBytes)
-		}
-		data, err := os.ReadFile(targetFile)
-		if err != nil {
-			return "", fmt.Errorf("read prompt file %q: %w", targetFile, err)
+			return "", fmt.Errorf("prompt file %q: %w", targetFile, err)
 		}
 		return strings.TrimSpace(string(data)), nil
 	}
@@ -120,6 +113,30 @@ func ResolvePrompt(inlinePrompt, promptFile string) (string, error) {
 	}
 
 	return DefaultPromptTemplate, nil
+}
+
+// readBoundedFile reads path and rejects content past limit bytes. Reading stops at the
+// bound instead of trusting a reported file size, since a named pipe reports size zero
+// regardless of the byte count the file actually delivers to a reader.
+func readBoundedFile(path string, limit int) (data []byte, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	data, err = io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("size exceeds the maximum limit of %d bytes", limit)
+	}
+	return data, nil
 }
 
 // Comment represents a single code review finding emitted by an LLM provider.
@@ -232,25 +249,154 @@ func (r *Reviewer) Execute() error {
 	return nil
 }
 
-var trailingCommaRe = regexp.MustCompile(`,(\s*[\]}])`)
-
 // extractJSONArray parses the LLM output into a JSON array, tolerating markdown code fences
-// and surrounding conversational prose by attempting JSON decoding from candidate array start positions.
+// and surrounding conversational prose. A direct decode runs first and leaves a well-formed
+// response untouched. A failed decode falls back to a scan over every outermost array span.
 func extractJSONArray(raw string) ([]json.RawMessage, error) {
-	cleaned := trailingCommaRe.ReplaceAllString(strings.TrimSpace(raw), "$1")
-	var arr []json.RawMessage
-	if err := json.Unmarshal([]byte(cleaned), &arr); err == nil {
+	trimmed := strings.TrimSpace(raw)
+
+	if arr, err := decodeJSONArray(trimmed); err == nil {
 		return arr, nil
 	}
-	for i := 0; i < len(cleaned); i++ {
-		if cleaned[i] != '[' {
+
+	spans, err := topLevelArraySpans(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("parse llm response: %w", err)
+	}
+
+	var fallback []json.RawMessage
+	for _, span := range spans {
+		arr, err := decodeJSONArray(stripTrailingCommas(span))
+		if err != nil {
 			continue
 		}
-		if err := json.NewDecoder(strings.NewReader(cleaned[i:])).Decode(&arr); err == nil {
+		if fallback == nil {
+			fallback = arr
+		}
+		if arrayHoldsOnlyObjects(arr) {
 			return arr, nil
 		}
 	}
-	return nil, fmt.Errorf("parse llm response: no valid JSON array found (raw: %.200s)", cleaned)
+	if fallback != nil {
+		return fallback, nil
+	}
+
+	return nil, fmt.Errorf("parse llm response: no valid JSON array found (raw: %.200s)", trimmed)
+}
+
+func decodeJSONArray(s string) ([]json.RawMessage, error) {
+	var arr []json.RawMessage
+	if err := json.Unmarshal([]byte(s), &arr); err != nil {
+		return nil, err
+	}
+	return arr, nil
+}
+
+// arrayHoldsOnlyObjects reports whether every element of arr is a JSON object. A finding is
+// always an object, which distinguishes the intended array from an unrelated numbered list
+// present in surrounding prose text.
+func arrayHoldsOnlyObjects(arr []json.RawMessage) bool {
+	if len(arr) == 0 {
+		return false
+	}
+	for _, el := range arr {
+		trimmed := strings.TrimSpace(string(el))
+		if !strings.HasPrefix(trimmed, "{") {
+			return false
+		}
+	}
+	return true
+}
+
+// maxArrayNestingDepth bounds the `[` nesting a response may present. A finding array
+// nests at most one level deep. Prohibiting deeper nesting belongs in the review prompt.
+// Parsing arbitrary depth here would trade away the linear time guarantee below.
+const maxArrayNestingDepth = 10
+
+// topLevelArraySpans finds every `[...]` span whose brackets close back to depth zero,
+// skipping bracket characters inside JSON string literals. Recording only the outermost
+// span at each nesting point bounds total decode work to the input length.
+func topLevelArraySpans(s string) ([]string, error) {
+	var spans []string
+	depth, start := 0, 0
+	inString, escaped := false, false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '[':
+			if depth == 0 {
+				start = i
+			}
+			depth++
+			if depth > maxArrayNestingDepth {
+				return nil, fmt.Errorf("array nesting exceeds %d levels", maxArrayNestingDepth)
+			}
+		case ']':
+			if depth == 0 {
+				continue
+			}
+			depth--
+			if depth == 0 {
+				spans = append(spans, s[start:i+1])
+			}
+		}
+	}
+	return spans, nil
+}
+
+// stripTrailingCommas removes a comma which precedes a closing `]` or `}`. Content inside a
+// JSON string literal is skipped, which leaves the text of a description field untouched
+// even when that text resembles a trailing comma.
+func stripTrailingCommas(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inString, escaped := false, false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			b.WriteByte(c)
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+			b.WriteByte(c)
+			continue
+		}
+		if c == ',' {
+			j := i + 1
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
+				j++
+			}
+			if j < len(s) && (s[j] == ']' || s[j] == '}') {
+				continue
+			}
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // postReviewComments posts a single review finding, attempting inline discussion placement
@@ -304,6 +450,9 @@ func (r *Reviewer) postReviewComments(refs gitlab.DiffRefs, fileMeta map[string]
 // formatMRIntent formats merge request title and description into an authoritative intent context block.
 // Descriptions exceeding maxRunes are truncated with a notification marker as a defense-in-depth measure.
 func formatMRIntent(title, description string, maxRunes int) string {
+	if maxRunes < 0 {
+		maxRunes = 0
+	}
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
 	if title == "" && description == "" {

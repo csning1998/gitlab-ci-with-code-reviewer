@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"ci-tools/internal/config"
 	"ci-tools/internal/testutil"
@@ -399,5 +400,39 @@ func assertBodyField(t *testing.T, body map[string]any, key string, want any) {
 	t.Helper()
 	if got := body[key]; got != want {
 		t.Errorf("body[%q] = %v, want %v", key, got, want)
+	}
+}
+
+func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.Provider, handler http.HandlerFunc) *Client {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	return mustNewClient(t, Config{
+		ModelOptions: config.ModelOptions{
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			MaxTokens: 64,
+			Timeout:   timeout,
+			BaseURL:   server.URL,
+		},
+		Tokens: tokens,
+	})
+}
+
+func TestReview_ErrorBodyExcerptStaysValidUTF8(t *testing.T) {
+	// The excerpt limit is 512 bytes. A two byte rune straddling the limit MUST NOT be split.
+	body := strings.Repeat("a", 511) + "é" + strings.Repeat("b", 100)
+	client := newBoundaryClient(t, 5*time.Second, tokensource.Static("token"), func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(body))
+	})
+
+	_, err := client.Review("prompt")
+	if err == nil {
+		t.Fatal("Review succeeded unexpectedly")
+	}
+	if !utf8.ValidString(err.Error()) {
+		t.Errorf("error message contains an invalid UTF-8 sequence: %q", err.Error()[len(err.Error())-20:])
 	}
 }

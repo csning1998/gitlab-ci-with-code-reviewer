@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -354,5 +355,20 @@ func TestCreateTag_EmptyToken(t *testing.T) {
 	}
 	if gotToken != "" {
 		t.Errorf("PRIVATE-TOKEN header = %q, want empty", gotToken)
+	}
+}
+
+func TestCreateTag_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.T) {
+	var gotPath atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath.Store(r.URL.Path)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(server.Close)
+
+	_ = CreateTag(server.URL+"/api/v4/", "1", "1.0.0", "abc", "token")
+
+	if path, _ := gotPath.Load().(string); strings.Contains(path, "//") {
+		t.Errorf("request path %q contains an empty segment", path)
 	}
 }

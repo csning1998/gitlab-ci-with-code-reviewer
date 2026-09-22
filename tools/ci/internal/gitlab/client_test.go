@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -359,5 +360,22 @@ func TestExecuteHTTPRequest_ErrorStatusIncludesResponseBodyVerbatim(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "403") {
 		t.Errorf("error = %q, want the status code included", err.Error())
+	}
+}
+
+func TestNew_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.T) {
+	var gotPath atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath.Store(r.URL.Path)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := New(server.URL+"/api/v4/", "1", "2", "token")
+	_, _ = client.FetchMRDescription()
+
+	path, _ := gotPath.Load().(string)
+	if strings.Contains(path, "//") {
+		t.Errorf("request path %q contains an empty segment", path)
 	}
 }

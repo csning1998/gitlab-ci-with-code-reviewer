@@ -269,3 +269,14 @@ models:
 		t.Fatal("ResolveDeclaredOptions(...) succeeded unexpectedly; want the claude compatibility check enforced")
 	}
 }
+
+func TestResolveDeclaredOptions_NonFiniteYAMLNumbersAreRejected(t *testing.T) {
+	for _, literal := range []string{".nan", ".NaN", ".inf", "-.inf", "+.Inf"} {
+		t.Run(literal, func(t *testing.T) {
+			path := writeDeclaration(t, "models:\n  a:\n    model: gemini-3.5-flash\n    temperature: "+literal+"\n")
+			if opts, err := ResolveDeclaredOptions(path, "a"); err == nil {
+				t.Errorf("ResolveDeclaredOptions accepted temperature %v", *opts.Temperature)
+			}
+		})
+	}
+}

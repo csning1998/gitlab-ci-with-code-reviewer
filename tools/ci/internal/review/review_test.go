@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ci-tools/internal/gitlab"
 )
@@ -1000,5 +1002,110 @@ func TestReviewer_WithPrompt_MutationChain(t *testing.T) {
 	r.WithPrompt("")
 	if r.prompt != custom {
 		t.Errorf("secondary WithPrompt(\"\") clobbered prompt to %q", r.prompt)
+	}
+}
+
+func TestExtractJSONArray_PreservesCommaBracketSequencesInsideStrings(t *testing.T) {
+	descriptions := []string{
+		"the literal [1, 2, ] is a typo",
+		`the object {"a": 1, } is a typo`,
+		"trailing comma before a closing bracket,]",
+		"nested [[1,],[2,]] arrays",
+		"comma then newline then brace ,\n}",
+	}
+
+	for _, description := range descriptions {
+		t.Run(description, func(t *testing.T) {
+			assertExtractJSONArrayPreservesDescription(t, description)
+		})
+	}
+}
+
+// assertExtractJSONArrayPreservesDescription fails the test unless extractJSONArray round-trips
+// description unchanged through a single-element findings array.
+func assertExtractJSONArrayPreservesDescription(t *testing.T, description string) {
+	t.Helper()
+
+	raw, err := json.Marshal([]map[string]any{{"file": "a.go", "start_line": 1, "description": description}})
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+
+	elements, err := extractJSONArray(string(raw))
+	if err != nil {
+		t.Fatalf("extractJSONArray returned an unexpected error: %v", err)
+	}
+	if len(elements) != 1 {
+		t.Fatalf("extractJSONArray returned %d elements, want 1", len(elements))
+	}
+	var got Comment
+	if err := json.Unmarshal(elements[0], &got); err != nil {
+		t.Fatalf("decode element: %v", err)
+	}
+	if got.Description != description {
+		t.Errorf("description = %q, want %q", got.Description, description)
+	}
+}
+
+func TestExtractJSONArray_PrefersObjectArrayOverProseArrays(t *testing.T) {
+	raw := `Reviewed files [1] and [2] first. Findings: [{"file":"a.go","start_line":3,"description":"d"}]`
+
+	elements, err := extractJSONArray(raw)
+	if err != nil {
+		t.Fatalf("extractJSONArray returned an unexpected error: %v", err)
+	}
+	if len(elements) != 1 || !strings.HasPrefix(string(elements[0]), "{") {
+		t.Fatalf("extractJSONArray = %s, want the array of finding objects", elements)
+	}
+}
+
+func TestExtractJSONArray_BracketFloodStaysLinear(t *testing.T) {
+	inputs := map[string]string{
+		"open brackets":     strings.Repeat("[", 20000),
+		"open brackets sep": strings.Repeat("[1,", 8000),
+	}
+
+	for name, input := range inputs {
+		t.Run(name, func(t *testing.T) {
+			start := time.Now()
+			_, _ = extractJSONArray(input)
+			if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+				t.Errorf("extractJSONArray took %v on %d bytes, want linear time", elapsed, len(input))
+			}
+		})
+	}
+}
+
+func TestFormatMRIntent_NonPositiveLimit_DoesNotPanic(t *testing.T) {
+	for _, limit := range []int{0, -1, -15, -16, math.MinInt} {
+		t.Run(fmt.Sprintf("limit %d", limit), func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("formatMRIntent panicked for limit %d: %v", limit, r)
+				}
+			}()
+			_ = formatMRIntent("title", strings.Repeat("d", 100), limit)
+		})
+	}
+}
+
+func TestExtractJSONArray_DeepNestingIsRejectedOutright(t *testing.T) {
+	// A leading prose word breaks the direct decode of the whole string. The fallback
+	// scan then reaches this nested span.
+	nested := "prose " + strings.Repeat("[", 11) + strings.Repeat("]", 11)
+	if _, err := extractJSONArray(nested); err == nil {
+		t.Fatal("extractJSONArray(...) succeeded unexpectedly on 11 levels of nesting; want a rejection")
+	}
+}
+
+func TestExtractJSONArray_NestingAtTheLimitIsStillScanned(t *testing.T) {
+	prefix := "prose " + strings.Repeat("[", 10) + strings.Repeat("]", 10)
+	raw := prefix + `[{"file":"a.go","start_line":1,"description":"d"}]`
+	arr, err := extractJSONArray(raw)
+	if err != nil {
+		t.Fatalf("extractJSONArray(...) returned an unexpected error: %v", err)
+	}
+	if len(arr) != 1 {
+		t.Fatalf("extractJSONArray(...) returned %d elements, want 1", len(arr))
 	}
 }

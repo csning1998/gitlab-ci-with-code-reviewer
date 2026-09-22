@@ -1,9 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -101,12 +104,74 @@ func ParseConfigFile(path string) (*ConfigDeclaration, error) {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
+	// Strict decoding rejects a misspelled key, since a lenient decoder drops its parameter silently.
 	var decl ConfigDeclaration
-	if err := yaml.Unmarshal(data, &decl); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&decl); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("unmarshal config yaml: %w", err)
+	}
+	if err := rejectFractionalIntegers(data); err != nil {
 		return nil, fmt.Errorf("unmarshal config yaml: %w", err)
 	}
 
 	return &decl, nil
+}
+
+// integerFieldNames lists the YAML keys of ModelOptions which hold an integer. The decoder
+// truncates a fractional scalar for these fields without an error.
+var integerFieldNames = map[string]bool{
+	"max_tokens": true, "top_k": true, "n": true, "seed": true, "thinking_budget": true, "top_logprobs": true,
+}
+
+// rejectFractionalIntegers reports an integer field which carries a float scalar such as 1.5.
+func rejectFractionalIntegers(data []byte) error {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil || len(root.Content) == 0 {
+		return nil
+	}
+	top := root.Content[0]
+	if top.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		switch top.Content[i].Value {
+		case "defaults":
+			if err := checkIntegerFields(top.Content[i+1]); err != nil {
+				return err
+			}
+		case "models":
+			models := top.Content[i+1]
+			for j := 0; j+1 < len(models.Content); j += 2 {
+				if err := checkIntegerFields(models.Content[j+1]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func checkIntegerFields(node *yaml.Node) error {
+	if node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+		if key.Value == "<<" {
+			if err := checkIntegerFields(value); err != nil {
+				return err
+			}
+			continue
+		}
+		if integerFieldNames[key.Value] && value.Kind == yaml.ScalarNode && value.ShortTag() == "!!float" {
+			return fmt.Errorf("line %d: field %q must be an integer, got %q", value.Line, key.Value, value.Value)
+		}
+	}
+	return nil
 }
 
 // ResolveModelOptions reads environment variables for a given provider and slot.
@@ -221,6 +286,54 @@ func ResolveModelOptions(provider string, slot string) (ModelOptions, error) {
 	return opts, nil
 }
 
+// validateNumericBounds enforces the numeric bounds which the generated JSON schema advertises.
+// A NaN compares false against every bound, and the JSON encoder rejects a NaN value.
+func validateNumericBounds(opts ModelOptions) error {
+	floats := []struct {
+		name     string
+		value    *float64
+		min, max float64
+	}{
+		{"temperature", opts.Temperature, 0, 2},
+		{"top_p", opts.TopP, 0, 1},
+		{"frequency_penalty", opts.FrequencyPenalty, -2, 2},
+		{"presence_penalty", opts.PresencePenalty, -2, 2},
+		{"repetition_penalty", opts.RepetitionPenalty, 0, math.MaxFloat64},
+		{"min_p", opts.MinP, 0, 1},
+	}
+	for _, f := range floats {
+		if f.value == nil {
+			continue
+		}
+		if math.IsNaN(*f.value) || math.IsInf(*f.value, 0) {
+			return fmt.Errorf("%s must be a finite number", f.name)
+		}
+		if *f.value < f.min || *f.value > f.max {
+			return fmt.Errorf("%s %v out of range [%v, %v]", f.name, *f.value, f.min, f.max)
+		}
+	}
+
+	ints := []struct {
+		name     string
+		value    *int
+		min, max int
+	}{
+		{"top_k", opts.TopK, 1, math.MaxInt},
+		{"n", opts.N, 1, math.MaxInt},
+		{"top_logprobs", opts.TopLogprobs, 0, 20},
+	}
+	for _, i := range ints {
+		if i.value != nil && (*i.value < i.min || *i.value > i.max) {
+			return fmt.Errorf("%s %d out of range [%d, %d]", i.name, *i.value, i.min, i.max)
+		}
+	}
+
+	if opts.MaxTokens < 0 {
+		return fmt.Errorf("max_tokens %d must not be negative", opts.MaxTokens)
+	}
+	return nil
+}
+
 func lookupSlotEnv(prefix, param string, isSecondary bool) string {
 	if isSecondary {
 		if v := strings.TrimSpace(os.Getenv(prefix + "_" + param + "_SECONDARY")); v != "" {
@@ -253,6 +366,10 @@ func Validate(opts ModelOptions) error {
 
 	if opts.TopP != nil && (*opts.TopP < 0.0 || *opts.TopP > 1.0) {
 		return fmt.Errorf("top_p %v out of range [0.0, 1.0]", *opts.TopP)
+	}
+
+	if err := validateNumericBounds(opts); err != nil {
+		return err
 	}
 
 	if opts.ThinkingBudget != nil && *opts.ThinkingBudget < 0 {

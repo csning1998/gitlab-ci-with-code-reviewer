@@ -1,6 +1,10 @@
 package semver
 
-import "testing"
+import (
+	"fmt"
+	"math"
+	"testing"
+)
 
 func TestDetermineBump(t *testing.T) {
 	cases := []struct {
@@ -79,4 +83,118 @@ func TestNextVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseVersion_RejectsNonCanonicalInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "empty string", input: ""},
+		{name: "two components", input: "1.2"},
+		{name: "four components", input: "1.2.3.4"},
+		{name: "empty middle component", input: "1..3"},
+		{name: "negative major", input: "-1.0.0"},
+		{name: "negative minor", input: "1.-1.0"},
+		{name: "negative patch", input: "1.0.-1"},
+		{name: "plus signed major", input: "+1.0.0"},
+		{name: "plus signed patch", input: "1.0.+3"},
+		{name: "leading space", input: " 1.0.0"},
+		{name: "trailing space", input: "1.0.0 "},
+		{name: "trailing newline", input: "1.0.0\n"},
+		{name: "prerelease suffix", input: "1.2.3-rc1"},
+		{name: "build metadata suffix", input: "1.2.3+build.5"},
+		{name: "hexadecimal component", input: "0x1.0.0"},
+		{name: "underscore digit separator", input: "1_0.0.0"},
+		{name: "fullwidth digits", input: "１.０.０"},
+		{name: "int64 overflow major", input: "9223372036854775808.0.0"},
+		{name: "int64 overflow patch", input: "0.0.99999999999999999999"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			major, minor, patch, err := ParseVersion(tc.input)
+			if err == nil {
+				t.Fatalf("ParseVersion(%q) = %d.%d.%d, want a rejection", tc.input, major, minor, patch)
+			}
+		})
+	}
+}
+
+func TestDetermineBump_SubjectBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		subject string
+		want    Bump
+	}{
+		{name: "empty subject", subject: "", want: BumpNone},
+		{name: "uppercase type", subject: "FEAT: x", want: BumpNone},
+		{name: "capitalized type", subject: "Feat: x", want: BumpNone},
+		{name: "leading space is trimmed", subject: " feat: x", want: BumpMinor},
+		{name: "leading byte order mark", subject: "\ufeff" + "feat: x", want: BumpNone},
+		{name: "fullwidth colon", subject: "feat： x", want: BumpNone},
+		{name: "fullwidth type letters", subject: "ｆｅａｔ: x", want: BumpNone},
+		{name: "bang before scope", subject: "feat!(api): x", want: BumpNone},
+		{name: "two scopes", subject: "feat(a)(b): x", want: BumpNone},
+		{name: "scope containing closing paren", subject: "feat(a)b): x", want: BumpNone},
+		{name: "empty scope", subject: "feat(): x", want: BumpMinor},
+		{name: "bang after empty scope", subject: "feat()!: x", want: BumpMajor},
+		{name: "bang without type", subject: "!: x", want: BumpNone},
+		{name: "type only", subject: "feat", want: BumpNone},
+		{name: "colon only", subject: ":", want: BumpNone},
+		{name: "revert wrapping feat", subject: "revert: feat: x", want: BumpNone},
+		{name: "multiline keeps first line semantics", subject: "chore: x\nfeat!: y", want: BumpNone},
+		{name: "breaking chore", subject: "chore!: x", want: BumpMajor},
+		{name: "breaking docs with scope", subject: "docs(readme)!: x", want: BumpMajor},
+		{name: "perf patch", subject: "perf(core): x", want: BumpPatch},
+		{name: "scope with spaces", subject: "fix(api gateway): x", want: BumpPatch},
+		{name: "scope with unicode", subject: "fix(\u8a2d\u5b9a): x", want: BumpPatch},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := DetermineBump(tc.subject); got != tc.want {
+				t.Errorf("DetermineBump(%q) = %q, want %q", tc.subject, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNextVersion_RejectsIntegerOverflow(t *testing.T) {
+	tests := []struct {
+		name   string
+		latest string
+		bump   Bump
+	}{
+		{name: "patch at max", latest: fmt.Sprintf("0.0.%d", math.MaxInt), bump: BumpPatch},
+		{name: "minor at max", latest: fmt.Sprintf("0.%d.0", math.MaxInt), bump: BumpMinor},
+		{name: "major at max", latest: fmt.Sprintf("%d.0.0", math.MaxInt), bump: BumpMajor},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NextVersion(tc.latest, tc.bump)
+			if err == nil {
+				t.Fatalf("NextVersion(%q, %q) = %q, want a rejection instead of a wrapped negative component", tc.latest, tc.bump, got)
+			}
+		})
+	}
+}
+
+func FuzzParseVersionRoundTrip(f *testing.F) {
+	for _, seed := range []string{"0.0.0", "1.2.3", "-1.0.0", "+1.0.0", "1.2", "a.b.c", ""} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, version string) {
+		major, minor, patch, err := ParseVersion(version)
+		if err != nil {
+			return
+		}
+		if major < 0 || minor < 0 || patch < 0 {
+			t.Fatalf("ParseVersion(%q) accepted negative components %d.%d.%d", version, major, minor, patch)
+		}
+		if canonical := fmt.Sprintf("%d.%d.%d", major, minor, patch); canonical != version {
+			t.Fatalf("ParseVersion(%q) accepted a non canonical spelling of %q", version, canonical)
+		}
+	})
 }

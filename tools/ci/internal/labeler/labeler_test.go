@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"ci-tools/internal/gitlab"
+	"ci-tools/internal/semver"
 )
 
 func TestResolveCommitTypeLabel_KnownTypes(t *testing.T) {
@@ -267,5 +268,51 @@ func TestLabeler_Execute_FetchMRFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "fetch MR changes") {
 		t.Errorf("Run() error = %q, want it to mention the fetch failure", err.Error())
+	}
+}
+
+// A release bump and a type label read the same Conventional Commit header. The two parsers
+// MUST agree on every subject which either one accepts.
+func TestHeaderParsers_AgreeOnReleaseTypeAndTypeLabel(t *testing.T) {
+	subjects := []string{
+		"feat: add x",
+		"feat(api): add x",
+		"feat!: add x",
+		"feat(api)!: add x",
+		"fix: repair x",
+		"fix(api): repair x",
+		"perf: speed x",
+		"docs: describe x",
+		"feat(): empty scope",
+		"feat()!: empty scope breaking",
+		"feat:no space after colon",
+		"fix:no space after colon",
+		" feat: leading space",
+		"feat:  two spaces",
+		"feat:\ttab after colon",
+		"feat(scope with spaces): x",
+		"feat(a)(b): two scopes",
+		"feat(a)b): stray paren",
+		"Feat: capitalized",
+		"FEAT: uppercase",
+	}
+
+	for _, subject := range subjects {
+		t.Run(subject, func(t *testing.T) {
+			bump := semver.DetermineBump(subject)
+			label := resolveCommitTypeLabel(subject)
+
+			releasesFeature := bump == semver.BumpMinor
+			labelsFeature := label == "type::feature"
+			if releasesFeature != labelsFeature && bump != semver.BumpMajor {
+				t.Errorf("subject %q: bump = %q but label = %q", subject, bump, label)
+			}
+
+			releasesFix := bump == semver.BumpPatch
+			labelsFix := label == "type::fix" || label == "type::enhancement"
+			if releasesFix != labelsFix && bump != semver.BumpMajor {
+				t.Errorf("subject %q: bump = %q but label = %q", subject, bump, label)
+			}
+		})
 	}
 }

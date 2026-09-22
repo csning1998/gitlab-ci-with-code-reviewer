@@ -428,3 +428,92 @@ func assertThinkingConfigField(t *testing.T, body map[string]any, wantKey string
 		}
 	}
 }
+
+type hostRewriteTransport struct {
+	target string
+}
+
+func (rt hostRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host != "generativelanguage.googleapis.com" {
+		return http.DefaultTransport.RoundTrip(req)
+	}
+	clone := req.Clone(req.Context())
+	targetURL, err := http.NewRequest(req.Method, rt.target, req.Body)
+	if err != nil {
+		return nil, err
+	}
+	clone.URL.Scheme = targetURL.URL.Scheme
+	clone.URL.Host = targetURL.URL.Host
+	clone.Host = targetURL.URL.Host
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.Provider, handler http.HandlerFunc) *Client {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	client := mustNewClient(t, Config{
+		ModelOptions: config.ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", Timeout: timeout},
+		Tokens:       tokens,
+	})
+	client.http.Transport = hostRewriteTransport{target: server.URL}
+	return client
+}
+
+func TestReview_OversizedErrorBodyIsBounded(t *testing.T) {
+	client := newBoundaryClient(t, 10*time.Second, tokensource.Static("key"), func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(strings.Repeat("x", 5<<20)))
+	})
+
+	_, err := client.Review("prompt")
+	if err == nil {
+		t.Fatal("Review succeeded unexpectedly")
+	}
+	if len(err.Error()) > 8192 {
+		t.Errorf("error message holds %d bytes, want a bounded excerpt", len(err.Error()))
+	}
+}
+
+func TestReview_ResponseBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		wantErr bool
+	}{
+		{name: "null candidates", body: `{"candidates":null}`},
+		{name: "candidate without content", body: `{"candidates":[{}]}`},
+		{name: "null part text", body: `{"candidates":[{"content":{"parts":[{"text":null}]}}]}`},
+		{name: "part without text", body: `{"candidates":[{"content":{"parts":[{"inlineData":{}}]}}]}`},
+		{name: "text as number", body: `{"candidates":[{"content":{"parts":[{"text":5}]}}]}`, wantErr: true},
+		{name: "parts as object", body: `{"candidates":[{"content":{"parts":{}}}]}`, wantErr: true},
+		{name: "unicode across parts", body: `{"candidates":[{"content":{"parts":[{"text":"設"},{"text":"定"}]}}]}`, want: "設定"},
+		{name: "thought parts are excluded", body: `{"candidates":[{"content":{"parts":[{"text":"a","thought":true},{"text":"b"}]}}]}`, want: "b"},
+		{name: "trailing garbage", body: `{"candidates":[]} tail`, wantErr: true},
+		{name: "only whitespace", body: "  \n", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newBoundaryClient(t, 5*time.Second, tokensource.Static("key"), func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			})
+
+			got, err := client.Review("prompt")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Review succeeded unexpectedly with %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Review returned an unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Review = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"ci-tools/internal/conventional"
 	"ci-tools/internal/gitlab"
 )
 
@@ -27,9 +28,6 @@ var commitTypeToLabel = map[string]string{
 	"style":    "type::chore",
 }
 
-// conventionalHeaderRe parses Conventional Commit headers for type, optional scope, and breaking change indicators.
-var conventionalHeaderRe = regexp.MustCompile(`^([a-z]+)(\([^)]*\))?(!)?:\s`)
-
 // breakingChangeFooterRe matches the Conventional Commits BREAKING CHANGE footer convention.
 var breakingChangeFooterRe = regexp.MustCompile(`(?m)^BREAKING[ -]CHANGE:`)
 
@@ -49,17 +47,16 @@ var areaRules = []areaRule{
 
 // commitTypeLabel extracts the type::* label from the merge request title, returning "" if unmapped or invalid.
 func resolveCommitTypeLabel(title string) string {
-	m := conventionalHeaderRe.FindStringSubmatch(strings.TrimSpace(title))
-	if m == nil {
+	header, ok := conventional.ParseHeader(title)
+	if !ok {
 		return ""
 	}
-	return commitTypeToLabel[m[1]]
+	return commitTypeToLabel[header.Type]
 }
 
 // isBreakingChange identifies breaking changes via title header "!" markers or description footers.
 func detectBreakingChange(title, description string) bool {
-	m := conventionalHeaderRe.FindStringSubmatch(strings.TrimSpace(title))
-	if m != nil && m[3] == "!" {
+	if header, ok := conventional.ParseHeader(title); ok && header.Breaking {
 		return true
 	}
 	return breakingChangeFooterRe.MatchString(description)

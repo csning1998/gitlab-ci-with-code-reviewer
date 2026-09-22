@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 )
 
 // maxRedirects matches the net/http default hop limit.
@@ -36,4 +37,17 @@ func ValidateCredential(token string) error {
 		return ErrEmptyCredential
 	}
 	return nil
+}
+
+// TruncateUTF8 bounds data to at most limit bytes and trims back past an incomplete trailing
+// UTF-8 sequence, which keeps an excerpt embedded in an error message valid UTF-8.
+func TruncateUTF8(data []byte, limit int) []byte {
+	if len(data) <= limit {
+		return data
+	}
+	data = data[:limit]
+	for len(data) > 0 && !utf8.Valid(data) {
+		data = data[:len(data)-1]
+	}
+	return data
 }

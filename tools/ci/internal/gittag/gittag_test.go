@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -231,5 +232,99 @@ func TestCreateTag_BareRepository(t *testing.T) {
 	}
 	if ref.Hash().String() != sha {
 		t.Errorf("tag resolves to commit hash %q; expected %q", ref.Hash().String(), sha)
+	}
+}
+
+func commitFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("open repository: %v", err)
+	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("open worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	if _, err := worktree.Add(name); err != nil {
+		t.Fatalf("stage %s: %v", name, err)
+	}
+	hash, err := worktree.Commit("add "+name, &git.CommitOptions{
+		Author: &object.Signature{Name: "boundary", Email: "boundary@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("commit %s: %v", name, err)
+	}
+	return hash.String()
+}
+
+// Concurrent release jobs race to publish one tag name at different commits. Exactly one
+// writer MUST win, and the surviving ref MUST equal the commit of that winner.
+func TestCreateTag_ConcurrentWritersOfOneName_ExactlyOneWins(t *testing.T) {
+	const rounds = 25
+	const writers = 8
+
+	dir := t.TempDir()
+	first := newRepoWithCommit(t, dir)
+	second := commitFile(t, dir, "second.txt")
+	shas := []string{first, second}
+
+	for round := 0; round < rounds; round++ {
+		tag := fmt.Sprintf("1.0.%d", round)
+		results := raceCreateTag(dir, tag, shas, writers)
+		assertExactlyOneTagWinner(t, dir, tag, shas, results, round)
+	}
+}
+
+// raceCreateTag starts writers goroutines that call CreateTag for tag at the same instant and
+// returns the result of each goroutine in writer order.
+func raceCreateTag(dir, tag string, shas []string, writers int) []error {
+	start := make(chan struct{})
+	results := make([]error, writers)
+
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i] = CreateTag(dir, tag, shas[i%len(shas)])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	return results
+}
+
+// assertExactlyOneTagWinner fails the test unless exactly one entry in results is nil and the
+// tag in dir points at the commit of that writer.
+func assertExactlyOneTagWinner(t *testing.T, dir, tag string, shas []string, results []error, round int) {
+	t.Helper()
+
+	winner := -1
+	count := 0
+	for i, err := range results {
+		if err == nil {
+			count++
+			winner = i
+		}
+	}
+	if count != 1 {
+		t.Fatalf("round %d: %d writers reported success for tag %q, want exactly 1", round, count, tag)
+	}
+	wonBy := shas[winner%len(shas)]
+
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("reopen repository: %v", err)
+	}
+	ref, err := repo.Tag(tag)
+	if err != nil {
+		t.Fatalf("round %d: tag %q missing after a reported success: %v", round, tag, err)
+	}
+	if got := ref.Hash().String(); got != wonBy {
+		t.Fatalf("round %d: tag %q targets %s, but writer %d reported success for %s", round, tag, got, winner, wonBy)
 	}
 }

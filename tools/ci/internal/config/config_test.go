@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"testing"
+
+	"ci-tools/internal/testutil"
 )
 
 // clearRequiredEnv unsets every environment variable LoadEnvFile reads, then t.Setenv restores
@@ -977,5 +980,123 @@ func TestValidate_MissingModelFieldRejected(t *testing.T) {
 		if err := Validate(opts); err == nil {
 			t.Errorf("Validate() with empty model %q expected error, got nil", m)
 		}
+	}
+}
+
+// Validate MUST enforce every bound which the generated JSON schema advertises.
+func TestValidate_EnforcesSchemaAdvertisedBounds(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    ModelOptions
+		wantErr bool
+	}{
+		{name: "max tokens one", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", MaxTokens: 1}},
+		{name: "max tokens negative", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", MaxTokens: -1}, wantErr: true},
+		{name: "top k one", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", TopK: testutil.Ptr(1)}},
+		{name: "top k zero", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", TopK: testutil.Ptr(0)}, wantErr: true},
+		{name: "top k negative", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", TopK: testutil.Ptr(-1)}, wantErr: true},
+		{name: "n one", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", N: testutil.Ptr(1)}},
+		{name: "n zero", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", N: testutil.Ptr(0)}, wantErr: true},
+		{name: "frequency penalty lower edge", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", FrequencyPenalty: testutil.Ptr(-2.0)}},
+		{name: "frequency penalty upper edge", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", FrequencyPenalty: testutil.Ptr(2.0)}},
+		{name: "frequency penalty below range", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", FrequencyPenalty: testutil.Ptr(-2.0001)}, wantErr: true},
+		{name: "frequency penalty above range", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", FrequencyPenalty: testutil.Ptr(2.0001)}, wantErr: true},
+		{name: "presence penalty below range", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", PresencePenalty: testutil.Ptr(-2.0001)}, wantErr: true},
+		{name: "presence penalty above range", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", PresencePenalty: testutil.Ptr(2.0001)}, wantErr: true},
+		{name: "repetition penalty zero", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", RepetitionPenalty: testutil.Ptr(0.0)}},
+		{name: "repetition penalty negative", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", RepetitionPenalty: testutil.Ptr(-0.1)}, wantErr: true},
+		{name: "repetition penalty huge value accepted", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", RepetitionPenalty: testutil.Ptr(1e300)}},
+		{name: "min p lower edge", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", MinP: testutil.Ptr(0.0)}},
+		{name: "min p upper edge", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", MinP: testutil.Ptr(1.0)}},
+		{name: "min p below range", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", MinP: testutil.Ptr(-0.1)}, wantErr: true},
+		{name: "min p above range", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", MinP: testutil.Ptr(1.1)}, wantErr: true},
+		{name: "top logprobs lower edge", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", TopLogprobs: testutil.Ptr(0)}},
+		{name: "top logprobs upper edge", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", TopLogprobs: testutil.Ptr(20)}},
+		{name: "top logprobs below range", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", TopLogprobs: testutil.Ptr(-1)}, wantErr: true},
+		{name: "top logprobs above range", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", TopLogprobs: testutil.Ptr(21)}, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.opts)
+			if tc.wantErr && err == nil {
+				t.Errorf("Validate(%+v) succeeded unexpectedly; want a rejection", tc.opts)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("Validate(%+v) returned an unexpected error: %v", tc.opts, err)
+			}
+		})
+	}
+}
+
+func TestValidate_RejectsNonFiniteNumbers(t *testing.T) {
+	nan, posInf, negInf := math.NaN(), math.Inf(1), math.Inf(-1)
+
+	tests := []struct {
+		name string
+		opts ModelOptions
+	}{
+		{name: "temperature NaN", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", Temperature: &nan}},
+		{name: "temperature positive infinity", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", Temperature: &posInf}},
+		{name: "temperature negative infinity", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", Temperature: &negInf}},
+		{name: "top p NaN", opts: ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", TopP: &nan}},
+		{name: "frequency penalty NaN", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", FrequencyPenalty: &nan}},
+		{name: "presence penalty NaN", opts: ModelOptions{Provider: "openai", Model: "gpt-4o", PresencePenalty: &nan}},
+		{name: "min p NaN", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", MinP: &nan}},
+		{name: "repetition penalty positive infinity", opts: ModelOptions{Provider: "local", Model: "llama-3.3-70b", RepetitionPenalty: &posInf}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := Validate(tc.opts); err == nil {
+				t.Errorf("Validate(%s) succeeded unexpectedly; a non finite number cannot be serialized to JSON", tc.name)
+			}
+		})
+	}
+}
+
+func TestParseConfigFile_RejectsUnknownKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "misspelled top level key", body: "modles:\n  a:\n    model: grok-4.6\n"},
+		{name: "misspelled model field", body: "models:\n  a:\n    model: grok-4.6\n    temprature: 0.2\n"},
+		{name: "misspelled defaults field", body: "defaults:\n  max_token: 100\nmodels:\n  a:\n    model: grok-4.6\n"},
+		{name: "camel case field", body: "models:\n  a:\n    model: grok-4.6\n    maxTokens: 100\n"},
+		{name: "uppercase field", body: "models:\n  a:\n    model: grok-4.6\n    Temperature: 0.2\n"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ParseConfigFile(writeDeclaration(t, tc.body)); err == nil {
+				t.Error("ParseConfigFile succeeded unexpectedly; a misspelled key silently drops the parameter")
+			}
+		})
+	}
+}
+
+func TestParseConfigFile_TypeMismatchIsRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "string for integer", body: "max_tokens: abc"},
+		{name: "fraction for integer", body: "max_tokens: 1.5"},
+		{name: "integer overflow", body: "max_tokens: 99999999999999999999"},
+		{name: "list for scalar", body: "temperature: [0.1]"},
+		{name: "map for scalar", body: "model: {a: b}"},
+		{name: "string for float", body: "temperature: warm"},
+		{name: "scalar for list", body: "stop: END"},
+		{name: "bad boolean", body: "include_thoughts: maybe"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeDeclaration(t, "models:\n  a:\n    "+tc.body+"\n")
+			if _, err := ParseConfigFile(path); err == nil {
+				t.Errorf("ParseConfigFile accepted %q", tc.body)
+			}
+		})
 	}
 }

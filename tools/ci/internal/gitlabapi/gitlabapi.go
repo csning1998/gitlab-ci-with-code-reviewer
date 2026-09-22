@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"ci-tools/internal/httpguard"
@@ -27,7 +28,7 @@ var httpClient = &http.Client{Timeout: requestTimeout, CheckRedirect: httpguard.
 //
 // Authenticates against apiBaseURL using the PRIVATE-TOKEN header.
 func CreateTag(apiBaseURL, projectID, tagName, ref, token string) (err error) {
-	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", apiBaseURL, url.PathEscape(projectID)))
+	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
 	if err != nil {
 		return fmt.Errorf("failed to construct tag creation endpoint: %w", err)
 	}
@@ -67,7 +68,7 @@ type tokenSelf struct {
 // VerifyScope validates that a personal access token is active, unrevoked, and possesses
 // requiredScope via GET /personal_access_tokens/self. Performs no write operations.
 func VerifyScope(apiBaseURL, token, requiredScope string) (err error) {
-	endpoint := fmt.Sprintf("%s/personal_access_tokens/self", apiBaseURL)
+	endpoint := fmt.Sprintf("%s/personal_access_tokens/self", strings.TrimRight(apiBaseURL, "/"))
 
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
