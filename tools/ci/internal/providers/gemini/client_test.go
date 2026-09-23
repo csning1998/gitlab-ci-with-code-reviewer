@@ -437,6 +437,14 @@ type tokenFunc func(context.Context) (string, error)
 
 func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
 
+func (f tokenFunc) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
+	s, err := f(ctx)
+	if err != nil {
+		return tokensource.Credential{}, err
+	}
+	return tokensource.Credential{Value: s, Kind: tokensource.KindAPIKey}, nil
+}
+
 // hostRewriteTransport redirects only the production API host to the fixture server. Every
 // other host, such as a redirect target, is contacted directly.
 type hostRewriteTransport struct {
@@ -656,6 +664,85 @@ func TestReview_ResponseBoundaries(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("Review = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+type staticCredProvider struct {
+	cred tokensource.Credential
+}
+
+func (s staticCredProvider) FetchCredential(context.Context) (tokensource.Credential, error) {
+	return s.cred, nil
+}
+
+func (s staticCredProvider) Token(context.Context) (string, error) {
+	return s.cred.Value, nil
+}
+
+func TestReview_CredentialHeaders_APIKeyAndBearer(t *testing.T) {
+	tests := []struct {
+		name       string
+		kind       tokensource.CredentialKind
+		val        string
+		wantAuth   string
+		wantAPIKey string
+	}{
+		{
+			name:       "api_key sends x-goog-api-key and no Authorization",
+			kind:       tokensource.KindAPIKey,
+			val:        "gemini-key-123",
+			wantAuth:   "",
+			wantAPIKey: "gemini-key-123",
+		},
+		{
+			name:       "bearer sends Authorization Bearer and no x-goog-api-key",
+			kind:       tokensource.KindBearer,
+			val:        "gcp-token-456",
+			wantAuth:   "Bearer gcp-token-456",
+			wantAPIKey: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotAuth, gotAPIKey string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				gotAPIKey = r.Header.Get("x-goog-api-key")
+				_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"[]"}]}}]}`))
+			}))
+			t.Cleanup(server.Close)
+
+			client := mustNewClient(t, Config{
+				ModelOptions: config.ModelOptions{
+					Provider: "gemini",
+					Model:    "gemini-2.5-flash",
+					Timeout:  5 * time.Second,
+				},
+				Tokens: staticCredProvider{
+					cred: tokensource.Credential{
+						Value: tc.val,
+						Kind:  tc.kind,
+					},
+				},
+			})
+			client.http = &http.Client{Transport: redirectTransport{target: server.URL, base: http.DefaultTransport}}
+
+			res, err := client.Review("test prompt")
+			if err != nil {
+				t.Fatalf("Review() returned error: %v", err)
+			}
+			if res != "[]" {
+				t.Errorf("Review() = %q, want %q", res, "[]")
+			}
+
+			if gotAuth != tc.wantAuth {
+				t.Errorf("Authorization header = %q, want %q", gotAuth, tc.wantAuth)
+			}
+			if gotAPIKey != tc.wantAPIKey {
+				t.Errorf("x-goog-api-key header = %q, want %q", gotAPIKey, tc.wantAPIKey)
 			}
 		})
 	}

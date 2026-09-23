@@ -161,13 +161,47 @@ models:
 	}
 }
 
+func TestParseConfigFile_RejectsEndpointFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "base_url in defaults",
+			body: "defaults:\n  base_url: https://example.openai.azure.com\nmodels:\n  k:\n    model: gpt-4o\n",
+		},
+		{
+			name: "api_version in defaults",
+			body: "defaults:\n  api_version: \"2026-01-01\"\nmodels:\n  k:\n    model: gpt-4o\n",
+		},
+		{
+			name: "base_url in models",
+			body: "models:\n  k:\n    model: gpt-4o\n    base_url: https://example.openai.azure.com\n",
+		},
+		{
+			name: "api_version in models",
+			body: "models:\n  k:\n    model: gpt-4o\n    api_version: \"2026-01-01\"\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeDeclaration(t, tc.body)
+			if _, err := ParseConfigFile(path); err == nil {
+				t.Fatalf("ParseConfigFile succeeded unexpectedly for declaration containing %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestResolveDeclaredOptions_DerivesProviderWhenOmitted(t *testing.T) {
+	t.Setenv("REVIEW_API_VERSION", "  2026-01-01  ")
+	t.Setenv("REVIEW_BASE_URL", "  https://example.openai.azure.com  ")
+
 	path := writeDeclaration(t, `
 models:
   azure-reviewer:
     model: gpt-4o
-    base_url: https://example.openai.azure.com
-    api_version: "2026-01-01"
 `)
 
 	opts, err := ResolveDeclaredOptions(path, "azure-reviewer")
@@ -177,6 +211,37 @@ models:
 	if opts.Provider != "azure-openai" {
 		t.Errorf("Provider = %q, want %q", opts.Provider, "azure-openai")
 	}
+	if opts.BaseURL != "https://example.openai.azure.com" {
+		t.Errorf("BaseURL = %q, want %q", opts.BaseURL, "https://example.openai.azure.com")
+	}
+	if opts.APIVersion != "2026-01-01" {
+		t.Errorf("APIVersion = %q, want %q", opts.APIVersion, "2026-01-01")
+	}
+}
+
+func TestResolveDeclaredOptions_WhitespaceAPIVersionDoesNotRouteToAzure(t *testing.T) {
+	t.Setenv("REVIEW_API_VERSION", "   ")
+	t.Setenv("REVIEW_BASE_URL", "   ")
+
+	path := writeDeclaration(t, `
+models:
+  openai-reviewer:
+    model: gpt-4o
+`)
+
+	opts, err := ResolveDeclaredOptions(path, "openai-reviewer")
+	if err != nil {
+		t.Fatalf("ResolveDeclaredOptions(...) returned an unexpected error: %v", err)
+	}
+	if opts.Provider != "openai" {
+		t.Errorf("Provider = %q, want %q", opts.Provider, "openai")
+	}
+	if opts.APIVersion != "" {
+		t.Errorf("APIVersion = %q, want empty string", opts.APIVersion)
+	}
+	if opts.BaseURL != "" {
+		t.Errorf("BaseURL = %q, want empty string", opts.BaseURL)
+	}
 }
 
 func TestResolveDeclaredOptions_ProviderPrecedence(t *testing.T) {
@@ -184,6 +249,7 @@ func TestResolveDeclaredOptions_ProviderPrecedence(t *testing.T) {
 	tests := []struct {
 		name         string
 		body         string
+		apiVersion   string
 		wantProvider string
 		wantErr      string
 	}{
@@ -224,23 +290,27 @@ func TestResolveDeclaredOptions_ProviderPrecedence(t *testing.T) {
 		},
 		{
 			name:         "api version does not reroute a non OpenAI model",
-			body:         "defaults:\n  api_version: \"2026-01-01\"\nmodels:\n  k:\n    model: claude-sonnet-5\n",
+			body:         "models:\n  k:\n    model: claude-sonnet-5\n",
+			apiVersion:   "2026-01-01",
 			wantProvider: "claude",
 		},
 		{
 			name:         "explicit openai provider wins over api version routing",
-			body:         "defaults:\n  provider: openai\n  api_version: \"2026-01-01\"\nmodels:\n  k:\n    model: gpt-4o\n",
+			body:         "defaults:\n  provider: openai\nmodels:\n  k:\n    model: gpt-4o\n",
+			apiVersion:   "2026-01-01",
 			wantProvider: "openai",
 		},
 		{
 			name:         "api version routes a shared OpenAI model to azure",
-			body:         "defaults:\n  api_version: \"2026-01-01\"\nmodels:\n  k:\n    model: gpt-4o\n",
+			body:         "models:\n  k:\n    model: gpt-4o\n",
+			apiVersion:   "2026-01-01",
 			wantProvider: "azure-openai",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("REVIEW_API_VERSION", tc.apiVersion)
 			opts, err := ResolveDeclaredOptions(writeDeclaration(t, tc.body), "k")
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {

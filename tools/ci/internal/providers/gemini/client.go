@@ -75,11 +75,11 @@ func (c *Client) Review(prompt string) (result string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	token, err := c.tokens.Token(ctx)
+	cred, err := c.tokens.FetchCredential(ctx)
 	if err != nil {
 		return "", fmt.Errorf("gemini: resolve credential: %w", err)
 	}
-	if err := httpguard.ValidateCredential(token); err != nil {
+	if err := httpguard.ValidateCredential(cred.Value); err != nil {
 		return "", fmt.Errorf("gemini: resolve credential: %w", err)
 	}
 
@@ -96,7 +96,12 @@ func (c *Client) Review(prompt string) (result string, err error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", token)
+
+	if cred.Kind == tokensource.KindBearer {
+		req.Header.Set("Authorization", "Bearer "+cred.Value)
+	} else {
+		req.Header.Set("x-goog-api-key", cred.Value)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {

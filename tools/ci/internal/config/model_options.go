@@ -63,8 +63,8 @@ type ModelOptions struct {
 	TopLogprobs      *int            `json:"top_logprobs,omitempty" yaml:"top_logprobs,omitempty" jsonschema:"minimum=0,maximum=20"`
 
 	// Optional platform, endpoint, and safety fields
-	BaseURL          string          `json:"base_url,omitempty" yaml:"base_url,omitempty"`
-	APIVersion       string          `json:"api_version,omitempty" yaml:"api_version,omitempty"`
+	BaseURL          string          `json:"base_url,omitempty" yaml:"-"`
+	APIVersion       string          `json:"api_version,omitempty" yaml:"-"`
 	ServiceTier      string          `json:"service_tier,omitempty" yaml:"service_tier,omitempty"`
 	PromptCacheKey   string          `json:"prompt_cache_key,omitempty" yaml:"prompt_cache_key,omitempty"`
 	SafetyIdentifier string          `json:"safety_identifier,omitempty" yaml:"safety_identifier,omitempty"`

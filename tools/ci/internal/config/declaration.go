@@ -41,6 +41,8 @@ func ResolveDeclaredOptions(path, key string) (ModelOptions, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = DefaultTimeout
 	}
+	opts.BaseURL = lookupReviewEnv("BASE_URL")
+	opts.APIVersion = lookupReviewEnv("API_VERSION")
 	if strings.TrimSpace(opts.Provider) == "" {
 		provider, err := ResolveProvider(opts.Model, opts.APIVersion)
 		if err != nil {
@@ -91,8 +93,6 @@ func mergeModelOptions(base, entry ModelOptions) ModelOptions {
 	mergeStringField(&merged.ThinkingType, entry.ThinkingType)
 	mergeStringField(&merged.ResponseMIMEType, entry.ResponseMIMEType)
 	mergeStringField(&merged.Verbosity, entry.Verbosity)
-	mergeStringField(&merged.BaseURL, entry.BaseURL)
-	mergeStringField(&merged.APIVersion, entry.APIVersion)
 	mergeStringField(&merged.ServiceTier, entry.ServiceTier)
 	mergeStringField(&merged.PromptCacheKey, entry.PromptCacheKey)
 	mergeStringField(&merged.SafetyIdentifier, entry.SafetyIdentifier)

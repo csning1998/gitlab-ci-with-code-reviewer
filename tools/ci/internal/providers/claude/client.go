@@ -90,15 +90,16 @@ func (c *Client) Review(prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	token, err := c.tokens.Token(ctx)
+	cred, err := c.tokens.FetchCredential(ctx)
 	if err != nil {
 		return "", fmt.Errorf("claude: resolve credential: %w", err)
 	}
-	if err := httpguard.ValidateCredential(token); err != nil {
+	if err := httpguard.ValidateCredential(cred.Value); err != nil {
 		return "", fmt.Errorf("claude: resolve credential: %w", err)
 	}
 
-	client := c.newSDKClient(token)
+	client := c.newSDKClient(cred.Value)
+
 	stream := client.Messages.NewStreaming(ctx, c.buildParams(prompt))
 	message := sdk.Message{}
 	for stream.Next() {

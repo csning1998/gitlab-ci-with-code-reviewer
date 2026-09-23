@@ -15,22 +15,29 @@ import (
 
 func TestNew_DispatchesByProvider(t *testing.T) {
 	tests := []struct {
-		provider string
-		model    string
-		wantName string
+		provider   string
+		model      string
+		baseURL    string
+		apiVersion string
+		wantName   string
 	}{
 		{provider: "claude", model: "claude-sonnet-5", wantName: "Claude"},
 		{provider: "gemini", model: "gemini-2.5-flash", wantName: "Gemini"},
 		{provider: "openai", model: "gpt-4o", wantName: "OpenAI"},
-		{provider: "azure-openai", model: "gpt-4o", wantName: "Azure OpenAI"},
+		{provider: "azure-openai", model: "gpt-4o", baseURL: "https://example.openai.azure.com", apiVersion: "2026-01-01", wantName: "Azure OpenAI"},
 		{provider: "grok", model: "grok-4.6", wantName: "Grok"},
-		{provider: "local", model: "llama-3.3-70b", wantName: "Local"},
+		{provider: "local", model: "llama-3.3-70b", baseURL: "http://localhost:8000", wantName: "Local"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.provider, func(t *testing.T) {
 			llm, err := New(
-				config.ModelOptions{Provider: tc.provider, Model: tc.model},
+				config.ModelOptions{
+					Provider:   tc.provider,
+					Model:      tc.model,
+					BaseURL:    tc.baseURL,
+					APIVersion: tc.apiVersion,
+				},
 				tokensource.Static("test-token"),
 			)
 			if err != nil {
@@ -76,6 +83,24 @@ func TestNew_PropagatesProviderConstructionError(t *testing.T) {
 			opts:     config.ModelOptions{Provider: "grok"},
 			tokens:   tokensource.Static("test-token"),
 			wantWord: "model",
+		},
+		{
+			name:     "azure-openai without base_url",
+			opts:     config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2026-01-01"},
+			tokens:   tokensource.Static("test-token"),
+			wantWord: "base_url",
+		},
+		{
+			name:     "azure-openai without api_version",
+			opts:     config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", BaseURL: "https://example.openai.azure.com"},
+			tokens:   tokensource.Static("test-token"),
+			wantWord: "api_version",
+		},
+		{
+			name:     "local without base_url",
+			opts:     config.ModelOptions{Provider: "local", Model: "llama-3.3-70b"},
+			tokens:   tokensource.Static("test-token"),
+			wantWord: "base_url",
 		},
 	}
 

@@ -9,6 +9,25 @@ import (
 	"ci-tools/internal/tokensource"
 )
 
+func TestStatic_FetchCredential(t *testing.T) {
+	got, err := tokensource.Static("static-credential").FetchCredential(context.Background())
+	if err != nil {
+		t.Fatalf("FetchCredential() error = %v", err)
+	}
+	want := tokensource.Credential{
+		Value: "static-credential",
+		Kind:  tokensource.KindAPIKey,
+	}
+	if got != want {
+		t.Errorf("FetchCredential() = %+v, want %+v", got, want)
+	}
+
+	_, err = tokensource.Static("").FetchCredential(context.Background())
+	if !errors.Is(err, tokensource.ErrEmptyStatic) {
+		t.Errorf("FetchCredential() error = %v, want ErrEmptyStatic", err)
+	}
+}
+
 func TestStatic_Token(t *testing.T) {
 	got, err := tokensource.Static("static-credential").Token(context.Background())
 	if err != nil {
@@ -51,22 +70,26 @@ func TestStatic_ConcurrentCallsReturnTheSameCredential(t *testing.T) {
 	const callers = 128
 
 	source := tokensource.Static("shared-credential")
-	results := make([]string, callers)
+	results := make([]tokensource.Credential, callers)
 	errs := make([]error, callers)
 
 	var wg sync.WaitGroup
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i], errs[i] = source.Token(context.Background())
+			results[i], errs[i] = source.FetchCredential(context.Background())
 		}(i)
 	}
 	wg.Wait()
 
-	for i := 0; i < callers; i++ {
-		if errs[i] != nil || results[i] != "shared-credential" {
-			t.Errorf("caller %d: Token() = %q, %v", i, results[i], errs[i])
+	want := tokensource.Credential{
+		Value: "shared-credential",
+		Kind:  tokensource.KindAPIKey,
+	}
+	for i := range callers {
+		if errs[i] != nil || results[i] != want {
+			t.Errorf("caller %d: FetchCredential() = %+v, %v", i, results[i], errs[i])
 		}
 	}
 }

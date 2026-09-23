@@ -63,42 +63,127 @@ func stubRespondingClient(t *testing.T, statusCode int, responseBody string, tok
 	})
 }
 
-func TestResolveEndpoint_StandardShape(t *testing.T) {
-	got := resolveEndpoint(config.ModelOptions{BaseURL: "https://api.x.ai/", Model: "grok-test"})
-	want := "https://api.x.ai/v1/chat/completions"
-	if got != want {
-		t.Errorf("resolveEndpoint() = %q, want %q", got, want)
+func TestResolveEndpoint_TableDriven(t *testing.T) {
+	tests := []struct {
+		name string
+		opts config.ModelOptions
+		want string
+	}{
+		{
+			name: "standard base URL without trailing slash",
+			opts: config.ModelOptions{BaseURL: "https://api.x.ai", Model: "grok-4.6"},
+			want: "https://api.x.ai/v1/chat/completions",
+		},
+		{
+			name: "standard base URL with trailing slash",
+			opts: config.ModelOptions{BaseURL: "https://api.x.ai/", Model: "grok-4.6"},
+			want: "https://api.x.ai/v1/chat/completions",
+		},
+		{
+			name: "standard base URL ending with /v1",
+			opts: config.ModelOptions{BaseURL: "https://api.openai.com/v1", Model: "gpt-4o"},
+			want: "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name: "standard base URL ending with /v1/",
+			opts: config.ModelOptions{BaseURL: "https://api.openai.com/v1/", Model: "gpt-4o"},
+			want: "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name: "local base URL without trailing slash",
+			opts: config.ModelOptions{BaseURL: "http://localhost:8000", Model: "llama-3.3-70b"},
+			want: "http://localhost:8000/v1/chat/completions",
+		},
+		{
+			name: "local base URL with trailing slash",
+			opts: config.ModelOptions{BaseURL: "http://localhost:8000/", Model: "llama-3.3-70b"},
+			want: "http://localhost:8000/v1/chat/completions",
+		},
+		{
+			name: "local base URL ending with /v1",
+			opts: config.ModelOptions{BaseURL: "http://localhost:8000/v1", Model: "llama-3.3-70b"},
+			want: "http://localhost:8000/v1/chat/completions",
+		},
+		{
+			name: "local base URL ending with /v1/",
+			opts: config.ModelOptions{BaseURL: "http://localhost:8000/v1/", Model: "llama-3.3-70b"},
+			want: "http://localhost:8000/v1/chat/completions",
+		},
+		{
+			name: "azure shape without trailing slash",
+			opts: config.ModelOptions{
+				BaseURL:    "https://example.openai.azure.com",
+				Model:      "gpt-deployment",
+				APIVersion: "2026-01-01",
+			},
+			want: "https://example.openai.azure.com/openai/deployments/gpt-deployment/chat/completions?api-version=2026-01-01",
+		},
+		{
+			name: "azure shape with trailing slash",
+			opts: config.ModelOptions{
+				BaseURL:    "https://example.openai.azure.com/",
+				Model:      "gpt-deployment",
+				APIVersion: "2026-01-01",
+			},
+			want: "https://example.openai.azure.com/openai/deployments/gpt-deployment/chat/completions?api-version=2026-01-01",
+		},
+		{
+			name: "subpath base URL without trailing slash",
+			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix", Model: "gpt-4o"},
+			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
+		},
+		{
+			name: "subpath base URL with trailing slash",
+			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/", Model: "gpt-4o"},
+			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
+		},
+		{
+			name: "subpath base URL ending with /v1",
+			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/v1", Model: "gpt-4o"},
+			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
+		},
+		{
+			name: "subpath base URL ending with /v1/",
+			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/v1/", Model: "gpt-4o"},
+			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
+		},
 	}
-}
 
-func TestResolveEndpoint_AzureShape(t *testing.T) {
-	got := resolveEndpoint(config.ModelOptions{
-		BaseURL:    "https://example.openai.azure.com",
-		Model:      "gpt-deployment",
-		APIVersion: "2026-01-01",
-	})
-	want := "https://example.openai.azure.com/openai/deployments/gpt-deployment/chat/completions?api-version=2026-01-01"
-	if got != want {
-		t.Errorf("resolveEndpoint() = %q, want %q", got, want)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveEndpoint(tc.opts); got != tc.want {
+				t.Errorf("resolveEndpoint() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestName_DerivesFromProvider(t *testing.T) {
 	tests := []struct {
-		provider string
-		want     string
+		provider   string
+		baseURL    string
+		apiVersion string
+		want       string
 	}{
 		{provider: "openai", want: "OpenAI"},
-		{provider: "azure-openai", want: "Azure OpenAI"},
+		{provider: "azure-openai", baseURL: "https://example.openai.azure.com", apiVersion: "2026-01-01", want: "Azure OpenAI"},
 		{provider: "grok", want: "Grok"},
-		{provider: "local", want: "Local"},
+		{provider: "local", baseURL: "http://localhost:8000", want: "Local"},
+		{provider: "custom-gateway", baseURL: "https://llm.internal.net", want: "custom-gateway"},
+		{provider: "  deepseek  ", baseURL: "https://api.deepseek.com", want: "deepseek"},
+		{provider: "", baseURL: "https://api.openai.com", want: ""},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.provider, func(t *testing.T) {
 			c := mustNewClient(t, Config{
-				ModelOptions: config.ModelOptions{Provider: tc.provider, Model: "test-model"},
-				Tokens:       tokensource.Static("test-token"),
+				ModelOptions: config.ModelOptions{
+					Provider:   tc.provider,
+					Model:      "test-model",
+					BaseURL:    tc.baseURL,
+					APIVersion: tc.apiVersion,
+				},
+				Tokens: tokensource.Static("test-token"),
 			})
 			if got := c.Name(); got != tc.want {
 				t.Errorf("Name() = %q, want %q", got, tc.want)
@@ -107,18 +192,16 @@ func TestName_DerivesFromProvider(t *testing.T) {
 	}
 }
 
-func TestNew_ConfigurationValidation(t *testing.T) {
+func TestNew_ConfigurationRejection(t *testing.T) {
 	tests := []struct {
-		name       string
-		cfg        Config
-		wantWord   string
-		shouldFail bool
+		name      string
+		cfg       Config
+		wantError string
 	}{
 		{
-			name:       "rejects nil tokens",
-			cfg:        Config{ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4.6"}},
-			shouldFail: true,
-			wantWord:   "tokens",
+			name:      "rejects nil tokens",
+			cfg:       Config{ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4.6"}},
+			wantError: "tokens",
 		},
 		{
 			name: "rejects empty model",
@@ -126,33 +209,159 @@ func TestNew_ConfigurationValidation(t *testing.T) {
 				ModelOptions: config.ModelOptions{Provider: "grok"},
 				Tokens:       tokensource.Static("test-token"),
 			},
-			shouldFail: true,
-			wantWord:   "model",
+			wantError: "model",
 		},
+		{
+			name: "rejects azure-openai with empty base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", APIVersion: "2024-02-15-preview"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects azure-openai with whitespace base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "   ", APIVersion: "2024-02-15-preview"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects azure-openai with empty api_version",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "https://example.openai.azure.com"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "api_version",
+		},
+		{
+			name: "rejects azure-openai with whitespace api_version",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "https://example.openai.azure.com", APIVersion: "   "},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "api_version",
+		},
+		{
+			name: "rejects local with empty base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "local", Model: "gemma4"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects local with whitespace base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "local", Model: "gemma4", BaseURL: "   "},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects unknown provider with empty base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects unknown provider with whitespace base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "custom-gateway", Model: "custom-model", BaseURL: "   "},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects empty provider with empty base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "", Model: "custom-model"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+		{
+			name: "rejects empty provider with whitespace base_url",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "", Model: "custom-model", BaseURL: "   "},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantError: "base_url",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := New(tc.cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("New(...) error = %v, want error containing %q", err, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestNew_ConfigurationDefaults(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantURL string
+	}{
 		{
 			name: "defaults timeout when unset",
 			cfg: Config{
 				ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
 				Tokens:       tokensource.Static("test-token"),
 			},
-			shouldFail: false,
+			wantURL: "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name: "defaults openai base_url to official endpoint",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantURL: "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name: "defaults openai whitespace base_url to official endpoint",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o", BaseURL: "   "},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantURL: "https://api.openai.com/v1/chat/completions",
+		},
+		{
+			name: "defaults grok base_url to official endpoint",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4"},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantURL: "https://api.x.ai/v1/chat/completions",
+		},
+		{
+			name: "defaults grok whitespace base_url to official endpoint",
+			cfg: Config{
+				ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4", BaseURL: "   "},
+				Tokens:       tokensource.Static("test-token"),
+			},
+			wantURL: "https://api.x.ai/v1/chat/completions",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := New(tc.cfg)
-			if tc.shouldFail {
-				if err == nil || !strings.Contains(err.Error(), tc.wantWord) {
-					t.Fatalf("New(...) error = %v, want error containing %q", err, tc.wantWord)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("New(...) returned unexpected error: %v", err)
 			}
 			if c.modelOptions.Timeout != config.DefaultTimeout {
 				t.Errorf("Timeout = %v, want default %v", c.modelOptions.Timeout, config.DefaultTimeout)
+			}
+			if c.url != tc.wantURL {
+				t.Errorf("url = %q, want %q", c.url, tc.wantURL)
 			}
 		})
 	}
@@ -410,6 +619,14 @@ func assertBodyField(t *testing.T, body map[string]any, key string, want any) {
 type tokenFunc func(context.Context) (string, error)
 
 func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
+
+func (f tokenFunc) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
+	s, err := f(ctx)
+	if err != nil {
+		return tokensource.Credential{}, err
+	}
+	return tokensource.Credential{Value: s, Kind: tokensource.KindAPIKey}, nil
+}
 
 func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.Provider, handler http.HandlerFunc) *Client {
 	t.Helper()
@@ -679,6 +896,7 @@ func TestBuildPayload_NumericBoundariesSerialize(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			tc.opts.Provider = "openai"
 			tc.opts.Model = "gpt-4o"
 			c := mustNewClient(t, Config{ModelOptions: tc.opts, Tokens: tokensource.Static("t")})
 			raw, err := json.Marshal(c.buildPayload("prompt"))
@@ -691,6 +909,177 @@ func TestBuildPayload_NumericBoundariesSerialize(t *testing.T) {
 			}
 			if got, ok := decoded[tc.key]; !ok || got != tc.want {
 				t.Errorf("%s = %v (present %t), want %v", tc.key, got, ok, tc.want)
+			}
+		})
+	}
+}
+
+type staticCredProvider struct {
+	cred tokensource.Credential
+}
+
+func (s staticCredProvider) FetchCredential(context.Context) (tokensource.Credential, error) {
+	return s.cred, nil
+}
+
+func (s staticCredProvider) Token(context.Context) (string, error) {
+	return s.cred.Value, nil
+}
+
+func TestReview_HeaderDispatch_Permutations(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       config.ModelOptions
+		cred       tokensource.Credential
+		wantAuth   string
+		wantAPIKey string
+	}{
+		{
+			name:       "azure-openai with api-key credential sends api-key header",
+			opts:       config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2024-02-15-preview"},
+			cred:       tokensource.Credential{Value: "azure-secret-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "",
+			wantAPIKey: "azure-secret-key",
+		},
+		{
+			name:       "azure-openai with bearer credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2024-02-15-preview"},
+			cred:       tokensource.Credential{Value: "azure-jwt-token", Kind: tokensource.KindBearer},
+			wantAuth:   "Bearer azure-jwt-token",
+			wantAPIKey: "",
+		},
+		{
+			name:       "openai with api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+			cred:       tokensource.Credential{Value: "sk-openai-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer sk-openai-key",
+			wantAPIKey: "",
+		},
+		{
+			name:       "openai with bearer credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+			cred:       tokensource.Credential{Value: "bearer-token", Kind: tokensource.KindBearer},
+			wantAuth:   "Bearer bearer-token",
+			wantAPIKey: "",
+		},
+		{
+			name:       "openai with api_version and api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o", APIVersion: "2024-02-15"},
+			cred:       tokensource.Credential{Value: "sk-openai-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer sk-openai-key",
+			wantAPIKey: "",
+		},
+		{
+			name:       "openai with api_version and bearer credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o", APIVersion: "2024-02-15"},
+			cred:       tokensource.Credential{Value: "bearer-token", Kind: tokensource.KindBearer},
+			wantAuth:   "Bearer bearer-token",
+			wantAPIKey: "",
+		},
+		{
+			name:       "grok with api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "grok", Model: "grok-4"},
+			cred:       tokensource.Credential{Value: "xai-api-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer xai-api-key",
+			wantAPIKey: "",
+		},
+		{
+			name:       "grok with bearer credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "grok", Model: "grok-4"},
+			cred:       tokensource.Credential{Value: "xai-bearer-token", Kind: tokensource.KindBearer},
+			wantAuth:   "Bearer xai-bearer-token",
+			wantAPIKey: "",
+		},
+		{
+			name:       "local with empty api-key credential sends no headers",
+			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			cred:       tokensource.Credential{Value: "", Kind: tokensource.KindAPIKey},
+			wantAuth:   "",
+			wantAPIKey: "",
+		},
+		{
+			name:       "local with empty bearer credential sends no headers",
+			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			cred:       tokensource.Credential{Value: "", Kind: tokensource.KindBearer},
+			wantAuth:   "",
+			wantAPIKey: "",
+		},
+		{
+			name:       "local with non-empty api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			cred:       tokensource.Credential{Value: "local-auth-token", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer local-auth-token",
+			wantAPIKey: "",
+		},
+		{
+			name:       "local with non-empty bearer credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			cred:       tokensource.Credential{Value: "local-bearer-token", Kind: tokensource.KindBearer},
+			wantAuth:   "Bearer local-bearer-token",
+			wantAPIKey: "",
+		},
+		{
+			name:       "custom provider with api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
+			cred:       tokensource.Credential{Value: "gateway-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer gateway-key",
+			wantAPIKey: "",
+		},
+		{
+			name:       "custom provider with bearer credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
+			cred:       tokensource.Credential{Value: "gateway-bearer", Kind: tokensource.KindBearer},
+			wantAuth:   "Bearer gateway-bearer",
+			wantAPIKey: "",
+		},
+		{
+			name:       "custom provider with api_version and api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "custom-gateway", Model: "custom-model", APIVersion: "2025-01-01"},
+			cred:       tokensource.Credential{Value: "gateway-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer gateway-key",
+			wantAPIKey: "",
+		},
+		{
+			name:       "empty provider with api-key credential sends Authorization Bearer header",
+			opts:       config.ModelOptions{Provider: "", Model: "custom-model"},
+			cred:       tokensource.Credential{Value: "gateway-key", Kind: tokensource.KindAPIKey},
+			wantAuth:   "Bearer gateway-key",
+			wantAPIKey: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotAuth, gotAPIKey string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				gotAPIKey = r.Header.Get("api-key")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+			}))
+			t.Cleanup(server.Close)
+
+			opts := tc.opts
+			opts.BaseURL = server.URL
+			client := mustNewClient(t, Config{
+				ModelOptions: opts,
+				Tokens: staticCredProvider{
+					cred: tc.cred,
+				},
+			})
+
+			res, err := client.Review("test prompt")
+			if err != nil {
+				t.Fatalf("Review() returned unexpected error: %v", err)
+			}
+			if res != "[]" {
+				t.Errorf("Review() result = %q, want %q", res, "[]")
+			}
+
+			if gotAuth != tc.wantAuth {
+				t.Errorf("Authorization header = %q, want %q", gotAuth, tc.wantAuth)
+			}
+			if gotAPIKey != tc.wantAPIKey {
+				t.Errorf("api-key header = %q, want %q", gotAPIKey, tc.wantAPIKey)
 			}
 		})
 	}

@@ -21,6 +21,14 @@ type tokenFunc func(context.Context) (string, error)
 
 func (f tokenFunc) Token(ctx context.Context) (string, error) { return f(ctx) }
 
+func (f tokenFunc) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
+	s, err := f(ctx)
+	if err != nil {
+		return tokensource.Credential{}, err
+	}
+	return tokensource.Credential{Value: s, Kind: tokensource.KindAPIKey}, nil
+}
+
 func buildSSEStream(text string, complete bool) string {
 	quoted, _ := json.Marshal(text)
 	var b strings.Builder

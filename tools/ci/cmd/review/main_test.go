@@ -362,7 +362,7 @@ func assertDeclaredPromptReachesLanguageModel(t *testing.T, declaration, promptF
 
 	gitlabURL, llmURL, llmBody := newReviewFixtureServers(t)
 	dir := writeDeclarationDir(t, fmt.Sprintf(
-		"models:\n  custom:\n    model: llama-3.3-70b\n    base_url: %s\n%s", llmURL, declaration))
+		"models:\n  custom:\n    model: llama-3.3-70b\n%s", declaration))
 	if promptFile != "" {
 		if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(promptFile), 0o600); err != nil {
 			t.Fatalf("write prompt file: %v", err)
@@ -372,6 +372,7 @@ func assertDeclaredPromptReachesLanguageModel(t *testing.T, declaration, promptF
 	code, _, stderr := executeReviewSubprocessInDir(t, dir,
 		"CI_API_V4_URL="+gitlabURL,
 		"REVIEW_MODEL=custom",
+		"REVIEW_BASE_URL="+llmURL,
 		"REVIEW_API_KEY=",
 		"LOCAL_API_KEY=mock-local-key",
 	)
@@ -473,12 +474,12 @@ func assertPromptFileOutsideWorkspaceRejected(
 	if err := os.WriteFile(outside, []byte("OUTSIDE-SECRET-MARKER"), 0o600); err != nil {
 		t.Fatalf("write outside file: %v", err)
 	}
-	dir := writeDeclarationDir(t, "models:\n  custom:\n    model: llama-3.3-70b\n    base_url: "+llmURL+"\n")
+	dir := writeDeclarationDir(t, "models:\n  custom:\n    model: llama-3.3-70b\n")
 	if setup != nil {
 		setup(t, dir, outside)
 	}
-	declaration := fmt.Sprintf("models:\n  custom:\n    model: llama-3.3-70b\n    base_url: %s\n    prompt_file: %q\n",
-		llmURL, value(dir, outside))
+	declaration := fmt.Sprintf("models:\n  custom:\n    model: llama-3.3-70b\n    prompt_file: %q\n",
+		value(dir, outside))
 	if err := os.WriteFile(filepath.Join(dir, ".gitlab", "reviewer.yml"), []byte(declaration), 0o600); err != nil {
 		t.Fatalf("rewrite declaration: %v", err)
 	}
@@ -486,6 +487,7 @@ func assertPromptFileOutsideWorkspaceRejected(
 	code, _, stderr := executeReviewSubprocessInDir(t, dir,
 		"CI_API_V4_URL="+gitlabURL,
 		"REVIEW_MODEL=custom",
+		"REVIEW_BASE_URL="+llmURL,
 		"REVIEW_API_KEY=",
 		"LOCAL_API_KEY=mock-local-key",
 	)
@@ -560,6 +562,63 @@ func TestReview_CredentialWhitespaceBoundaries(t *testing.T) {
 			code, _, stderr := executeReviewSubprocess(t, tc.env...)
 			if code != 1 {
 				t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
+			}
+		})
+	}
+}
+
+func TestReview_EndpointBoundaryChecks(t *testing.T) {
+	tests := []struct {
+		name     string
+		dir      func(t *testing.T) string
+		env      []string
+		wantWord string
+	}{
+		{
+			name: "local model without base_url exits 1",
+			env: []string{
+				"REVIEW_MODEL=llama-3.3-70b",
+				"REVIEW_BASE_URL=",
+				"LOCAL_API_KEY=mock-key",
+			},
+			wantWord: "base_url",
+		},
+		{
+			name: "declaration with base_url is rejected",
+			dir: func(t *testing.T) string {
+				return writeDeclarationDir(t, "models:\n  custom:\n    model: llama-3.3-70b\n    base_url: http://localhost:8000\n")
+			},
+			env: []string{
+				"REVIEW_MODEL=custom",
+				"LOCAL_API_KEY=mock-key",
+			},
+			wantWord: "base_url",
+		},
+		{
+			name: "declaration with api_version is rejected",
+			dir: func(t *testing.T) string {
+				return writeDeclarationDir(t, "models:\n  custom:\n    model: gpt-4o\n    api_version: \"2026-01-01\"\n")
+			},
+			env: []string{
+				"REVIEW_MODEL=custom",
+				"AZURE_OPENAI_API_KEY=mock-key",
+			},
+			wantWord: "api_version",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dir string
+			if tc.dir != nil {
+				dir = tc.dir(t)
+			}
+			code, _, stderr := executeReviewSubprocessInDir(t, dir, tc.env...)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
+			}
+			if !strings.Contains(stderr, tc.wantWord) {
+				t.Errorf("stderr = %q, want %s named", stderr, tc.wantWord)
 			}
 		})
 	}

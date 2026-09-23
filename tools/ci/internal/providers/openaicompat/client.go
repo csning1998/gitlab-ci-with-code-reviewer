@@ -55,6 +55,41 @@ func New(cfg Config) (*Client, error) {
 		return nil, errors.New("openaicompat: model is required")
 	}
 
+	provider := strings.TrimSpace(cfg.ModelOptions.Provider)
+	baseURL := strings.TrimSpace(cfg.ModelOptions.BaseURL)
+	apiVersion := strings.TrimSpace(cfg.ModelOptions.APIVersion)
+
+	switch provider {
+	case "azure-openai":
+		if baseURL == "" {
+			return nil, errors.New("openaicompat: base_url is required for azure-openai")
+		}
+		if apiVersion == "" {
+			return nil, errors.New("openaicompat: api_version is required for azure-openai")
+		}
+	case "local":
+		if baseURL == "" {
+			return nil, errors.New("openaicompat: base_url is required for local")
+		}
+	case "openai":
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+	case "grok":
+		if baseURL == "" {
+			baseURL = "https://api.x.ai/v1"
+		}
+	default:
+		if baseURL == "" {
+			if provider == "" {
+				return nil, errors.New("openaicompat: base_url is required when provider is not specified")
+			}
+			return nil, fmt.Errorf("openaicompat: base_url is required for provider %q", provider)
+		}
+	}
+	cfg.ModelOptions.BaseURL = baseURL
+	cfg.ModelOptions.APIVersion = apiVersion
+
 	if cfg.ModelOptions.Timeout <= 0 {
 		cfg.ModelOptions.Timeout = config.DefaultTimeout
 	}
@@ -80,14 +115,15 @@ func resolveDisplayName(provider string) string {
 // resolveEndpoint builds the Chat Completions URL. Azure OpenAI addresses a named deployment
 // and requires an explicit api-version, whereas other providers expose model as request body.
 func resolveEndpoint(modelOptions config.ModelOptions) string {
-	base := strings.TrimSuffix(modelOptions.BaseURL, "/")
-	if modelOptions.APIVersion == "" {
-		return base + "/v1/chat/completions"
+	base := strings.TrimSuffix(strings.TrimSpace(modelOptions.BaseURL), "/")
+	if modelOptions.APIVersion != "" {
+		return fmt.Sprintf(
+			"%s/openai/deployments/%s/chat/completions?api-version=%s",
+			base, modelOptions.Model, modelOptions.APIVersion,
+		)
 	}
-	return fmt.Sprintf(
-		"%s/openai/deployments/%s/chat/completions?api-version=%s",
-		base, modelOptions.Model, modelOptions.APIVersion,
-	)
+	base = strings.TrimSuffix(base, "/v1")
+	return base + "/v1/chat/completions"
 }
 
 func (c *Client) Name() string { return c.name }
@@ -171,12 +207,16 @@ func (c *Client) Review(prompt string) (result string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.modelOptions.Timeout)
 	defer cancel()
 
-	token, err := c.tokens.Token(ctx)
+	cred, err := c.tokens.FetchCredential(ctx)
 	if err != nil {
 		return "", fmt.Errorf("%s: resolve credential: %w", c.name, err)
 	}
-	if err := httpguard.ValidateCredential(token); err != nil {
-		return "", fmt.Errorf("%s: resolve credential: %w", c.name, err)
+
+	isLocal := strings.TrimSpace(c.modelOptions.Provider) == "local"
+	if !isLocal || cred.Value != "" {
+		if err := httpguard.ValidateCredential(cred.Value); err != nil {
+			return "", fmt.Errorf("%s: resolve credential: %w", c.name, err)
+		}
 	}
 
 	payload := c.buildPayload(prompt)
@@ -190,7 +230,16 @@ func (c *Client) Review(prompt string) (result string, err error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+
+	if c.modelOptions.Provider == "azure-openai" {
+		if cred.Kind == tokensource.KindAPIKey {
+			req.Header.Set("api-key", cred.Value)
+		} else if cred.Value != "" {
+			req.Header.Set("Authorization", "Bearer "+cred.Value)
+		}
+	} else if cred.Value != "" {
+		req.Header.Set("Authorization", "Bearer "+cred.Value)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
