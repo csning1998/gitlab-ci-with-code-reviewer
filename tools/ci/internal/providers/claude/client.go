@@ -41,6 +41,7 @@ type Client struct {
 	http         *http.Client
 	modelOptions config.ModelOptions
 	thinking     thinkingPlan
+	openSDK      func(ctx context.Context) (sdk.Client, error)
 }
 
 // New constructs a Client from Config, applying fallbacks for the fields the Messages API
@@ -69,7 +70,7 @@ func New(cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{
+	c := &Client{
 		model:        sdk.Model(model),
 		maxTokens:    int64(maxTokens),
 		timeout:      timeout,
@@ -78,7 +79,48 @@ func New(cfg Config) (*Client, error) {
 		http:         newHTTPClient(),
 		modelOptions: cfg.ModelOptions,
 		thinking:     plan,
-	}, nil
+	}
+
+	if wif, ok := cfg.Tokens.(*tokensource.ClaudeWIF); ok {
+		wifCfg := wif.Config()
+		opts := []option.RequestOption{
+			option.WithoutEnvironmentDefaults(),
+			option.WithHTTPClient(c.http),
+			option.WithFederationTokenProvider(
+				func(ctx context.Context) (string, error) {
+					return wifCfg.IDToken, nil
+				},
+				option.FederationOptions{
+					FederationRuleID: wifCfg.FederationRuleID,
+					OrganizationID:   wifCfg.OrganizationID,
+					ServiceAccountID: wifCfg.ServiceAccountID,
+					WorkspaceID:      wifCfg.WorkspaceID,
+				},
+			),
+		}
+		if c.baseURL != "" {
+			opts = append(opts, option.WithBaseURL(c.baseURL))
+		}
+		sharedClient := sdk.NewClient(opts...)
+		c.openSDK = func(context.Context) (sdk.Client, error) {
+			return sharedClient, nil
+		}
+	} else {
+		c.openSDK = c.openWithAPIKey
+	}
+
+	return c, nil
+}
+
+func (c *Client) openWithAPIKey(ctx context.Context) (sdk.Client, error) {
+	cred, err := c.tokens.FetchCredential(ctx)
+	if err != nil {
+		return sdk.Client{}, fmt.Errorf("claude: resolve credential: %w", err)
+	}
+	if err := httpguard.ValidateCredential(cred.Value); err != nil {
+		return sdk.Client{}, fmt.Errorf("claude: resolve credential: %w", err)
+	}
+	return c.newSDKClient(cred.Value), nil
 }
 
 func (c *Client) Name() string { return "Claude" }
@@ -90,15 +132,10 @@ func (c *Client) Review(prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	cred, err := c.tokens.FetchCredential(ctx)
+	client, err := c.openSDK(ctx)
 	if err != nil {
-		return "", fmt.Errorf("claude: resolve credential: %w", err)
+		return "", err
 	}
-	if err := httpguard.ValidateCredential(cred.Value); err != nil {
-		return "", fmt.Errorf("claude: resolve credential: %w", err)
-	}
-
-	client := c.newSDKClient(cred.Value)
 
 	stream := client.Messages.NewStreaming(ctx, c.buildParams(prompt))
 	message := sdk.Message{}

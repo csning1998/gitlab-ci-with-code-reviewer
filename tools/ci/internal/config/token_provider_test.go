@@ -15,9 +15,27 @@ func clearTokenProviderEnv(t *testing.T) {
 	for _, name := range []string{
 		"VAULT_ADDR", "VAULT_ID_TOKEN", "VAULT_AUTH_MOUNT", "VAULT_ROLE",
 		"VAULT_KV_MOUNT", "VAULT_SECRET_PATH", "VAULT_SECRET_FIELD", "VAULT_CACERT",
+		"ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
+		"ANTHROPIC_SERVICE_ACCOUNT_ID", "ANTHROPIC_ID_TOKEN", "ANTHROPIC_WORKSPACE_ID",
 	} {
 		t.Setenv(name, "")
 	}
+}
+
+var defaultTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
+	FederationRuleID: "fdrl_123456",
+	OrganizationID:   "org_abcdef",
+	ServiceAccountID: "svac_789012",
+	IDToken:          "header.payload.signature",
+}
+
+// setClaudeWIFEnv declares a complete Claude WIF configuration for the current test.
+func setClaudeWIFEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", defaultTestClaudeWIFConfig.FederationRuleID)
+	t.Setenv("ANTHROPIC_ORGANIZATION_ID", defaultTestClaudeWIFConfig.OrganizationID)
+	t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", defaultTestClaudeWIFConfig.ServiceAccountID)
+	t.Setenv("ANTHROPIC_ID_TOKEN", defaultTestClaudeWIFConfig.IDToken)
 }
 
 // setVaultEnv declares a complete federation configuration for the current test.

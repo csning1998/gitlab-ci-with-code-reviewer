@@ -39,6 +39,10 @@ spec:
       description: >-
         Vault KV-v2 secret path holding one field per provider, for example claude_api_key.
         Required when review_vault_addr is set.
+    review_anthropic_audience:
+      default: 'https://api.anthropic.com'
+      description: >-
+        Audience claim of the requested Anthropic CI identity token for Workload Identity Federation.
     review_base_url:
       default: ''
       description: >-
@@ -254,6 +258,8 @@ review:code:
   id_tokens:
     VAULT_ID_TOKEN:
       aud: '$[[ inputs.review_vault_audience ]]'
+    ANTHROPIC_ID_TOKEN:
+      aud: '$[[ inputs.review_anthropic_audience ]]'
   parallel:
     matrix:
       - REVIEW_MODEL: $[[ inputs.review_models ]]
