@@ -30,7 +30,7 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 		{
 			name: "workspace at suffix limit",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.WorkspaceID = "wrk_" + strings.Repeat("a", 64)
+				c.WorkspaceID = "wrkspc_" + strings.Repeat("a", 64)
 			}),
 			wantErr: false,
 		},
@@ -49,16 +49,16 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "organization id prefix only",
+			name: "organization id truncated uuid",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.OrganizationID = "org_"
+				c.OrganizationID = "abcdef01-2345-4678-89ab"
 			}),
 			wantErr: true,
 		},
 		{
-			name: "organization id suffix too long",
+			name: "organization id trailing content",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.OrganizationID = "org_" + strings.Repeat("b", 54) + "supersecret"
+				c.OrganizationID = "abcdef01-2345-4678-89ab-cdef01234567supersecret"
 			}),
 			wantErr: true,
 		},
@@ -79,14 +79,14 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 		{
 			name: "workspace prefix only",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.WorkspaceID = "wrk_"
+				c.WorkspaceID = "wrkspc_"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "workspace suffix too long",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.WorkspaceID = "wrk_" + strings.Repeat("d", 54) + "supersecret"
+				c.WorkspaceID = "wrkspc_" + strings.Repeat("d", 54) + "supersecret"
 			}),
 			wantErr: true,
 		},
@@ -163,7 +163,7 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 		{
 			name: "organization id nul injection",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.OrganizationID = "org_123\x00supersecret"
+				c.OrganizationID = "abcdef01-2345-4678-89ab-cdef01234567\x00supersecret"
 			}),
 			wantErr: true,
 		},
@@ -191,7 +191,7 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 		{
 			name: "workspace carriage return injection",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.WorkspaceID = "wrk_123\r\nsupersecret"
+				c.WorkspaceID = "wrkspc_123\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
@@ -205,7 +205,7 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 		{
 			name: "organization id multi byte suffix",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.OrganizationID = "org_é"
+				c.OrganizationID = "éécdef01-2345-4678-89ab-cdef01234567"
 			}),
 			wantErr: true,
 		},
@@ -219,7 +219,7 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 		{
 			name: "workspace multi byte suffix",
 			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
-				c.WorkspaceID = "wrk_é"
+				c.WorkspaceID = "wrkspc_é"
 			}),
 			wantErr: true,
 		},

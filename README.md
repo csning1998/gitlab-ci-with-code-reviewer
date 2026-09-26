@@ -1,255 +1,402 @@
 # GitLab CI with Code Reviewer
 
-## Section 1. Obtain API Key from AI Provider(s)
+## Section 1. Overview and Architecture
 
-### Option 1. Google AI Studio Setup Process
+`gitlab-ci-with-code-reviewer` provides automated, multi-model LLM code reviews directly within GitLab Merge Requests (MRs). The architecture is published as a modular GitLab CI/CD Catalog component, operating through a single consolidated Go CLI binary (`tools/ci/cmd/review`) installed in a hardened container image.
 
-The primary objective entails acquiring model credentials and validating access permissions on the Google AI Studio platform.
+### Task A. Key Architectural Capabilities
 
-1. **Create an API Key**:
-    - Authenticate to Google AI Studio.
-    - Navigate to and select **Get API key** within the sidebar or navigation menu.
-    - Select **Create API key** and designate the target Google Cloud project.
-    - Copy the generated API key string and retain it within secure storage.
+1. **Single Entrypoint and Matrix Review Jobs**:
+    - Automated reviews execute via the `review:code` job defined in `templates/core.yml`.
+    - The job dynamically expands the `review_models` input array using GitLab CI `parallel: matrix`. Each matrix item represents a standalone, manual review job in the MR pipeline.
+    - Code reviews publish actionable inline comments directly to the GitLab MR discussion timeline.
 
-2. **Verify Model Quota and Availability**:
-    - Validate model access by confirming that the designated model (e.g., `gemini-3.5-flash`) is present within the model selection menu.
-    - Ensure that the model quota allocated to the corresponding region and project remains active (non-zero).
+2. **Multi-Provider and Modern Model Support**:
+    - **Anthropic Claude**: Messages streaming API, adaptive thinking (`reasoning_level: low` to `max`), and extended thinking (`thinking_budget`).
+    - **Google Gemini**: REST `generateContent` API, Gemini 3.x series (`thinkingLevel`), and Gemini 2.5 series (`thinkingBudget`).
+    - **OpenAI and Azure OpenAI**: Unified via `openaicompat` Chat Completions wire format, supporting modern reasoning models (`gpt-6-sol`, `o3`, `o4-mini`, `reasoning_effort`), deployment routing, and `api-key` header handling.
+    - **xAI Grok**: `grok-4.7` series through `openaicompat`.
+    - **Local Inference Engines**: Self-hosted OpenAI-compatible inference servers (such as vLLM, Ollama, or llama.cpp) hosting open-weights models (such as `gemma-2-9b`, `gemma-4-31b`, `llama-3.3-70b`).
 
-### Option 2. Anthropic Console Setup Process
+3. **Zero-Trust Model Allowlist**:
+    - Model selection is enforced by a compile-time allowlist registry (`internal/config/registry.go`).
+    - Any unapproved, retired, or arbitrary model identifier injected via configuration or environment variables is rejected immediately prior to network dispatch.
+    - Official snapshots and vendor aliases are normalized to canonical IDs (e.g., `claude-sonnet-5`, `gemini-3.7-flash`, `gpt-6-sol`).
 
-The primary objective entails acquiring API credentials for Claude models on the Anthropic Console.
+4. **MR Intent Context and Actionable Review Standards**:
+    - **MR Intent Injection**: The reviewer extracts author title and description under `=== Merge Request Intent ===`, treating documented intentional trade-offs as authoritative context.
+    - **Non-Actionable Finding Suppression**: Reviews are constrained to actionable defects requiring developer modifications. If no issues exist, the engine emits `[]` (`LGTM -- no issues found.`).
 
-1. **Create an API Key**:
-    - Authenticate to the Anthropic Console.
-    - Navigate to **API Keys** and select **Create Key**.
-    - Copy the generated key string and retain it within secure storage. The credential string becomes unretrievable following initial display.
+## Section 2. Credential and Authentication Strategies
 
-2. **Verify Model Access**:
-    - Validate account authorization for the designated model (e.g., `claude-sonnet-4-6`) and verify that the assigned usage tier permits API invocation.
+Authentication enforces a zero-trust multi-tier credential hierarchy. Workload Identity Federation (WIF) eliminates static secrets from GitLab CI/CD variables.
 
-## Section 2. GitLab Setup Process
+```mermaid
+flowchart LR
+    subgraph Tiers["Credential Resolution Hierarchy"]
+        direction TB
+        T1["Tier 1: Native Workload Identity Federation (WIF)
+        (GitLab SaaS OIDC JWT exchanges for Anthropic OAuth Token)"]
+        T2["Tier 2: Vault Credential Intermediary
+        (GitLab OIDC JWT authenticates to Vault JWT Auth to read KV-v2 Secret)"]
+        T3["Tier 3: Static Token or Legacy API Key Fallback
+        (Direct Environment Variables: GEMINI_API_KEY, CLAUDE_API_KEY, etc.)"]
+    end
 
-The setup workflow within GitLab comprises two discrete phases:
+    Start["CI Job Start: review:code"] --> Step1{"Anthropic WIF Variables Present?"}
+    Step1 -- "Yes" --> T1
+    Step1 -- "No" --> Step2{"Vault Address Configured?"}
+    Step2 -- "Yes" --> T2
+    Step2 -- "No" --> T3
 
-1. Generation of access tokens to authorize pipeline retrieval of Merge Request (MR) diffs and publication of review discussions.
-2. Registration of credentials as project CI/CD environment variables.
-
-### Step A. Generate a GitLab Access Token
-
-This token authorizes the pipeline binary to retrieve MR diffs and execute the writing of inline discussion comments.
-
-- Navigate to the target GitLab project and select **Settings > Access Tokens** (or **User Settings > Access Tokens** for a user-scoped personal access token).
-- Select **Add new token**, configure the token name, and specify an expiration date.
-- Under **Select scopes**, enable **`api`** (A Classic Personal Access Token (PAT) possessing full API access is required; fine-grained PATs do not expose the MR Create permission necessary to post inline discussion threads).
-- Copy the generated token string immediately upon creation, as the value becomes unretrievable following initial display.
-
-### Step B. Add Reviewer Variables at Settings > Access Tokens
-
-Proceed to **Settings > Access Tokens** to generate project access tokens configured with the **Developer** role and the **`api`** and **`read_api`** scopes. The Reporter role provides insufficient permissions, as updating MR labels necessitates Developer privileges.
-
-| Variable             | Role            |
-| -------------------- | --------------- |
-| `GEMINI_MR_REVIEWER` | GitLab Reviewer |
-| `CLAUDE_MR_REVIEWER` | GitLab Reviewer |
-
-Copy each generated token string immediately upon creation. The values are non-retrievable after navigating away from the page.
-
-Ensure that the active scopes assigned to the tokens remain strictly restricted to **`api`** and **`read_api`**. Tokens generated via alternative integrations or possessing extraneous scopes (such as `mcp` or `ai_workflows`) risk triggering a `403 Forbidden` API error during pipeline execution.
-
-### Step C. Configure CI/CD Environment Variables at Settings > CI/CD
-
-Ensure acquisition of the API keys specified in **Section 1** prior to configuring these variables.
-
-Navigate to **Settings > CI/CD**, expand the **Variables** block, and select **Add variable** for each entry enumerated in the following table.
-
-Configure all variables according to the following parameters:
-
-- **Mask variable (Recommended)** and **Hidden variable**: Enabled to prevent credential exposure within pipeline execution logs.
-- **Protect variable**: Disabled to permit variable access for pipelines executing upon unprotected feature branches.
-
-| Variable             | Value                                                |
-| -------------------- | ---------------------------------------------------- |
-| `GEMINI_MR_REVIEWER` | Token string generated at Step B                     |
-| `CLAUDE_MR_REVIEWER` | Token string generated at Step B                     |
-| `GEMINI_API_KEY`     | API key from Google AI Studio (Section 3, Option 1)  |
-| `CLAUDE_API_KEY`     | API key from Anthropic Console (Section 3, Option 2) |
-
-## Section 3. Runner Setup
-
-Provisioning of the project runner occurs through Terraform, which registers the runner with GitLab and writes the resulting configuration to the host environment.
-
-### Step A. Generate Terraform Management Token
-
-Navigate to the GitLab user avatar and select **User Settings > Access Tokens**.
-
-- Select **Add new token**, and configure a name and expiration date.
-- Under **Select scopes**, enable the **`api`** scope.
-- Select **Create personal access token** and copy the generated string. The PAT becomes unretrievable following initial display.
-
-The token owner must possess the **Owner** role within the target GitLab project. This privilege is assigned by default to projects residing within personal namespaces.
-
-This token is referenced as `password` within `backend.hcl` and as `gitlab_token` within `terraform.tfvars`.
-
-### Step B. Prerequisites
-
-- Terraform >= 1.8.0
-- Podman and `podman-compose` installed on the host machine
-- Rootless Podman socket active at `/run/user/<HOST_UID>/podman/podman.sock`
-
-### Step C. Configure Terraform Files
-
-Manually construct the following configurations within the `terraform/` directory, utilizing `terraform/terraform.tfvars.example` as a template reference.
-
-- For **`terraform/backend.hcl`**: Maintains Terraform HTTP backend credentials for remote state storage.
-    - **`address`**: `https://gitlab.com/api/v4/projects/<PROJECT_ID>/terraform/state/default`
-    - **`lock_address`**: `https://gitlab.com/api/v4/projects/<PROJECT_ID>/terraform/state/default/lock`
-    - **`unlock_address`**: `https://gitlab.com/api/v4/projects/<PROJECT_ID>/terraform/state/default/lock`
-    - **`username`**: `oauth2`
-    - **`password`**: The User PAT generated in Step A.
-    - **`lock_method`**: `POST`
-    - **`unlock_method`**: `DELETE`
-    - **`retry_wait_min`**: `5`
-
-    The `<PROJECT_ID>` value resides within **Settings > General** on the GitLab project page.
-
-- For **`terraform/terraform.tfvars`**:
-    - **`gitlab_token`**: The User PAT generated in Step A.
-    - **`runner_description`**: Display name shown within **Settings > CI/CD > Runners** (default: `local-podman-runner`).
-    - **`runner_tag_list`**: Tag list for explicit job targeting (default: `["podman", "local"]`).
-
-### Step D. Provision with Terraform
-
-1. **Initialize the Backend**: Execute initialization utilizing the `-backend-config` flag to load the gitignored `backend.hcl` file containing the remote state address and credentials.
-
-    ```bash
-    terraform init -backend-config=backend.hcl
-    ```
-
-2. **Import the Existing Project**: Import the target GitLab project into the Terraform state. This operation is required during initial execution because the project pre-exists; omitting this step causes subsequent apply executions to attempt duplicate project creation.
-
-    ```bash
-    terraform import gitlab_project.this <PROJECT_ID>
-    ```
-
-3. **Apply the Configuration**: Apply the Terraform configuration to register the project runner on GitLab. This operation automatically writes the generated runner token to `~/.config/gitlab-runner/config.toml` on the host machine.
-
-    ```bash
-    terraform apply -auto-approve
-    ```
-
-### Step E. Start the Runner Service
-
-1. **Configure Environment Variables**: Copy `.env.example` to `.env` and specify parameters for the following variables:
-    - **`UHOME`**: The absolute path to the user home directory (obtain via `echo $HOME`).
-    - **`HOST_UID`**: The numeric UID of the host user (obtain via `id -u`), required for resolving the rootless Podman socket at `/run/user/<HOST_UID>/podman/podman.sock`.
-
-    ```bash
-    cp .env.example .env
-    ```
-
-2. **Start the Runner Container**: Initiate the runner service in the background utilizing Podman Compose:
-
-    ```bash
-    podman compose up -d
-    ```
-
-## Section 4. Triggering Workflow
-
-Upon completion of the setup process, automated code review processes integrate into the standard development workflow.
-
-1. **Create a Merge Request**:
-    - Push the target feature branch and initiate an MR directed toward the default branch.
-
-2. **Trigger a Review Manually**:
-    - Following MR creation, a pipeline executes under the **Pipelines** tab.
-    - The review jobs (`gemini-code-review` and `claude-code-review`) render based upon model configurations within the `core` component (refer to Section 5, Step C). These jobs remain paused by default.
-    - Execution of the manual play trigger invokes the review binary against the MR diff and publishes inline comments to the discussion timeline.
-    - When multiple model providers are configured, jobs operate independently.
-
-## Section 5. Consuming the CI Template
-
-This project is published as a GitLab CI/CD Catalog component. Consuming projects integrate these jobs via `include:component`, passing configuration parameters through `inputs` to eliminate the need for template customization or repository forking.
-
-### Step A. Prerequisites in the Consuming Project
-
-- Ensure that the runner is registered and project-level variables (e.g., `GEMINI_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`) are fully configured for dynamic evaluation at runtime.
-- Authorize `CI_JOB_TOKEN` repository write permissions within **Settings > CI/CD > Token Access** should job execution necessitate automated commits and pushes back to the source branch.
-
-### Step B. Reference Components in `.gitlab-ci.yml`
-
-Components are referenced using the path syntax `gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/<component>@<version>`. The `<version>` value must be explicitly pinned to a designated release tag. Inclusion of the `core` component is mandatory and necessitates explicit definition of the `reviewer_image` input.
-
-```yaml
-include:
-    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.0.0
-      inputs:
-          reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.0.0
-    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/lang-go@1.0.0
+    T1 --> Mode1["Mode: Workload Identity Federation (Claude Native)"]
+    T2 --> Mode2["Mode: Workload Identity Federation (Vault)"]
+    T3 --> Mode3["Mode: Legacy Token"]
 ```
 
-### Step C. Inject Inputs for Project-Specific Differences
+### Option 1. Tier 1: Anthropic Claude Native WIF (Recommended)
 
-Specify inputs to override default configurations. Operators should verify and specify the latest published version number for both the component and the container image. The `review_models` array defaults to a single empty entry. Each supplied entry produces one manual review job and selects its provider from the compile-time allowlist. Per-model parameters reside in `.gitlab/reviewer.yml`. Representative implementation example:
+When Anthropic federation variables are present, the Claude SDK dynamically exchanges the ephemeral GitLab CI ID token for a temporary OAuth Bearer token (`sk-ant-oat01-...`) via RFC 7523 `jwt-bearer` grant. No static API keys are stored in GitLab.
+
+#### Required Non-Sensitive CI/CD Variables
+
+Configure these variables in **Settings > CI/CD > Variables**:
+
+- `ANTHROPIC_FEDERATION_RULE_ID`: Target federation rule identifier (`fdrl_...`).
+- `ANTHROPIC_ORGANIZATION_ID`: Standard Anthropic organization UUID (36-character lowercase UUID without `org_` prefix).
+- `ANTHROPIC_SERVICE_ACCOUNT_ID`: Anthropic service account identifier (`svac_...`).
+- `ANTHROPIC_WORKSPACE_ID`: Anthropic workspace identifier (`wrkspc_...`).
+
+> [!NOTE]
+> The CI job automatically requests a signed OIDC token (`ANTHROPIC_ID_TOKEN`) with the configured audience matching `review_anthropic_audience` (default: `https://api.anthropic.com`).
+
+### Option 2. Tier 2: HashiCorp Vault Credential Intermediary
+
+For providers that lack native WIF support (e.g., Grok, OpenAI without direct OIDC), HashiCorp Vault acts as a central credential intermediary.
+
+1. **Exchange Flow**:
+    - The CI job requests a GitLab OIDC token (`VAULT_ID_TOKEN`).
+    - The job authenticates against the Vault JWT auth backend at `VAULT_AUTH_MOUNT` (default: `gitlab-saas-ci-job-jwt-provider`) using `VAULT_ROLE`.
+    - The job retrieves provider credentials dynamically from the KV-v2 mount (`secret`) at path `VAULT_SECRET_PATH`.
+2. **Secret Field Mapping**:
+    - Key fields in the KV-v2 secret map by provider name: `claude_api_key`, `gemini_api_key`, `openai_api_key`, `azure_openai_api_key`, `grok_api_key`.
+
+### Option 3. Tier 3: Static API Key / Legacy Token Fallback
+
+When neither Native WIF nor Vault is configured, the reviewer loads credentials from static environment variables:
+
+- `REVIEW_API_KEY`: Generic fallback key applicable to any configured model.
+- Provider-specific keys: `GEMINI_API_KEY`, `CLAUDE_API_KEY`, `OPENAI_API_KEY`, `GROK_API_KEY`.
+- `LOCAL_API_KEY`: Optional; local inference servers permit empty credentials.
+
+### Runtime Mode Verification
+
+Upon execution, the reviewer inspects the active token source and outputs one of three explicit mode descriptions:
+
+- `Mode: Workload Identity Federation (Claude Native)`
+- `Mode: Workload Identity Federation (Vault)`
+- `Mode: Legacy Token`
+
+## Section 3. GitLab Setup and Permissions
+
+### Step A. GitLab Access Token for Inline Review Discussions
+
+The review binary communicates with GitLab REST APIs to read merge request diffs and write inline discussion comments.
+
+#### Contract Requirements (Minimal Knowledge Principle)
+
+The review engine operates as a decoupled, state-agnostic consumer:
+
+- **Key Name**: The environment MUST provide `REVIEW_MR_REVIEWER` (or backwards-compatible aliases `CLAUDE_MR_REVIEWER` / `GEMINI_MR_REVIEWER`).
+- **Required Privileges**: The token MUST carry the **`api`** and **`read_api`** scopes and MUST possess at least the **`Developer`** role on the repository. (The `Reporter` role lacks permissions to resolve or update MR discussion threads).
+- **Token Type Agnostic**: The engine accepts Project Access Tokens (PrAT), Group Access Tokens (GrAT), or Personal Access Tokens (PAT).
+
+##### GitLab Token Type Availability Matrix
+
+| Token Type                      | GitLab SaaS (Free Tier) | GitLab SaaS (Paid: Premium / Ultimate) | GitLab Self-Managed / Dedicated (Free & Paid) | Scope and Recommended Usage                                                                                                                            |
+| :------------------------------ | :---------------------- | :------------------------------------- | :-------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Personal Access Token (PAT)** | Supported               | Supported                              | Supported                                     | Required for dedicated review bot user accounts on GitLab.com Free tier. Consumes a billable seat on paid plans if the user account is a human member. |
+| **Project Access Token (PrAT)** | Not Supported           | Supported                              | Supported (All Tiers)                         | Scoped exclusively to a single repository. Generates a project bot that does not consume a billable user seat.                                         |
+| **Group Access Token (GrAT)**   | Not Supported           | Supported                              | Supported (All Tiers)                         | Shared across all repositories within a group namespace. Generates a group bot that does not consume a billable user seat.                             |
+
+#### Provisioning Options
+
+1. **Modular IaC Provisioning (`provisioner-code-reviewer`)**:
+    - Repositories managed via Terraform (including `gitlab-ci-with-code-reviewer` self-consumption and downstream consumer projects) instantiate the `provisioner-code-reviewer` module within their respective `meta-gitlab-project` layer:
+
+    ```hcl
+    module "code_reviewer" {
+        source = "gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/provisioner-code-reviewer" # or local relative path
+
+        providers = {
+            vault = vault.bastion
+        }
+
+        gitlab_project_id    = module.baseline.project_id
+        legacy_alias_enabled = true
+    }
+    ```
+
+    - This pattern guarantees idempotent registration of masked, un-protected project variables directly from HashiCorp Vault, eliminating leaky abstractions across parent governance groups.
+
+2. **Manual Configuration for External or Standalone Projects**:
+    - For standalone repositories outside the Terraform governance hierarchy, developers generate an access token directly within GitLab UI (**Settings > Access Tokens**).
+    - Register the generated token in **Settings > CI/CD > Variables**:
+        - **Key**: `REVIEW_MR_REVIEWER`
+        - **Flags**: Enable **Mask variable**; disable **Protect variable** to permit runs on feature branches.
+
+### Step B. CI/CD Environment Variables Summary
+
+| Variable                       | Required                   | Type      | Purpose                                                           |
+| ------------------------------ | -------------------------- | --------- | ----------------------------------------------------------------- |
+| `REVIEW_MR_REVIEWER`           | Yes                        | Sensitive | Project access token for reading diffs and publishing discussions |
+| `ANTHROPIC_FEDERATION_RULE_ID` | Only for Claude Native WIF | Standard  | Anthropic federation rule (`fdrl_...`)                            |
+| `ANTHROPIC_ORGANIZATION_ID`    | Only for Claude Native WIF | Standard  | Anthropic organization UUID                                       |
+| `ANTHROPIC_SERVICE_ACCOUNT_ID` | Only for Claude Native WIF | Standard  | Anthropic service account (`svac_...`)                            |
+| `ANTHROPIC_WORKSPACE_ID`       | Only for Claude Native WIF | Standard  | Anthropic workspace (`wrkspc_...`)                                |
+| `GEMINI_API_KEY`               | Only for Gemini Static Key | Sensitive | Google AI Studio API key                                          |
+| `CLAUDE_API_KEY`               | Only for Claude Static Key | Sensitive | Anthropic Console API key (when not using WIF)                    |
+| `MAX_TOTAL_DIFF`               | No                         | Number    | Diff truncation threshold in characters (Default: `300000`)       |
+
+### Step C. Runner Setup and Network Topology
+
+Provisioning of local self-hosted runners occurs through Podman Compose:
+
+1. **Prerequisites**:
+    - Podman and `podman-compose` installed on the host.
+    - Rootless Podman socket active at `/run/user/<HOST_UID>/podman/podman.sock`.
+2. **Network Topology**:
+    - Runners requiring access to internal services (such as local HashiCorp Vault or local Ollama instances) must connect to the internal bridge network (e.g., `sonarqube-ci-net`).
+    - The runner configuration in `runner-config/config.toml` specifies `network_mode = "sonarqube-ci-net"`.
+
+## Section 4. Declarative Configuration (`.gitlab/reviewer.yml`)
+
+The reviewer supports declarative configuration via `.gitlab/reviewer.yml` (path configurable via `review_config_file`). This file decouples model hyperparameters from CI pipeline definitions.
+
+### Task A. Configuration Structure
+
+The file consists of three sections: `defaults`, `models`, and `slots`.
+
+```yaml
+defaults:
+    max_tokens: 8192
+    timeout: 5m
+    # temperature: 0.2
+    # top_p: 0.95
+
+models:
+    # Anthropic Claude configuration (Claude 4.x / 5.x)
+    claude-sonnet-5:
+        provider: claude
+        model: claude-sonnet-5
+        thinking_type: adaptive
+        reasoning_level: high
+        prompt_file: .gitlab/code_review_guidelines/generic_rules.md
+        # Optional tuning parameters:
+        # max_tokens: 16384
+        # timeout: 10m
+        # (Legacy models only: thinking_budget: 4096)
+
+    # Google Gemini configuration (Gemini 2.x / 3.x)
+    gemini-3.7-flash:
+        provider: gemini
+        model: gemini-3.7-flash
+        temperature: 0.0
+        reasoning_level: high
+        prompt_file: .gitlab/code_review_guidelines/generic_rules.md
+        # Optional tuning parameters:
+        # top_p: 0.95
+        # top_k: 40
+        # max_tokens: 8192
+        # response_mime_type: application/json
+        # (Gemini 2.x generation only: thinking_budget: 2048, include_thoughts: false)
+
+    # OpenAI configuration example (GPT-6 series / o-series reasoning models)
+    # openai-gpt-6-sol:
+    #   provider: openai
+    #   model: gpt-6-sol
+    #   reasoning_level: high
+    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
+    #   # Optional tuning parameters:
+    #   # max_tokens: 16384
+    #   # temperature: 0.2
+    #   # top_p: 1.0
+    #   # frequency_penalty: 0.0
+    #   # presence_penalty: 0.0
+    #   # seed: 42
+
+    # Azure OpenAI configuration example
+    # azure-gpt-6-sol:
+    #   provider: azure-openai
+    #   model: gpt-6-sol-deployment
+    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
+    #   # Optional tuning parameters:
+    #   # temperature: 0.0
+    #   # max_tokens: 8192
+    #   # (Requires REVIEW_BASE_URL and REVIEW_API_VERSION provided via CI/CD inputs or environment variables)
+
+    # xAI Grok configuration example (Grok 4.x flagship series)
+    # grok-4-7:
+    #   provider: grok
+    #   model: grok-4.7
+    #   reasoning_level: high
+    #   temperature: 0.0
+    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
+    #   # Optional tuning parameters:
+    #   # max_tokens: 16384
+    #   # top_p: 0.95
+
+    # Local OpenAI-compatible server configuration example (vLLM / Ollama / SGLang / llama.cpp)
+    # local-qwen3-coder:
+    #   provider: local
+    #   model: Qwen/Qwen3-Coder-Next-Instruct
+    #   temperature: 0.1
+    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
+    #   # Optional tuning parameters:
+    #   # max_tokens: 8192
+    #   # top_p: 0.9
+    #   # repetition_penalty: 1.05
+    #   # min_p: 0.05
+    #   # (Requires REVIEW_BASE_URL provided via CI/CD variables, e.g., http://vllm-host:8000/v1)
+
+slots:
+    primary: claude-sonnet-5
+    fast: gemini-3.7-flash
+    # balanced: openai-gpt-6-sol
+    # enterprise: azure-gpt-6-sol
+    # grok: grok-4-7
+    # onprem: local-qwen3-coder
+```
+
+### Task B. Custom Prompt Guidelines
+
+Custom instructions can be defined inline using `prompt` or loaded from an external file via `prompt_file` (e.g., `.gitlab/code_review_guidelines/generic_rules.md`).
+
+- **Precedence**: `prompt` (in YAML) > `prompt_file` (in YAML) > `REVIEWER_PROMPT_FILE` (env) > `REVIEWER_PROMPT` (env) > Default internal prompt.
+- **Constraints**: Prompt files MUST reside within the repository working directory, MUST be regular files, and are bounded to a maximum size of 1 MiB.
+
+### Task C. Security and Robustness Safeguards
+
+- **Bounded File Ingestion**: `.gitlab/reviewer.yml` is parsed with a 64 KiB size limit and a 5-second timeout to prevent denial-of-service from unbounded inputs or non-terminating FIFOs.
+- **Strict Decoding**: YAML decoding uses `KnownFields(true)`. Unknown or misspelled fields fail immediately at initialization.
+- **Endpoint Isolation**: Neither `base_url` nor `api_version` can be declared within `.gitlab/reviewer.yml`. Target endpoints MUST originate from trusted CI inputs (`review_base_url`, `review_api_version`), preventing untrusted MRs from redirecting diffs or credentials to arbitrary hosts.
+
+## Section 5. Consuming CI/CD Catalog Components
+
+Consuming projects integrate code review and quality checks by including components published in the GitLab CI/CD Catalog.
+
+### Step A. The `core` Component Reference
+
+The `core` component manages pipeline validation, secrets scanning (`gitleaks`), SonarQube integration, and matrixed LLM reviews (`review:code`).
 
 ```yaml
 include:
-    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.0.0
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.6.6
       inputs:
-          reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.0.0
+          reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.6.6
           review_models:
-              - claude-sonnet-4-6
-              - gemini-3.5-flash
-              - grok-4.6
-          model_k: model_v
-
-    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/lang-typescript@1.0.0
-      inputs:
-          ts_globs: ['frontend/**/*', 'backend/**/*']
-          frontend_dir: frontend
-          backend_dir: backend
-
-    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/iac-terraform@1.0.0
-      inputs:
-          checkov_skip: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_K8S_21'
-
-    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/iac-ansible@1.0.0
+              - 'claude-sonnet-5'
+              - 'gemini-3.7-flash'
+          enable_sonarqube: true
+          sonar_scanner_tags: ['sonarqube-network']
 ```
 
-Supported components comprise `core`, `lang-go`, `lang-python`, `lang-typescript`, `lang-c-cpp`, `lang-jvm`, `lang-csharp`, `lang-rust`, `iac-terraform`, `iac-packer`, and `iac-ansible`. Full input schemas are defined within the respective files under `templates/`.
+#### Complete `core` Component Inputs Specification
 
-Language components take the toolchain image from the consuming `*_image` input. One published component version therefore runs against more than one language release.
+| Input                       | Type    | Default                           | Description                                                                   |
+| --------------------------- | ------- | --------------------------------- | ----------------------------------------------------------------------------- |
+| `reviewer_image`            | string  | _(Required)_                      | Pinned reviewer container image (e.g., `.../reviewer:1.6.6`)                  |
+| `review_models`             | array   | `[]`                              | Model IDs, reviewer.yml keys, or slot names. Generates matrix jobs.           |
+| `review_config_file`        | string  | `""`                              | Path to reviewer declaration YAML. Defaults to `.gitlab/reviewer.yml`.        |
+| `review_base_url`           | string  | `""`                              | Custom endpoint URL for Azure OpenAI or local inference engines               |
+| `review_api_version`        | string  | `""`                              | API version for Azure OpenAI deployments                                      |
+| `review_max_tokens`         | number  | `16384`                           | Fallback output token limit when omitted in `.gitlab/reviewer.yml`            |
+| `review_timeout_minutes`    | number  | `10`                              | Fallback request timeout in minutes                                           |
+| `review_anthropic_audience` | string  | `https://api.anthropic.com`       | Audience claim for `ANTHROPIC_ID_TOKEN` when using Claude Native WIF          |
+| `review_vault_addr`         | string  | `""`                              | HashiCorp Vault server address. Enables Tier 2 Vault authentication when set. |
+| `review_vault_audience`     | string  | `vault`                           | Audience claim for `VAULT_ID_TOKEN` matching the Vault JWT auth role          |
+| `review_vault_auth_mount`   | string  | `gitlab-saas-ci-job-jwt-provider` | Vault JWT authentication mount path                                           |
+| `review_vault_role`         | string  | `""`                              | Vault JWT authentication role name                                            |
+| `review_vault_kv_mount`     | string  | `secret`                          | Vault KV-v2 engine mount path                                                 |
+| `review_vault_secret_path`  | string  | `""`                              | Secret path containing provider API key fields (e.g., `gemini_api_key`)       |
+| `max_description_chars`     | number  | `5000`                            | Maximum character count of the MR description included in review prompt       |
+| `enable_sonarqube`          | boolean | `false`                           | Enables automated SonarQube code scanning stage                               |
+| `sonar_scanner_tags`        | array   | `[]`                              | GitLab Runner tag targeting for SonarQube scanner                             |
+| `sonar_go_coverage_path`    | string  | `""`                              | Path to Go coverage profile artifact consumed by SonarQube                    |
 
-`lang-jvm` covers Java, Kotlin, and Groovy. The `build_tool` input accepts `maven` or `gradle`. Maven jobs use flags that exist in Maven 2. The consuming project sets the bytecode target in its build files.
+### Step B. Language and Infrastructure Components
 
-The `core` component unconditionally executes a `gitleaks` secret-detection job on every Merge Request, alongside a `sonarqube-scan` job gated by the `enable_sonarqube` input (`type: boolean`, default `false`). Activation of `enable_sonarqube` requires a self-hosted SonarQube instance and the presence of `SONAR_HOST_URL` and `SONAR_TOKEN` CI/CD variables within the consuming project or an inherited group.
+Complementary language templates enforce format checking, linting, building, and unit testing:
+
+- **`lang-go`**: Go formatting (`gofmt`), linting (`golangci-lint`), and unit testing (`gotestsum` with JUnit XML report integration).
+- **`lang-python`**: Formatting (`black`, `isort`), linting (`flake8`, `mypy`), and testing (`pytest`).
+- **`lang-typescript`**: Frontend and backend linting (`eslint`, `tsc`) and test execution.
+- **`lang-c-cpp`**: Clang-format and C/C++ compilation verification.
+- **`lang-jvm`**: Maven / Gradle lifecycle execution for Java, Kotlin, and Groovy.
+- **`lang-csharp`**: .NET build and format verification.
+- **`lang-rust`**: Rust formatting (`rustfmt`), `cargo clippy`, and `cargo test`.
+- **`iac-terraform`**: Terraform format, validation, and Checkov security scanning.
+- **`iac-packer`**: HashiCorp Packer template validation.
+- **`iac-ansible`**: Ansible syntax and lint validation.
+
+#### Representative Multi-Component Integration Example
+
+```yaml
+include:
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/core@1.6.7
+      inputs:
+          reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.6.7
+          review_models:
+              - 'primary'
+              - 'fast'
+          enable_sonarqube: true
+          sonar_scanner_tags: ['sonarqube-network']
+          sonar_go_coverage_path: 'tools/ci/coverage.out'
+
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/lang-go@1.6.7
+      inputs:
+          go_globs:
+              - 'tools/**/*.go'
+              - 'tools/**/go.mod'
+              - 'tools/**/go.sum'
+
+    - component: gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/iac-terraform@1.6.7
+      inputs:
+          checkov_skip: 'CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_TF_1'
+```
+
+### Step C. Directed Acyclic Graph (DAG) Execution Model
+
+Pipelines leverage explicit `needs` declarations to build an optimal Directed Acyclic Graph (DAG):
+
+1. **Chain of Verification**: Lint and test jobs explicitly depend on upstream format jobs (`optional: true`), ensuring analyzers execute exclusively on properly formatted source code.
+2. **Immediate Fast-Feedback Jobs**: Independent analyzers (such as `security:gitleaks` and `misc:mr-labeler`) declare `needs: []` to trigger immediately upon pipeline start.
+3. **JUnit Test Reports**: `lang-go` runs `gotestsum@v1.13.0` to output JUnit XML test reports, populating the **Tests** tab and test summary panel on the GitLab MR interface.
 
 ## Section 6. Replicating on a Self-Hosted GitLab Instance
 
-The CI/CD Catalog operates on an instance-scoped architecture. Since self-hosted instances cannot resolve or include components directly from the gitlab.com catalog, template components must be replicated within the local instance environment.
+The GitLab CI/CD Catalog operates within instance boundaries. To consume catalog components on private or self-hosted GitLab deployments:
 
-1. **Mirror Repository**: Import the `gitlab-ci-with-code-reviewer` repository into the self-hosted instance and designate it as a CI/CD Catalog project within **Settings > General > Visibility, project features, permissions > CI/CD Catalog project**.
-2. **Mirror Container Image**: Retrieve the container image `registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:<tag>` and publish it to the local instance registry or Harbor. Provide this internal image path to the `reviewer_image` input of the `core` component.
-3. **Update Component References**: Configure consuming projects on the self-hosted instance to reference the local component path `<instance-namespace>/gitlab-ci-with-code-reviewer/<component>@<version>` rather than the gitlab.com path.
-4. **Publish Catalog Release**: Apply a version tag to the mirrored project to publish its components to the instance catalog, thereby replicating the release workflow documented in Section 7.
+1. **Mirror Repository**: Mirror `gitlab-ci-with-code-reviewer` to the self-hosted instance and designate it as a catalog project under **Settings > General > Visibility, project features, permissions > CI/CD Catalog project**.
+2. **Mirror Container Image**: Copy `registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:<tag>` to your private registry or Harbor instance. Supply this path to the `reviewer_image` input.
+3. **Adjust Component Paths**: Reference the local path `<instance-namespace>/gitlab-ci-with-code-reviewer/<component>@<version>` in consuming `.gitlab-ci.yml` files.
+4. **Publish Instance Releases**: Push SemVer release tags on the mirrored repository to register components in your self-hosted CI/CD Catalog.
 
-## Section 7. Versioning and Release
+## Section 7. Versioning, Tagging, and Release Workflow
 
-A unified Semantic Versioning (SemVer) tag aligns container image releases with catalog components, guaranteeing that a consumer configuring `reviewer_image` to `reviewer:X.Y.Z` corresponds exactly to `core@X.Y.Z`. The `core` component deliberately omits a default value for `reviewer_image` to enforce explicit version pinning by consumers, thereby preventing configuration drift. Tags omit the `v` prefix, as neither the Container Registry nor the CI/CD Catalog mandates its inclusion; a `v` prefix pertains exclusively to projects whose internal tags are resolved through Go module versioning, a mechanism not utilized within this architecture.
+Release management enforces strict Semantic Versioning (SemVer) aligning container images directly with CI/CD Catalog components (`reviewer:X.Y.Z` maps to `core@X.Y.Z`).
 
-1. **Automatic Version Tag**: The `auto-tag` job defined within `.gitlab-ci.yml` executes upon every push to `main`, deriving the subsequent version from the squash-merge commit subject via `mr-semver-resolver` and pushing the generated tag.
-    - A commit subject bearing the `feat` type produces a minor version bump.
-    - `fix` and `perf` types yield patch bumps.
-    - An exclamation mark (`!`) appended to the type or scope triggers a major bump.
-    - All remaining types yield no tag creation.
-
-    Pushing this tag necessitates the `TAG_PUSH_TOKEN` CI/CD variable, configured as a Project Access Token assigned the `Developer` role and the `write_repository` scope. The default `CI_JOB_TOKEN` cannot initiate the downstream tag pipeline responsible for publishing the release, as GitLab excludes `CI_JOB_TOKEN`-authenticated pushes from triggering secondary pipelines to prevent infinite execution loops.
-
-2. **Tag Pipeline**: Publication of the tag initiates an independent pipeline. The `release` stage within `.gitlab-ci.yml` builds and pushes `reviewer:<tag>` (releasing exclusively the pinned version tag without a `:latest` tag), subsequently generating a GitLab release that publishes the components located within `templates/` to the catalog.
-3. **Verify Deployment**: Verify that the generated image is publicly accessible within the project Container Registry and that all components render correctly on the project CI/CD Catalog page.
-
-### Planned Language Path Space (Not Yet Implemented)
-
-The following capability remains reserved for future implementation, adhering to the input conventions established by the `core` component:
-
-- Dependency caching for the `lang-jvm`, `lang-csharp`, and `lang-rust` components. Maven, NuGet, and Cargo each resolve dependencies from a remote registry on every job execution, and a cache keyed on the respective lock file would reduce job duration. No existing component declares a `cache` block except `lang-typescript`, therefore introducing one requires a consistent key and path convention across every language component.
+1. **Automated Semantic Versioning (`auto-tag`)**:
+    - The `auto-tag` job executes on merge to the default branch (`main`).
+    - It analyzes squash commit subjects against Conventional Commits:
+        - `feat`: Minor version bump (`X.Y.0`).
+        - `fix` or `perf`: Patch version bump (`X.Y.Z`).
+        - Breaking changes (`!`): Major version bump (`X.0.0`).
+        - Other commit types (`chore`, `docs`, `refactor`, `adhoc`, `test`): Suppress release generation.
+    - Pushes the resulting SemVer tag using a dedicated project access token (`TAG_PUSH_TOKEN` with `write_repository` scope).
+2. **Tag Pipeline and Catalog Publication**:
+    - The tag pipeline triggers `build:reviewer-image` to produce `reviewer:<tag>`.
+    - The `publish-catalog` job publishes all components in `templates/` to the GitLab CI/CD Catalog using `release-cli`.
+3. **Pre-Merge Self-Review**:
+    - Merge Request pipelines publish a transient container image tagged as `:edge`.
+    - The project's own MR pipeline exercises pre-merge self-review using this `:edge` image, providing immediate functional verification prior to merging into `main`.

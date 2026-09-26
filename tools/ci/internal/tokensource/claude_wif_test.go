@@ -11,10 +11,10 @@ import (
 
 var validTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
 	FederationRuleID: "fdrl_123",
-	OrganizationID:   "org_123",
+	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_123",
 	IDToken:          "jwt_token",
-	WorkspaceID:      "wrk_123",
+	WorkspaceID:      "wrkspc_123",
 }
 
 func withTestClaudeWIFConfig(mutate func(c *tokensource.ClaudeWIFConfig)) tokensource.ClaudeWIFConfig {
@@ -127,7 +127,7 @@ func TestNewClaudeWIF_Validation(t *testing.T) {
 		{
 			name: "workspace alone reports federation rule id",
 			cfg: tokensource.ClaudeWIFConfig{
-				WorkspaceID: "wrk_123",
+				WorkspaceID: "wrkspc_123",
 			},
 			wantErr: "claude wif: federation rule id is required",
 		},
@@ -142,7 +142,7 @@ func TestNewClaudeWIF_Validation(t *testing.T) {
 			name: "service account id precedes id token",
 			cfg: tokensource.ClaudeWIFConfig{
 				FederationRuleID: "fdrl_123",
-				OrganizationID:   "org_123",
+				OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 			},
 			wantErr: "claude wif: service account id is required",
 		},

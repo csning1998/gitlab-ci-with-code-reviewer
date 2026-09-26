@@ -2,6 +2,10 @@
 terraform {
   required_version = ">= 1.14.0"
   required_providers {
+    anthropic = {
+      source  = "ippontech/anthropic"
+      version = "1.43.5"
+    }
     gitlab = {
       source  = "gitlabhq/gitlab"
       version = "19.2.0"
@@ -20,6 +24,10 @@ terraform {
     unlock_method  = "DELETE"
     retry_wait_min = 5
   }
+}
+
+provider "anthropic" {
+  admin_api_key = ephemeral.vault_kv_secret_v2.anthropic_admin_key.data["anthropic_admin_api_key"]
 }
 
 provider "gitlab" {

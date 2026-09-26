@@ -26,7 +26,7 @@ func TestResolveTokenProvider_ClaudeWIF_LengthFormatInjectionAndLeak(t *testing.
 			name: "organization id too long",
 			setupEnv: func(t *testing.T) {
 				setClaudeWIFEnv(t)
-				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "org_"+strings.Repeat("b", 54)+"supersecret")
+				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "abcdef01-2345-4678-89ab-cdef01234567supersecret")
 			},
 			wantSubstr: "ANTHROPIC_ORGANIZATION_ID",
 			secret:     "supersecret",

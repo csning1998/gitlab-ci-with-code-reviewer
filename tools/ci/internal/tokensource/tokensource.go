@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"gitlab.com/csning1998-lab/parent-group-governance/tools/governance/pkg/tokensource"
@@ -84,6 +85,18 @@ func validatePrefixedID(id, prefix string) bool {
 	return true
 }
 
+var organizationIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// isValidOrganizationID checks that id is a lowercase UUID.
+func isValidOrganizationID(id string) bool {
+	return organizationIDPattern.MatchString(id)
+}
+
+// isValidWorkspaceID checks that id is a wrkspc_ tagged identifier or the literal default.
+func isValidWorkspaceID(id string) bool {
+	return id == "default" || validatePrefixedID(id, "wrkspc_")
+}
+
 // validateIDToken checks that token length is within 8..4096 and contains only base64url/JWT characters.
 func validateIDToken(token string) bool {
 	if len(token) < 8 || len(token) > 4096 {
@@ -108,7 +121,7 @@ func NewClaudeWIF(cfg ClaudeWIFConfig) (*ClaudeWIF, error) {
 	if strings.TrimSpace(cfg.OrganizationID) == "" {
 		return nil, newRequiredFieldError(FieldOrganizationID)
 	}
-	if !validatePrefixedID(cfg.OrganizationID, "org_") {
+	if !isValidOrganizationID(cfg.OrganizationID) {
 		return nil, newInvalidFormatFieldError(FieldOrganizationID)
 	}
 	if strings.TrimSpace(cfg.ServiceAccountID) == "" {
@@ -124,7 +137,7 @@ func NewClaudeWIF(cfg ClaudeWIFConfig) (*ClaudeWIF, error) {
 		return nil, newInvalidFormatFieldError(FieldIDToken)
 	}
 	if strings.TrimSpace(cfg.WorkspaceID) != "" {
-		if !validatePrefixedID(cfg.WorkspaceID, "wrk_") {
+		if !isValidWorkspaceID(cfg.WorkspaceID) {
 			return nil, newInvalidFormatFieldError(FieldWorkspaceID)
 		}
 	}
@@ -217,4 +230,19 @@ func (v *VaultKV) FetchCredential(ctx context.Context) (Credential, error) {
 // Token delegates to the upstream VaultKV Token method.
 func (v *VaultKV) Token(ctx context.Context) (string, error) {
 	return v.upstream.Token(ctx)
+}
+
+// ModeDescription returns a human-readable mode label for the resolved token provider.
+func ModeDescription(p Provider) string {
+	if p == nil {
+		return "Mode: None"
+	}
+	switch p.(type) {
+	case *ClaudeWIF:
+		return "Mode: Workload Identity Federation (Claude Native)"
+	case *VaultKV:
+		return "Mode: Workload Identity Federation (Vault)"
+	default:
+		return "Mode: Legacy Token"
+	}
 }

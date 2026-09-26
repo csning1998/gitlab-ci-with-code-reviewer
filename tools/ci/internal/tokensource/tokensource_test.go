@@ -43,24 +43,31 @@ func TestStatic_Token(t *testing.T) {
 	}
 }
 
+var validTestVaultKVConfig = tokensource.VaultKVConfig{
+	VaultAddr:   "https://vault.example.com",
+	Role:        "ci-role",
+	JWT:         "jwt-token",
+	MountPath:   "secret",
+	SecretPath:  "ci/credentials",
+	SecretField: "api_key",
+}
+
+func newTestVaultKV(t *testing.T) *tokensource.VaultKV {
+	t.Helper()
+	vk, err := tokensource.NewVaultKV(validTestVaultKVConfig)
+	if err != nil {
+		t.Fatalf("NewVaultKV() unexpected error = %v", err)
+	}
+	return vk
+}
+
 func TestNewVaultKV_Delegation(t *testing.T) {
 	_, err := tokensource.NewVaultKV(tokensource.VaultKVConfig{})
 	if err == nil {
 		t.Fatal("NewVaultKV() with empty config expected validation error, got nil")
 	}
 
-	valid := tokensource.VaultKVConfig{
-		VaultAddr:   "https://vault.example.com",
-		Role:        "ci-role",
-		JWT:         "jwt-token",
-		MountPath:   "secret",
-		SecretPath:  "ci/credentials",
-		SecretField: "api_key",
-	}
-	vk, err := tokensource.NewVaultKV(valid)
-	if err != nil {
-		t.Fatalf("NewVaultKV() unexpected error = %v", err)
-	}
+	vk := newTestVaultKV(t)
 	if vk == nil {
 		t.Fatal("NewVaultKV() returned nil instance")
 	}
@@ -91,5 +98,42 @@ func TestStatic_ConcurrentCallsReturnTheSameCredential(t *testing.T) {
 		if errs[i] != nil || results[i] != want {
 			t.Errorf("caller %d: FetchCredential() = %+v, %v", i, results[i], errs[i])
 		}
+	}
+}
+
+func TestModeDescription(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider tokensource.Provider
+		want     string
+	}{
+		{
+			name:     "nil provider describes none",
+			provider: nil,
+			want:     "Mode: None",
+		},
+		{
+			name:     "static token source describes legacy mode",
+			provider: tokensource.Static("api-key"),
+			want:     "Mode: Legacy Token",
+		},
+		{
+			name:     "claude wif token source describes claude native federation mode",
+			provider: newTestClaudeWIF(t),
+			want:     "Mode: Workload Identity Federation (Claude Native)",
+		},
+		{
+			name:     "vault kv token source describes vault federation mode",
+			provider: newTestVaultKV(t),
+			want:     "Mode: Workload Identity Federation (Vault)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tokensource.ModeDescription(tc.provider); got != tc.want {
+				t.Errorf("ModeDescription() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

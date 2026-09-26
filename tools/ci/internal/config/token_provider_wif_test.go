@@ -24,17 +24,17 @@ func TestDeriveClaudeWIFConfig_ValueBoundaries(t *testing.T) {
 			name: "surrounding whitespace trimmed",
 			setupEnv: func(t *testing.T) {
 				t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", "  fdrl_123456\n")
-				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "\torg_abcdef  ")
+				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "\tabcdef01-2345-4678-89ab-cdef01234567  ")
 				t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", "  svac_789012\t")
 				t.Setenv("ANTHROPIC_ID_TOKEN", "\nheader.payload.signature  ")
-				t.Setenv("ANTHROPIC_WORKSPACE_ID", "  wrk_optional_123\n")
+				t.Setenv("ANTHROPIC_WORKSPACE_ID", "  wrkspc_optional_123\n")
 			},
 			want: tokensource.ClaudeWIFConfig{
 				FederationRuleID: "fdrl_123456",
-				OrganizationID:   "org_abcdef",
+				OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 				ServiceAccountID: "svac_789012",
 				IDToken:          "header.payload.signature",
-				WorkspaceID:      "wrk_optional_123",
+				WorkspaceID:      "wrkspc_optional_123",
 			},
 		},
 		{
@@ -126,7 +126,7 @@ func TestResolveTokenProvider_ClaudeWIF_PartialConfigurationDoesNotFallBack(t *t
 			name: "rule and organization with static key",
 			setupEnv: func(t *testing.T) {
 				t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", "fdrl_123456")
-				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "org_abcdef")
+				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "abcdef01-2345-4678-89ab-cdef01234567")
 				t.Setenv("CLAUDE_API_KEY", "static-key")
 				t.Setenv("REVIEW_API_KEY", "neutral-key")
 			},
@@ -182,7 +182,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsKeepStatic(t *testing.T) 
 			name:     "workspace alone",
 			provider: "claude",
 			setupEnv: func(t *testing.T) {
-				t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrk_123")
+				t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_123")
 				t.Setenv("CLAUDE_API_KEY", "static-key")
 			},
 			want: "static-key",
@@ -220,7 +220,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsKeepStatic(t *testing.T) 
 			name:     "organization alone keeps static key",
 			provider: "claude",
 			setupEnv: func(t *testing.T) {
-				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "org_abcdef")
+				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "abcdef01-2345-4678-89ab-cdef01234567")
 				t.Setenv("CLAUDE_API_KEY", "static-key")
 			},
 			want: "static-key",
@@ -238,7 +238,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsKeepStatic(t *testing.T) 
 			name:     "organization and service account without rule keep static key",
 			provider: "claude",
 			setupEnv: func(t *testing.T) {
-				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "org_abcdef")
+				t.Setenv("ANTHROPIC_ORGANIZATION_ID", "abcdef01-2345-4678-89ab-cdef01234567")
 				t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", "svac_789012")
 				t.Setenv("CLAUDE_API_KEY", "static-key")
 			},
@@ -343,7 +343,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsKeepVault(t *testing.T) {
 			name:     "workspace alone",
 			provider: "claude",
 			setupEnv: func(t *testing.T) {
-				t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrk_123")
+				t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_123")
 				setVaultEnv(t)
 			},
 		},
@@ -392,7 +392,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsNameStaticVariable(t *tes
 			name:     "workspace alone",
 			provider: "claude",
 			setupEnv: func(t *testing.T) {
-				t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrk_123")
+				t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_123")
 			},
 			wantSubstr: "CLAUDE_API_KEY",
 		},
@@ -441,10 +441,10 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsNameStaticVariable(t *tes
 func TestResolveTokenProvider_ClaudeWIF_TrimsValuesIntoCredential(t *testing.T) {
 	clearTokenProviderEnv(t)
 	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", "  fdrl_123456\n")
-	t.Setenv("ANTHROPIC_ORGANIZATION_ID", "\torg_abcdef  ")
+	t.Setenv("ANTHROPIC_ORGANIZATION_ID", "\tabcdef01-2345-4678-89ab-cdef01234567  ")
 	t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", "  svac_789012\t")
 	t.Setenv("ANTHROPIC_ID_TOKEN", " \theader.payload.signature\n")
-	t.Setenv("ANTHROPIC_WORKSPACE_ID", "  wrk_optional_123\n")
+	t.Setenv("ANTHROPIC_WORKSPACE_ID", "  wrkspc_optional_123\n")
 	t.Setenv("CLAUDE_API_KEY", "static-key")
 	t.Setenv("REVIEW_API_KEY", "neutral-key")
 	setVaultEnv(t)
@@ -458,7 +458,7 @@ func TestResolveTokenProvider_ClaudeWIF_TrimsValuesIntoCredential(t *testing.T) 
 		t.Fatalf("provider has type %T, want *tokensource.ClaudeWIF", provider)
 	}
 	want := defaultTestClaudeWIFConfig
-	want.WorkspaceID = "wrk_optional_123"
+	want.WorkspaceID = "wrkspc_optional_123"
 	if got := wif.Config(); got != want {
 		t.Errorf("Config() = %+v, want %+v", got, want)
 	}

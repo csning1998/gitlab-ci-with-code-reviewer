@@ -13,6 +13,7 @@ import (
 	"ci-tools/internal/gitlab"
 	"ci-tools/internal/providers"
 	"ci-tools/internal/review"
+	"ci-tools/internal/tokensource"
 )
 
 // resolvePrompt reads the review prompt declared for the model. A prompt_file MUST stay inside
@@ -103,6 +104,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+	fmt.Println(tokensource.ModeDescription(tokens))
 
 	prompt, err := resolvePrompt(opts)
 	if err != nil {

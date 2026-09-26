@@ -24,18 +24,25 @@ func clearTokenProviderEnv(t *testing.T) {
 
 var defaultTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
 	FederationRuleID: "fdrl_123456",
-	OrganizationID:   "org_abcdef",
+	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_789012",
 	IDToken:          "header.payload.signature",
+}
+
+// setClaudeWIFEnvFrom declares the Claude WIF variables of cfg for the current test.
+func setClaudeWIFEnvFrom(t *testing.T, cfg tokensource.ClaudeWIFConfig) {
+	t.Helper()
+	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", cfg.FederationRuleID)
+	t.Setenv("ANTHROPIC_ORGANIZATION_ID", cfg.OrganizationID)
+	t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", cfg.ServiceAccountID)
+	t.Setenv("ANTHROPIC_ID_TOKEN", cfg.IDToken)
+	t.Setenv("ANTHROPIC_WORKSPACE_ID", cfg.WorkspaceID)
 }
 
 // setClaudeWIFEnv declares a complete Claude WIF configuration for the current test.
 func setClaudeWIFEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", defaultTestClaudeWIFConfig.FederationRuleID)
-	t.Setenv("ANTHROPIC_ORGANIZATION_ID", defaultTestClaudeWIFConfig.OrganizationID)
-	t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", defaultTestClaudeWIFConfig.ServiceAccountID)
-	t.Setenv("ANTHROPIC_ID_TOKEN", defaultTestClaudeWIFConfig.IDToken)
+	setClaudeWIFEnvFrom(t, defaultTestClaudeWIFConfig)
 }
 
 // setVaultEnv declares a complete federation configuration for the current test.
@@ -170,12 +177,12 @@ func TestResolveTokenProvider_AppliesDefaultMountAndField(t *testing.T) {
 func TestResolveTokenProvider_HonoursExplicitMountAndField(t *testing.T) {
 	clearTokenProviderEnv(t)
 	setVaultEnv(t)
-	t.Setenv("VAULT_AUTH_MOUNT", "spire-oidc-jwt")
+	t.Setenv("VAULT_AUTH_MOUNT", "explicit-mount")
 	t.Setenv("VAULT_SECRET_FIELD", "claude_api_key")
 
 	cfg := DeriveVaultKVConfig("claude")
-	if cfg.AuthMountPath != "spire-oidc-jwt" {
-		t.Errorf("AuthMountPath = %q, want %q", cfg.AuthMountPath, "spire-oidc-jwt")
+	if cfg.AuthMountPath != "explicit-mount" {
+		t.Errorf("AuthMountPath = %q, want %q", cfg.AuthMountPath, "explicit-mount")
 	}
 	if cfg.SecretField != "claude_api_key" {
 		t.Errorf("SecretField = %q, want %q", cfg.SecretField, "claude_api_key")

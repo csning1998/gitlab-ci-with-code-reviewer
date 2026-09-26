@@ -17,7 +17,7 @@ include:
       reviewer_image: "registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:edge"
       review_models:
         - "claude-sonnet-5"
-        - "gemini-3.6-flash"
+        - "gemini-3.7-flash"
       enable_sonarqube: true
       sonar_scanner_tags: ["sonarqube-network"]
       sonar_go_coverage_path: "tools/ci/coverage.out"
@@ -131,7 +131,7 @@ publish-catalog:
 #       LOGIN_RESP=$(curl ${CURL_TLS_ARGS} --silent --show-error --fail \
 #         --request POST \
 #         --data "{\"jwt\": \"${GITLAB_OIDC_TOKEN}\", \"role\": \"ci-code-reviewer\"}" \
-#         "${VAULT_ADDR}/v1/auth/gitlab-saas-jwt/login")
+#         "${VAULT_ADDR}/v1/auth/gitlab-saas-ci-job-jwt-provider/login")
 #       CLIENT_TOKEN=$(echo "${LOGIN_RESP}" | jq -r '.auth.client_token // empty')
 #       if [ -z "${CLIENT_TOKEN}" ]; then
 #         echo "Error: Vault login did not yield a valid client_token."

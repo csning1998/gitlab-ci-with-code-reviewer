@@ -9,7 +9,7 @@ data "terraform_remote_state" "meta_gitlab_project" {
 ephemeral "vault_kv_secret_v2" "state_backend" {
   provider = vault.bastion
   mount    = "secret"
-  name     = "gitlab-ci-with-code-reviewer/state-backend"
+  name     = "gitlab-ci-with-code-reviewer/terraform/state-backend"
 }
 
 data "vault_kv_secret_v2" "sonarqube" {

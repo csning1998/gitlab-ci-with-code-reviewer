@@ -26,8 +26,8 @@ spec:
         Audience claim of the requested CI identity token. The value MUST match the
         bound_audiences of the Vault JWT auth role when that role binds an audience.
     review_vault_auth_mount:
-      default: 'gitlab-saas-jwt'
-      description: 'Vault JWT auth backend mount path.'
+      default: ''
+      description: 'Vault JWT auth backend mount path. An empty value selects the default of the reviewer.'
     review_vault_role:
       default: ''
       description: 'Vault JWT auth role name. Required when review_vault_addr is set.'

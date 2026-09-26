@@ -48,6 +48,11 @@ func executeReviewSubprocessInDir(t *testing.T, dir string, extraEnv ...string) 
 		"VAULT_SECRET_PATH=",
 		"VAULT_SECRET_FIELD=",
 		"VAULT_CACERT=",
+		"ANTHROPIC_FEDERATION_RULE_ID=",
+		"ANTHROPIC_ORGANIZATION_ID=",
+		"ANTHROPIC_SERVICE_ACCOUNT_ID=",
+		"ANTHROPIC_ID_TOKEN=",
+		"ANTHROPIC_WORKSPACE_ID=",
 		"REVIEW_MR_REVIEWER=mock-gitlab-token",
 		"REVIEW_API_KEY=mock-provider-key",
 		"REVIEW_MODEL=claude-sonnet-5",
@@ -145,9 +150,12 @@ func TestReview_ResolvesProviderKeyForSelectedModel(t *testing.T) {
 
 func TestReview_EmptyChanges_SucceedsWithoutLLMCall(t *testing.T) {
 	server := newEmptyChangesGitLabServer(t)
-	code, _, stderr := executeReviewSubprocess(t, "CI_API_V4_URL="+server.URL)
+	code, stdout, stderr := executeReviewSubprocess(t, "CI_API_V4_URL="+server.URL)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Mode: Legacy Token") {
+		t.Errorf("stdout = %q, want mention of 'Mode: Legacy Token'", stdout)
 	}
 }
 
@@ -265,7 +273,7 @@ slots:
 func TestReview_FederationCredentialReplacesStaticKey(t *testing.T) {
 	server := newEmptyChangesGitLabServer(t)
 
-	code, _, stderr := executeReviewSubprocess(t,
+	code, stdout, stderr := executeReviewSubprocess(t,
 		"CI_API_V4_URL="+server.URL,
 		"REVIEW_API_KEY=",
 		"VAULT_ADDR=https://vault.example.com",
@@ -276,6 +284,43 @@ func TestReview_FederationCredentialReplacesStaticKey(t *testing.T) {
 	)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Mode: Workload Identity Federation (Vault)") {
+		t.Errorf("stdout = %q, want mention of 'Mode: Workload Identity Federation (Vault)'", stdout)
+	}
+}
+
+func validClaudeWorkloadIdentityFederationEnv(overrides ...string) []string {
+	env := map[string]string{
+		"ANTHROPIC_FEDERATION_RULE_ID": "fdrl_123456",
+		"ANTHROPIC_ORGANIZATION_ID":    "abcdef01-2345-4678-89ab-cdef01234567",
+		"ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_123456",
+		"ANTHROPIC_ID_TOKEN":           "header.payload.signature",
+	}
+	for _, override := range overrides {
+		k, v, ok := strings.Cut(override, "=")
+		if ok {
+			env[k] = v
+		}
+	}
+	res := make([]string, 0, len(env))
+	for k, v := range env {
+		res = append(res, k+"="+v)
+	}
+	return res
+}
+
+func TestReview_ClaudeWorkloadIdentityFederation_ReplacesStaticKey(t *testing.T) {
+	server := newEmptyChangesGitLabServer(t)
+
+	code, stdout, stderr := executeReviewSubprocess(t,
+		append(validClaudeWorkloadIdentityFederationEnv(), "CI_API_V4_URL="+server.URL, "REVIEW_API_KEY=")...,
+	)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Mode: Workload Identity Federation (Claude Native)") {
+		t.Errorf("stdout = %q, want mention of 'Mode: Workload Identity Federation (Claude Native)'", stdout)
 	}
 }
 
@@ -614,6 +659,67 @@ func TestReview_EndpointBoundaryChecks(t *testing.T) {
 				dir = tc.dir(t)
 			}
 			code, _, stderr := executeReviewSubprocessInDir(t, dir, tc.env...)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
+			}
+			if !strings.Contains(stderr, tc.wantWord) {
+				t.Errorf("stderr = %q, want %s named", stderr, tc.wantWord)
+			}
+		})
+	}
+}
+
+func TestReview_ClaudeWorkloadIdentityFederationBoundaryChecks(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      []string
+		wantWord string
+	}{
+		{
+			name:     "missing id token exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_ID_TOKEN="),
+			wantWord: "ANTHROPIC_ID_TOKEN",
+		},
+		{
+			name:     "missing organization id exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_ORGANIZATION_ID="),
+			wantWord: "ANTHROPIC_ORGANIZATION_ID",
+		},
+		{
+			name:     "missing service account id exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_SERVICE_ACCOUNT_ID="),
+			wantWord: "ANTHROPIC_SERVICE_ACCOUNT_ID",
+		},
+		{
+			name:     "invalid rule prefix exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_FEDERATION_RULE_ID=invalid_rule"),
+			wantWord: "ANTHROPIC_FEDERATION_RULE_ID",
+		},
+		{
+			name:     "invalid organization format exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_ORGANIZATION_ID=not-a-valid-uuid"),
+			wantWord: "ANTHROPIC_ORGANIZATION_ID",
+		},
+		{
+			name:     "invalid service account prefix exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_SERVICE_ACCOUNT_ID=invalid_svac"),
+			wantWord: "ANTHROPIC_SERVICE_ACCOUNT_ID",
+		},
+		{
+			name:     "invalid workspace prefix exits nonzero",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_WORKSPACE_ID=invalid_workspace"),
+			wantWord: "ANTHROPIC_WORKSPACE_ID",
+		},
+		{
+			name:     "broken federation with static key fails loudly without silent fallback",
+			env:      validClaudeWorkloadIdentityFederationEnv("ANTHROPIC_ID_TOKEN=", "CLAUDE_API_KEY=static-fallback-key"),
+			wantWord: "ANTHROPIC_ID_TOKEN",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, stderr := executeReviewSubprocess(t, tc.env...)
 			if code != 1 {
 				t.Errorf("exit code = %d, want 1; stderr = %q", code, stderr)
 			}

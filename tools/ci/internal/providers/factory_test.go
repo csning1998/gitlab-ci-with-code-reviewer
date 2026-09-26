@@ -153,7 +153,7 @@ func TestNew_FederatedCredentialReachesProviderRequest(t *testing.T) {
 	t.Setenv("GROK_API_KEY", "")
 	t.Setenv("VAULT_ADDR", vault.URL)
 	t.Setenv("VAULT_ID_TOKEN", "header.payload.signature")
-	t.Setenv("VAULT_AUTH_MOUNT", "gitlab-saas-jwt")
+	t.Setenv("VAULT_AUTH_MOUNT", "ci-job-jwt")
 	t.Setenv("VAULT_ROLE", "ci-code-reviewer")
 	t.Setenv("VAULT_KV_MOUNT", "secret")
 	t.Setenv("VAULT_SECRET_PATH", "ci/credentials")

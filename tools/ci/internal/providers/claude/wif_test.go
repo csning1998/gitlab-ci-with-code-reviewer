@@ -13,10 +13,10 @@ import (
 
 var validClaudeWIFConfig = tokensource.ClaudeWIFConfig{
 	FederationRuleID: "fdrl_123456",
-	OrganizationID:   "org_abcdef",
+	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_789012",
 	IDToken:          "header.payload.signature",
-	WorkspaceID:      "wrk_123456",
+	WorkspaceID:      "wrkspc_123456",
 }
 
 func mustNewClaudeWIF(t *testing.T, cfg tokensource.ClaudeWIFConfig) *tokensource.ClaudeWIF {
