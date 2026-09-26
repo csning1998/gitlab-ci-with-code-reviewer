@@ -4,13 +4,28 @@ variable "gitlab_project_id" {
   type        = string
 }
 
-variable "vault_secret" {
-  description = "Vault KV v2 secret configuration containing the reviewer bot token."
+variable "vault_secrets" {
+  description = "Vault KV v2 secret locations for CI bot credentials."
   type = object({
-    mount = optional(string, "secret")
-    name  = optional(string, "gitlab-ci-with-code-reviewer/integration/code-reviewer-bot")
+    code_reviewer = optional(object({
+      mount = optional(string, "secret")
+      name  = optional(string, "gitlab-ci-with-code-reviewer/integration/code-reviewer-bot")
+    }), null)
+    auto_version_tag = optional(object({
+      mount = optional(string, "secret")
+      name  = optional(string, "gitlab-ci-with-code-reviewer/integration/auto-version-tag-bot")
+    }), null)
   })
-  default = {}
+  default = {
+    code_reviewer = {
+      mount = "secret"
+      name  = "gitlab-ci-with-code-reviewer/integration/code-reviewer-bot"
+    }
+    auto_version_tag = {
+      mount = "secret"
+      name  = "gitlab-ci-with-code-reviewer/integration/auto-version-tag-bot"
+    }
+  }
 }
 
 variable "legacy_alias_enabled" {
