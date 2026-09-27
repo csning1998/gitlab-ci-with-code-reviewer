@@ -2,3 +2,5 @@
 modules:
   - name: ''
     dir: '.'
+  - name: 'provisioner-code-reviewer'
+    dir: 'terraform/modules/provisioner-code-reviewer'
