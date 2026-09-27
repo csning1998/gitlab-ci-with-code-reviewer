@@ -70,7 +70,8 @@ module "code_reviewer" {
 }
 
 module "github_mirror" {
-  source = "../../../../parent-group-governance/terraform/modules/provisioner-github-mirror"
+  source  = "gitlab.com/csning1998-lab/provisioner-github-mirror/gitlab"
+  version = "~> 0.3.0"
 
   gitlab_project_id = module.baseline.project_id
 
