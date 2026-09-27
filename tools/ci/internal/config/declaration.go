@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"strings"
 )
 
@@ -57,10 +58,33 @@ func ResolveDeclaredOptions(path, key string) (ModelOptions, error) {
 	}
 	opts.Model = canonicalModel
 
+	applyAzureDefaults(&opts)
+
 	if err := Validate(opts); err != nil {
 		return ModelOptions{}, err
 	}
 	return opts, nil
+}
+
+// DefaultAzureAPIVersion defines the fallback API version for Azure OpenAI chat completions.
+const DefaultAzureAPIVersion = "2024-10-21"
+
+// applyAzureDefaults supplies fallback BaseURL and APIVersion from environment variables
+// for Azure OpenAI models when not explicitly configured.
+func applyAzureDefaults(opts *ModelOptions) {
+	if opts.Provider != "azure-openai" && opts.Provider != "azure_openai" {
+		return
+	}
+	if opts.BaseURL == "" {
+		opts.BaseURL = strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT"))
+	}
+	if opts.APIVersion == "" {
+		if envVer := strings.TrimSpace(os.Getenv("AZURE_OPENAI_API_VERSION")); envVer != "" {
+			opts.APIVersion = envVer
+		} else {
+			opts.APIVersion = DefaultAzureAPIVersion
+		}
+	}
 }
 
 // lookupDeclaredEntry resolves key through the slot bindings before the model table. A slot name

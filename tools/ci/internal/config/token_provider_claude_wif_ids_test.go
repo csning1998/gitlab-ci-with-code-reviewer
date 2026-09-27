@@ -40,8 +40,8 @@ func TestResolveTokenProvider_ClaudeWIF_LegacyOrganizationPrefixNamesEnvironment
 	setClaudeWIFEnvFrom(t, cfg)
 
 	_, err := ResolveTokenProvider("claude")
-	var fieldErr *tokensource.FieldError
-	if !errors.As(err, &fieldErr) || fieldErr.Field != tokensource.FieldOrganizationID {
+	fieldErr, ok := errors.AsType[*tokensource.FieldError](err)
+	if !ok || fieldErr.Field != tokensource.FieldOrganizationID {
 		t.Fatalf("ResolveTokenProvider(...) error = %v, want a FieldError for the organization id", err)
 	}
 	if want := "invalid ANTHROPIC_ORGANIZATION_ID"; !strings.Contains(err.Error(), want) {

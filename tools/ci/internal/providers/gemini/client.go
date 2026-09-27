@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type Config struct {
 // Client manages HTTP interactions with the Gemini generateContent REST endpoint for a configured model.
 type Client struct {
 	url              string
+	model            string
 	timeout          time.Duration
 	tokens           tokensource.Provider
 	generationConfig map[string]any
@@ -56,15 +58,84 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	return &Client{
-		url: fmt.Sprintf(
-			"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent",
-			model,
-		),
+		url:              resolveEndpoint(model, cfg.ModelOptions, cfg.Tokens),
+		model:            model,
 		timeout:          timeout,
 		tokens:           cfg.Tokens,
 		generationConfig: buildGenerationConfig(model, cfg.ModelOptions),
 		http:             &http.Client{Timeout: timeout, CheckRedirect: httpguard.RefuseCrossHostRedirect},
 	}, nil
+}
+
+func resolveLocation() string {
+	if loc := strings.TrimSpace(os.Getenv("GCP_LOCATION")); loc != "" {
+		return loc
+	}
+	return "global"
+}
+
+func resolveProjectID(tokens tokensource.Provider) string {
+	if tokens != nil {
+		type gcpConfigProvider interface {
+			Config() tokensource.GoogleWIFConfig
+		}
+		if p, ok := tokens.(gcpConfigProvider); ok {
+			if id := strings.TrimSpace(p.Config().ProjectID); id != "" {
+				return id
+			}
+		}
+	}
+	return strings.TrimSpace(os.Getenv("GCP_PROJECT_ID"))
+}
+
+func isGoogleWIF(tokens tokensource.Provider) bool {
+	if tokens == nil {
+		return false
+	}
+	type gcpConfigProvider interface {
+		Config() tokensource.GoogleWIFConfig
+	}
+	_, ok := tokens.(gcpConfigProvider)
+	return ok
+}
+
+func buildVertexAIEndpoint(location, projectID, model string) string {
+	if location == "global" || location == "" {
+		return fmt.Sprintf(
+			"https://aiplatform.googleapis.com/v1/projects/%s/locations/global/publishers/google/models/%s:generateContent",
+			projectID,
+			model,
+		)
+	}
+	return fmt.Sprintf(
+		"https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
+		location,
+		projectID,
+		location,
+		model,
+	)
+}
+
+func resolveEndpoint(model string, opts config.ModelOptions, tokens tokensource.Provider) string {
+	if baseURL := strings.TrimSpace(opts.BaseURL); baseURL != "" {
+		base := strings.TrimSuffix(baseURL, "/")
+		if strings.HasSuffix(base, ":generateContent") {
+			return base
+		}
+		return fmt.Sprintf("%s/models/%s:generateContent", base, model)
+	}
+
+	if isGoogleWIF(tokens) {
+		projectID := resolveProjectID(tokens)
+		if projectID != "" {
+			return buildVertexAIEndpoint(resolveLocation(), projectID, model)
+		}
+	}
+
+	return fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent",
+		model,
+	)
 }
 
 func (c *Client) Name() string { return "Gemini" }
@@ -83,6 +154,14 @@ func (c *Client) Review(prompt string) (result string, err error) {
 		return "", fmt.Errorf("gemini: resolve credential: %w", err)
 	}
 
+	endpoint := c.url
+	if cred.Kind == tokensource.KindBearer && strings.Contains(endpoint, "generativelanguage.googleapis.com") {
+		projectID := resolveProjectID(c.tokens)
+		if projectID != "" {
+			endpoint = buildVertexAIEndpoint(resolveLocation(), projectID, c.model)
+		}
+	}
+
 	payload := map[string]any{
 		"contents":         []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": prompt}}}},
 		"generationConfig": c.generationConfig,
@@ -91,7 +170,7 @@ func (c *Client) Review(prompt string) (result string, err error) {
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -99,6 +178,9 @@ func (c *Client) Review(prompt string) (result string, err error) {
 
 	if cred.Kind == tokensource.KindBearer {
 		req.Header.Set("Authorization", "Bearer "+cred.Value)
+		if projectID := resolveProjectID(c.tokens); projectID != "" {
+			req.Header.Set("x-goog-user-project", projectID)
+		}
 	} else {
 		req.Header.Set("x-goog-api-key", cred.Value)
 	}

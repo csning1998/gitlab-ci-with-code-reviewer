@@ -14,11 +14,18 @@ import (
 type Field string
 
 const (
-	FieldFederationRuleID Field = "federation rule id"
-	FieldOrganizationID   Field = "organization id"
-	FieldServiceAccountID Field = "service account id"
-	FieldIDToken          Field = "id token"
-	FieldWorkspaceID      Field = "workspace id"
+	FieldFederationRuleID         Field = "federation rule id"
+	FieldOrganizationID           Field = "organization id"
+	FieldServiceAccountID         Field = "service account id"
+	FieldIDToken                  Field = "id token"
+	FieldWorkspaceID              Field = "workspace id"
+	FieldTenantID                 Field = "tenant id"
+	FieldClientID                 Field = "client id"
+	FieldOpenAIEndpoint           Field = "openai endpoint"
+	FieldProjectID                Field = "project id"
+	FieldProjectNumber            Field = "project number"
+	FieldWorkloadIdentityProvider Field = "workload identity provider"
+	FieldServiceAccount           Field = "service account"
 )
 
 const (
@@ -28,20 +35,41 @@ const (
 
 // FieldError records an invalid or missing configuration field.
 type FieldError struct {
-	Field  Field
-	Reason string
+	Provider string
+	Field    Field
+	Reason   string
 }
 
 func (e *FieldError) Error() string {
-	return fmt.Sprintf("claude wif: %s %s", e.Field, e.Reason)
+	provider := e.Provider
+	if provider == "" {
+		provider = "claude"
+	}
+	return fmt.Sprintf("%s wif: %s %s", provider, e.Field, e.Reason)
 }
 
 func newRequiredFieldError(f Field) error {
-	return &FieldError{Field: f, Reason: ReasonRequired}
+	return &FieldError{Provider: "claude", Field: f, Reason: ReasonRequired}
 }
 
 func newInvalidFormatFieldError(f Field) error {
-	return &FieldError{Field: f, Reason: ReasonInvalidFormat}
+	return &FieldError{Provider: "claude", Field: f, Reason: ReasonInvalidFormat}
+}
+
+func newAzureRequiredFieldError(f Field) error {
+	return &FieldError{Provider: "azure", Field: f, Reason: ReasonRequired}
+}
+
+func newAzureInvalidFormatFieldError(f Field) error {
+	return &FieldError{Provider: "azure", Field: f, Reason: ReasonInvalidFormat}
+}
+
+func newGoogleRequiredFieldError(f Field) error {
+	return &FieldError{Provider: "google", Field: f, Reason: ReasonRequired}
+}
+
+func newGoogleInvalidFormatFieldError(f Field) error {
+	return &FieldError{Provider: "google", Field: f, Reason: ReasonInvalidFormat}
 }
 
 // ClaudeWIFConfig specifies parameters for Anthropic Claude Workload Identity Federation.
@@ -240,6 +268,10 @@ func ModeDescription(p Provider) string {
 	switch p.(type) {
 	case *ClaudeWIF:
 		return "Mode: Workload Identity Federation (Claude Native)"
+	case *AzureWIF:
+		return "Mode: Workload Identity Federation (Azure OpenAI Native)"
+	case *GoogleWIF:
+		return "Mode: Workload Identity Federation (Google Cloud Native)"
 	case *VaultKV:
 		return "Mode: Workload Identity Federation (Vault)"
 	default:

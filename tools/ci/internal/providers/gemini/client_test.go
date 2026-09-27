@@ -85,48 +85,72 @@ func TestName_ReturnsGemini(t *testing.T) {
 	}
 }
 
-func TestNew_ConfigurationValidation(t *testing.T) {
-	t.Run("valid model URL generation", func(t *testing.T) {
-		c, err := New(Config{
-			ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"},
-			Tokens:       tokensource.Static("key"),
+func TestNew_DefaultGenerativeLanguageURL(t *testing.T) {
+	c, err := New(Config{
+		ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"},
+		Tokens:       tokensource.Static("key"),
+	})
+	if err != nil {
+		t.Fatalf("New(...) returned unexpected error: %v", err)
+	}
+	wantURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
+	if c.url != wantURL {
+		t.Errorf("url = %q, want %q", c.url, wantURL)
+	}
+}
+
+func TestNew_RejectsInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      Config
+		wantWord string
+	}{
+		{
+			name:     "rejects nil tokens",
+			cfg:      Config{ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"}},
+			wantWord: "tokens",
+		},
+		{
+			name:     "rejects empty model",
+			cfg:      Config{Tokens: tokensource.Static("key")},
+			wantWord: "model",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := New(tc.cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.wantWord) {
+				t.Fatalf("New(...) error = %v, want error containing %q", err, tc.wantWord)
+			}
 		})
-		if err != nil {
-			t.Fatalf("New(...) returned unexpected error: %v", err)
-		}
-		wantURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
-		if c.url != wantURL {
-			t.Errorf("url = %q, want %q", c.url, wantURL)
-		}
-	})
+	}
+}
 
-	t.Run("rejects invalid configuration", func(t *testing.T) {
-		tests := []struct {
-			name     string
-			cfg      Config
-			wantWord string
-		}{
-			{
-				name:     "rejects nil tokens",
-				cfg:      Config{ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"}},
-				wantWord: "tokens",
-			},
-			{
-				name:     "rejects empty model",
-				cfg:      Config{Tokens: tokensource.Static("key")},
-				wantWord: "model",
-			},
-		}
-
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				_, err := New(tc.cfg)
-				if err == nil || !strings.Contains(err.Error(), tc.wantWord) {
-					t.Fatalf("New(...) error = %v, want error containing %q", err, tc.wantWord)
-				}
-			})
-		}
+func TestNew_VertexAIEndpointGeneration(t *testing.T) {
+	t.Setenv("GCP_PROJECT_ID", "test-project-123")
+	t.Setenv("GCP_LOCATION", "")
+	wif, err := tokensource.NewGoogleWIF(tokensource.GoogleWIFConfig{
+		ProjectID:                "test-project-123",
+		ProjectNumber:            "1234567890",
+		WorkloadIdentityProvider: "projects/1234567890/locations/global/workloadIdentityPools/pool/providers/prov",
+		ServiceAccount:           "sa@test-project-123.iam.gserviceaccount.com",
+		IDToken:                  "mock-id-token",
 	})
+	if err != nil {
+		t.Fatalf("NewGoogleWIF error = %v", err)
+	}
+	c, err := New(Config{
+		ModelOptions: config.ModelOptions{Model: "gemini-3.7-flash"},
+		Tokens:       wif,
+	})
+	if err != nil {
+		t.Fatalf("New(...) returned unexpected error: %v", err)
+	}
+	wantURL := "https://aiplatform.googleapis.com/v1/projects/test-project-123/locations/global/publishers/google/models/gemini-3.7-flash:generateContent"
+	if c.url != wantURL {
+		t.Errorf("url = %q, want %q", c.url, wantURL)
+	}
 }
 
 func TestNew_TimeoutResolution(t *testing.T) {
@@ -745,5 +769,118 @@ func TestReview_CredentialHeaders_APIKeyAndBearer(t *testing.T) {
 				t.Errorf("x-goog-api-key header = %q, want %q", gotAPIKey, tc.wantAPIKey)
 			}
 		})
+	}
+}
+
+type captureURLTransport struct {
+	target      string
+	capturedURL string
+	base        http.RoundTripper
+}
+
+func (ct *captureURLTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ct.capturedURL = req.URL.String()
+	clone := req.Clone(req.Context())
+	targetURL, err := http.NewRequest(req.Method, ct.target, req.Body)
+	if err != nil {
+		return nil, err
+	}
+	clone.URL = targetURL.URL
+	clone.Host = targetURL.URL.Host
+	base := ct.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(clone)
+}
+
+func TestReview_BearerRoutesToVertexAI(t *testing.T) {
+	t.Setenv("GCP_PROJECT_ID", "test-project-123")
+	t.Setenv("GCP_LOCATION", "")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"[]"}]}}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := mustNewClient(t, Config{
+		ModelOptions: config.ModelOptions{
+			Provider: "gemini",
+			Model:    "gemini-3.7-flash",
+			Timeout:  5 * time.Second,
+		},
+		Tokens: staticCredProvider{
+			cred: tokensource.Credential{
+				Value: "gcp-token-456",
+				Kind:  tokensource.KindBearer,
+			},
+		},
+	})
+	transport := &captureURLTransport{target: server.URL}
+	client.http = &http.Client{Transport: transport}
+
+	res, err := client.Review("test prompt")
+	if err != nil {
+		t.Fatalf("Review() returned error: %v", err)
+	}
+	if res != "[]" {
+		t.Errorf("Review() = %q, want %q", res, "[]")
+	}
+
+	wantURL := "https://aiplatform.googleapis.com/v1/projects/test-project-123/locations/global/publishers/google/models/gemini-3.7-flash:generateContent"
+	if transport.capturedURL != wantURL {
+		t.Errorf("request URL = %q, want %q", transport.capturedURL, wantURL)
+	}
+}
+
+type mockGCPWIFTokenSource struct {
+	cfg tokensource.GoogleWIFConfig
+}
+
+func (m mockGCPWIFTokenSource) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
+	return tokensource.Credential{
+		Value: "mock-gcp-sa-token",
+		Kind:  tokensource.KindBearer,
+	}, nil
+}
+
+func (m mockGCPWIFTokenSource) Config() tokensource.GoogleWIFConfig {
+	return m.cfg
+}
+
+func TestReview_GoogleWIF_UserProjectHeaderDerivedFromTokenSource(t *testing.T) {
+	t.Setenv("GCP_PROJECT_ID", "")
+	t.Setenv("GCP_LOCATION", "")
+
+	var capturedHeader http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Clone()
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"[]"}]}}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := mustNewClient(t, Config{
+		ModelOptions: config.ModelOptions{
+			Provider: "gemini",
+			Model:    "gemini-3.7-flash",
+			Timeout:  5 * time.Second,
+		},
+		Tokens: mockGCPWIFTokenSource{
+			cfg: tokensource.GoogleWIFConfig{
+				ProjectID: "token-source-project-456",
+			},
+		},
+	})
+	client.http = &http.Client{Transport: &captureURLTransport{target: server.URL}}
+
+	_, err := client.Review("test prompt")
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	gotProjectHeader := capturedHeader.Get("x-goog-user-project")
+	wantProjectHeader := "token-source-project-456"
+	if gotProjectHeader != wantProjectHeader {
+		t.Errorf("x-goog-user-project header = %q, want %q", gotProjectHeader, wantProjectHeader)
 	}
 }

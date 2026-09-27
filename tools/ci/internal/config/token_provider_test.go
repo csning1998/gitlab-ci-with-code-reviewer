@@ -17,32 +17,12 @@ func clearTokenProviderEnv(t *testing.T) {
 		"VAULT_KV_MOUNT", "VAULT_SECRET_PATH", "VAULT_SECRET_FIELD", "VAULT_CACERT",
 		"ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
 		"ANTHROPIC_SERVICE_ACCOUNT_ID", "ANTHROPIC_ID_TOKEN", "ANTHROPIC_WORKSPACE_ID",
+		"AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_OPENAI_ENDPOINT", "AZURE_ID_TOKEN",
+		"GCP_PROJECT_ID", "GCP_PROJECT_NUMBER", "GCP_WORKLOAD_IDENTITY_PROVIDER",
+		"GCP_SERVICE_ACCOUNT", "GCP_ID_TOKEN",
 	} {
 		t.Setenv(name, "")
 	}
-}
-
-var defaultTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
-	FederationRuleID: "fdrl_123456",
-	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
-	ServiceAccountID: "svac_789012",
-	IDToken:          "header.payload.signature",
-}
-
-// setClaudeWIFEnvFrom declares the Claude WIF variables of cfg for the current test.
-func setClaudeWIFEnvFrom(t *testing.T, cfg tokensource.ClaudeWIFConfig) {
-	t.Helper()
-	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", cfg.FederationRuleID)
-	t.Setenv("ANTHROPIC_ORGANIZATION_ID", cfg.OrganizationID)
-	t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", cfg.ServiceAccountID)
-	t.Setenv("ANTHROPIC_ID_TOKEN", cfg.IDToken)
-	t.Setenv("ANTHROPIC_WORKSPACE_ID", cfg.WorkspaceID)
-}
-
-// setClaudeWIFEnv declares a complete Claude WIF configuration for the current test.
-func setClaudeWIFEnv(t *testing.T) {
-	t.Helper()
-	setClaudeWIFEnvFrom(t, defaultTestClaudeWIFConfig)
 }
 
 // setVaultEnv declares a complete federation configuration for the current test.

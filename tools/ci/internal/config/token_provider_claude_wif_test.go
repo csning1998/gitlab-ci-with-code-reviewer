@@ -9,6 +9,29 @@ import (
 	"ci-tools/internal/tokensource"
 )
 
+var defaultTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
+	FederationRuleID: "fdrl_123456",
+	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
+	ServiceAccountID: "svac_789012",
+	IDToken:          "header.payload.signature",
+}
+
+// setClaudeWIFEnvFrom declares the Claude WIF variables of cfg for the current test.
+func setClaudeWIFEnvFrom(t *testing.T, cfg tokensource.ClaudeWIFConfig) {
+	t.Helper()
+	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", cfg.FederationRuleID)
+	t.Setenv("ANTHROPIC_ORGANIZATION_ID", cfg.OrganizationID)
+	t.Setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", cfg.ServiceAccountID)
+	t.Setenv("ANTHROPIC_ID_TOKEN", cfg.IDToken)
+	t.Setenv("ANTHROPIC_WORKSPACE_ID", cfg.WorkspaceID)
+}
+
+// setClaudeWIFEnv declares a complete Claude WIF configuration for the current test.
+func setClaudeWIFEnv(t *testing.T) {
+	t.Helper()
+	setClaudeWIFEnvFrom(t, defaultTestClaudeWIFConfig)
+}
+
 func TestDeriveClaudeWIFConfig_ValueBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -489,8 +512,8 @@ func TestResolveTokenProvider_ClaudeWIF_MissingRequiredFieldReportsFieldError(t 
 			t.Setenv(tc.envName, "")
 
 			_, err := ResolveTokenProvider("claude")
-			var fieldErr *tokensource.FieldError
-			if !errors.As(err, &fieldErr) {
+			fieldErr, ok := errors.AsType[*tokensource.FieldError](err)
+			if !ok {
 				t.Fatalf("ResolveTokenProvider(...) error = %v, want a wrapped *tokensource.FieldError", err)
 			}
 			if fieldErr.Field != tc.wantField {
@@ -527,8 +550,8 @@ func TestResolveTokenProvider_ClaudeWIF_InvalidFormatNamesEnvironmentVariable(t 
 			t.Setenv(tc.envName, tc.value)
 
 			_, err := ResolveTokenProvider("claude")
-			var fieldErr *tokensource.FieldError
-			if !errors.As(err, &fieldErr) {
+			fieldErr, ok := errors.AsType[*tokensource.FieldError](err)
+			if !ok {
 				t.Fatalf("ResolveTokenProvider(...) error = %v, want a wrapped *tokensource.FieldError", err)
 			}
 			if fieldErr.Field != tc.wantField {

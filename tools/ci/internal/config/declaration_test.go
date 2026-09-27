@@ -219,6 +219,34 @@ models:
 	}
 }
 
+func TestResolveDeclaredOptions_AzureOpenAIFallsBackToEndpointAndDefaultAPIVersion(t *testing.T) {
+	t.Setenv("REVIEW_BASE_URL", "")
+	t.Setenv("REVIEW_API_VERSION", "")
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://oai-csning1998-lab.openai.azure.com/")
+	t.Setenv("AZURE_OPENAI_API_VERSION", "")
+
+	path := writeDeclaration(t, `
+models:
+  azure-reviewer:
+    provider: azure-openai
+    model: gpt-5.6-terra
+`)
+
+	opts, err := ResolveDeclaredOptions(path, "azure-reviewer")
+	if err != nil {
+		t.Fatalf("ResolveDeclaredOptions(...) error = %v", err)
+	}
+	if opts.Provider != "azure-openai" {
+		t.Errorf("Provider = %q, want azure-openai", opts.Provider)
+	}
+	if opts.BaseURL != "https://oai-csning1998-lab.openai.azure.com/" {
+		t.Errorf("BaseURL = %q, want https://oai-csning1998-lab.openai.azure.com/", opts.BaseURL)
+	}
+	if opts.APIVersion != DefaultAzureAPIVersion {
+		t.Errorf("APIVersion = %q, want %q", opts.APIVersion, DefaultAzureAPIVersion)
+	}
+}
+
 func TestResolveDeclaredOptions_WhitespaceAPIVersionDoesNotRouteToAzure(t *testing.T) {
 	t.Setenv("REVIEW_API_VERSION", "   ")
 	t.Setenv("REVIEW_BASE_URL", "   ")

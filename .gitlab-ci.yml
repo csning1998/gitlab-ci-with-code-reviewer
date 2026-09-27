@@ -18,6 +18,7 @@ include:
       review_models:
         - "claude-sonnet-5"
         - "gemini-3.7-flash"
+        - "azure-gpt-5.4-mini"
       enable_sonarqube: true
       sonar_scanner_tags: ["sonarqube-network"]
       sonar_go_coverage_path: "tools/ci/coverage.out"

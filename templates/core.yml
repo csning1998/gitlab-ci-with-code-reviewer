@@ -43,6 +43,14 @@ spec:
       default: 'https://api.anthropic.com'
       description: >-
         Audience claim of the requested Anthropic CI identity token for Workload Identity Federation.
+    review_azure_audience:
+      default: 'https://gitlab.com'
+      description: >-
+        Audience claim of the requested Azure Entra ID CI identity token for Workload Identity Federation.
+    review_gcp_audience:
+      default: 'https://gitlab.com'
+      description: >-
+        Audience claim of the requested Google Cloud Platform CI identity token for Workload Identity Federation.
     review_base_url:
       default: ''
       description: >-
@@ -260,6 +268,10 @@ review:code:
       aud: '$[[ inputs.review_vault_audience ]]'
     ANTHROPIC_ID_TOKEN:
       aud: '$[[ inputs.review_anthropic_audience ]]'
+    AZURE_ID_TOKEN:
+      aud: '$[[ inputs.review_azure_audience ]]'
+    GCP_ID_TOKEN:
+      aud: '$[[ inputs.review_gcp_audience ]]'
   parallel:
     matrix:
       - REVIEW_MODEL: $[[ inputs.review_models ]]

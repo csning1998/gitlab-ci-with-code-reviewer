@@ -140,6 +140,64 @@ func TestCoreTemplate_AnthropicWIFInputs_Boundary(t *testing.T) {
 	}
 }
 
+func TestCoreTemplate_AzureWIFInputs_Boundary(t *testing.T) {
+	specDoc, _ := decodeCoreTemplateDocs(t)
+
+	input, ok := specDoc.Spec.Inputs["review_azure_audience"]
+	if !ok {
+		t.Fatal("spec.inputs missing required review_azure_audience input")
+	}
+
+	gotDefault, ok := input.Default.(string)
+	if !ok {
+		t.Fatalf("review_azure_audience.default type = %T, want string", input.Default)
+	}
+	if gotDefault != "https://gitlab.com" {
+		t.Errorf("review_azure_audience.default = %q, want %q", gotDefault, "https://gitlab.com")
+	}
+	if strings.TrimSpace(gotDefault) != gotDefault {
+		t.Errorf("review_azure_audience.default has leading/trailing whitespace: %q", gotDefault)
+	}
+
+	parsedURL, err := url.Parse(gotDefault)
+	if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" {
+		t.Errorf("review_azure_audience.default %q is not a valid HTTPS URL", gotDefault)
+	}
+
+	if strings.TrimSpace(input.Description) == "" {
+		t.Error("review_azure_audience.description must not be empty")
+	}
+}
+
+func TestCoreTemplate_GCPWIFInputs_Boundary(t *testing.T) {
+	specDoc, _ := decodeCoreTemplateDocs(t)
+
+	input, ok := specDoc.Spec.Inputs["review_gcp_audience"]
+	if !ok {
+		t.Fatal("spec.inputs missing required review_gcp_audience input")
+	}
+
+	gotDefault, ok := input.Default.(string)
+	if !ok {
+		t.Fatalf("review_gcp_audience.default type = %T, want string", input.Default)
+	}
+	if gotDefault != "https://gitlab.com" {
+		t.Errorf("review_gcp_audience.default = %q, want %q", gotDefault, "https://gitlab.com")
+	}
+	if strings.TrimSpace(gotDefault) != gotDefault {
+		t.Errorf("review_gcp_audience.default has leading/trailing whitespace: %q", gotDefault)
+	}
+
+	parsedURL, err := url.Parse(gotDefault)
+	if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" {
+		t.Errorf("review_gcp_audience.default %q is not a valid HTTPS URL", gotDefault)
+	}
+
+	if strings.TrimSpace(input.Description) == "" {
+		t.Error("review_gcp_audience.description must not be empty")
+	}
+}
+
 func TestCoreTemplate_ReviewCodeIDTokens_Boundary(t *testing.T) {
 	_, bodyDoc := decodeCoreTemplateDocs(t)
 	job, ok := bodyDoc.Jobs["review:code"]
@@ -152,20 +210,21 @@ func TestCoreTemplate_ReviewCodeIDTokens_Boundary(t *testing.T) {
 		t.Fatal("review:code.id_tokens must not be empty")
 	}
 
-	vaultToken, ok := idTokens["VAULT_ID_TOKEN"]
-	if !ok {
-		t.Fatal("review:code.id_tokens missing VAULT_ID_TOKEN")
-	}
-	if vaultToken.Aud != "$[[ inputs.review_vault_audience ]]" {
-		t.Errorf("VAULT_ID_TOKEN.aud = %q, want %q", vaultToken.Aud, "$[[ inputs.review_vault_audience ]]")
+	expectedTokens := map[string]string{
+		"VAULT_ID_TOKEN":     "$[[ inputs.review_vault_audience ]]",
+		"ANTHROPIC_ID_TOKEN": "$[[ inputs.review_anthropic_audience ]]",
+		"AZURE_ID_TOKEN":     "$[[ inputs.review_azure_audience ]]",
+		"GCP_ID_TOKEN":       "$[[ inputs.review_gcp_audience ]]",
 	}
 
-	anthropicToken, ok := idTokens["ANTHROPIC_ID_TOKEN"]
-	if !ok {
-		t.Fatal("review:code.id_tokens missing ANTHROPIC_ID_TOKEN")
-	}
-	if anthropicToken.Aud != "$[[ inputs.review_anthropic_audience ]]" {
-		t.Errorf("ANTHROPIC_ID_TOKEN.aud = %q, want %q", anthropicToken.Aud, "$[[ inputs.review_anthropic_audience ]]")
+	for tokenName, wantAud := range expectedTokens {
+		token, ok := idTokens[tokenName]
+		if !ok {
+			t.Fatalf("review:code.id_tokens missing %s", tokenName)
+		}
+		if token.Aud != wantAud {
+			t.Errorf("%s.aud = %q, want %q", tokenName, token.Aud, wantAud)
+		}
 	}
 }
 
@@ -176,7 +235,7 @@ func TestCoreTemplate_ReviewCodeVariables_DoNotShadowIDTokens(t *testing.T) {
 		t.Fatal("templates/core.yml missing review:code job")
 	}
 
-	for _, tokenVar := range []string{"ANTHROPIC_ID_TOKEN", "VAULT_ID_TOKEN"} {
+	for _, tokenVar := range []string{"ANTHROPIC_ID_TOKEN", "VAULT_ID_TOKEN", "AZURE_ID_TOKEN", "GCP_ID_TOKEN"} {
 		if val, exists := job.Variables[tokenVar]; exists {
 			t.Errorf("review:code.variables must not declare %s (got %q), which would shadow OIDC id_tokens", tokenVar, val)
 		}

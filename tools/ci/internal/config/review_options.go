@@ -39,6 +39,7 @@ func ResolveReviewOptions() (ModelOptions, error) {
 		BaseURL:    lookupReviewEnv("BASE_URL"),
 		APIVersion: apiVersion,
 	}
+	applyAzureDefaults(&opts)
 	if err := applyReviewTunables(&opts); err != nil {
 		return ModelOptions{}, err
 	}

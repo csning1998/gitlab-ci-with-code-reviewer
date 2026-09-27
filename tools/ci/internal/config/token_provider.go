@@ -12,16 +12,32 @@ import (
 // ClaudeWIFConfig specifies parameters for Claude Workload Identity Federation.
 type ClaudeWIFConfig = tokensource.ClaudeWIFConfig
 
-// ResolveTokenProvider selects the credential source for provider. A declared Claude WIF configuration
-// takes precedence for the claude provider. A declared VAULT_ADDR selects Workload Identity Federation,
-// in which the CI identity token is exchanged for a short lived Vault token. Every other case uses the
-// static provider credential.
+// AzureWIFConfig specifies parameters for Azure Workload Identity Federation.
+type AzureWIFConfig = tokensource.AzureWIFConfig
+
+// GoogleWIFConfig specifies parameters for Google Cloud Workload Identity Federation.
+type GoogleWIFConfig = tokensource.GoogleWIFConfig
+
+// ResolveTokenProvider selects the credential source for provider. A declared native WIF configuration
+// takes precedence for the matching provider. A declared VAULT_ADDR selects Workload Identity Federation
+// via Vault. Every other case uses the static provider credential.
 func ResolveTokenProvider(provider string) (tokensource.Provider, error) {
 	normalized := strings.ToLower(strings.TrimSpace(provider))
-	if normalized == "claude" {
+	switch normalized {
+	case "claude":
 		cfg := DeriveClaudeWIFConfig()
 		if hasClaudeWIFSignal(cfg) {
 			return newClaudeWIFProvider(cfg)
+		}
+	case "azure-openai", "azure_openai":
+		cfg := DeriveAzureWIFConfig()
+		if hasAzureWIFSignal(cfg) {
+			return newAzureWIFProvider(cfg)
+		}
+	case "gemini", "google":
+		cfg := DeriveGoogleWIFConfig()
+		if hasGoogleWIFSignal(cfg) {
+			return newGoogleWIFProvider(cfg)
 		}
 	}
 
@@ -37,22 +53,48 @@ func ResolveTokenProvider(provider string) (tokensource.Provider, error) {
 }
 
 // hasClaudeWIFSignal checks whether ANTHROPIC_FEDERATION_RULE_ID is configured.
-// FederationRuleID is the primary project-level anchor for Anthropic WIF activation;
-// ambient CI tokens alone do not activate federation mode.
 func hasClaudeWIFSignal(cfg ClaudeWIFConfig) bool {
 	return cfg.FederationRuleID != ""
 }
 
-// newClaudeWIFProvider builds the Anthropic Claude WIF credential source after validating required fields.
+// hasAzureWIFSignal checks whether AZURE_CLIENT_ID is configured.
+func hasAzureWIFSignal(cfg AzureWIFConfig) bool {
+	return cfg.ClientID != ""
+}
+
+// hasGoogleWIFSignal checks whether GCP_WORKLOAD_IDENTITY_PROVIDER is configured.
+func hasGoogleWIFSignal(cfg GoogleWIFConfig) bool {
+	return cfg.WorkloadIdentityProvider != ""
+}
+
+// newClaudeWIFProvider builds the Anthropic Claude WIF credential source.
 func newClaudeWIFProvider(cfg ClaudeWIFConfig) (tokensource.Provider, error) {
 	wif, err := tokensource.NewClaudeWIF(cfg)
 	if err != nil {
-		return nil, mapWIFValidationError(err)
+		return nil, mapClaudeWIFValidationError(err)
 	}
 	return wif, nil
 }
 
-var wifFieldEnvNames = map[tokensource.Field]string{
+// newAzureWIFProvider builds the Azure WIF credential source.
+func newAzureWIFProvider(cfg AzureWIFConfig) (tokensource.Provider, error) {
+	wif, err := tokensource.NewAzureWIF(cfg)
+	if err != nil {
+		return nil, mapAzureWIFValidationError(err)
+	}
+	return wif, nil
+}
+
+// newGoogleWIFProvider builds the Google Cloud WIF credential source.
+func newGoogleWIFProvider(cfg GoogleWIFConfig) (tokensource.Provider, error) {
+	wif, err := tokensource.NewGoogleWIF(cfg)
+	if err != nil {
+		return nil, mapGoogleWIFValidationError(err)
+	}
+	return wif, nil
+}
+
+var claudeWIFFieldEnvNames = map[tokensource.Field]string{
 	tokensource.FieldFederationRuleID: "ANTHROPIC_FEDERATION_RULE_ID",
 	tokensource.FieldOrganizationID:   "ANTHROPIC_ORGANIZATION_ID",
 	tokensource.FieldServiceAccountID: "ANTHROPIC_SERVICE_ACCOUNT_ID",
@@ -60,11 +102,10 @@ var wifFieldEnvNames = map[tokensource.Field]string{
 	tokensource.FieldWorkspaceID:      "ANTHROPIC_WORKSPACE_ID",
 }
 
-// mapWIFValidationError maps tokensource FieldError to user-facing environment variable error messages.
-func mapWIFValidationError(err error) error {
+func mapClaudeWIFValidationError(err error) error {
 	var fieldErr *tokensource.FieldError
 	if errors.As(err, &fieldErr) {
-		if envName, ok := wifFieldEnvNames[fieldErr.Field]; ok {
+		if envName, ok := claudeWIFFieldEnvNames[fieldErr.Field]; ok {
 			if fieldErr.Reason == tokensource.ReasonRequired {
 				return fmt.Errorf("missing %s: %w", envName, err)
 			}
@@ -74,8 +115,48 @@ func mapWIFValidationError(err error) error {
 	return fmt.Errorf("invalid claude wif configuration: %w", err)
 }
 
-// newFederationProvider builds the Vault backed credential source. A missing identity token is
-// rejected rather than silently downgraded, which keeps a broken id_tokens declaration visible.
+var azureWIFFieldEnvNames = map[tokensource.Field]string{
+	tokensource.FieldTenantID:       "AZURE_TENANT_ID",
+	tokensource.FieldClientID:       "AZURE_CLIENT_ID",
+	tokensource.FieldOpenAIEndpoint: "AZURE_OPENAI_ENDPOINT",
+	tokensource.FieldIDToken:        "AZURE_ID_TOKEN",
+}
+
+var googleWIFFieldEnvNames = map[tokensource.Field]string{
+	tokensource.FieldProjectID:                "GCP_PROJECT_ID",
+	tokensource.FieldProjectNumber:            "GCP_PROJECT_NUMBER",
+	tokensource.FieldWorkloadIdentityProvider: "GCP_WORKLOAD_IDENTITY_PROVIDER",
+	tokensource.FieldServiceAccount:           "GCP_SERVICE_ACCOUNT",
+	tokensource.FieldIDToken:                  "GCP_ID_TOKEN",
+}
+
+func mapAzureWIFValidationError(err error) error {
+	var fieldErr *tokensource.FieldError
+	if errors.As(err, &fieldErr) {
+		if envName, ok := azureWIFFieldEnvNames[fieldErr.Field]; ok {
+			if fieldErr.Reason == tokensource.ReasonRequired {
+				return fmt.Errorf("missing %s: %w", envName, err)
+			}
+			return fmt.Errorf("invalid %s: %w", envName, err)
+		}
+	}
+	return fmt.Errorf("invalid azure wif configuration: %w", err)
+}
+
+func mapGoogleWIFValidationError(err error) error {
+	var fieldErr *tokensource.FieldError
+	if errors.As(err, &fieldErr) {
+		if envName, ok := googleWIFFieldEnvNames[fieldErr.Field]; ok {
+			if fieldErr.Reason == tokensource.ReasonRequired {
+				return fmt.Errorf("missing %s: %w", envName, err)
+			}
+			return fmt.Errorf("invalid %s: %w", envName, err)
+		}
+	}
+	return fmt.Errorf("invalid google wif configuration: %w", err)
+}
+
+// newFederationProvider builds the Vault backed credential source.
 func newFederationProvider(provider string) (tokensource.Provider, error) {
 	cfg := DeriveVaultKVConfig(provider)
 	if cfg.JWT == "" {
@@ -98,8 +179,7 @@ func DeriveVaultKVConfig(provider string) tokensource.VaultKVConfig {
 	}
 }
 
-// DeriveVaultSecretField derives the KV-v2 field holding the credential of provider, mapping
-// azure-openai to azure_openai_api_key. One secret therefore serves every matrix job.
+// DeriveVaultSecretField derives the KV-v2 field holding the credential of provider.
 func DeriveVaultSecretField(provider string) string {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(provider), "-", "_"))
 	if normalized == "" {
@@ -116,5 +196,26 @@ func DeriveClaudeWIFConfig() ClaudeWIFConfig {
 		ServiceAccountID: strings.TrimSpace(os.Getenv("ANTHROPIC_SERVICE_ACCOUNT_ID")),
 		IDToken:          strings.TrimSpace(os.Getenv("ANTHROPIC_ID_TOKEN")),
 		WorkspaceID:      strings.TrimSpace(os.Getenv("ANTHROPIC_WORKSPACE_ID")),
+	}
+}
+
+// DeriveAzureWIFConfig reads the Microsoft Azure federation parameters from the job environment.
+func DeriveAzureWIFConfig() AzureWIFConfig {
+	return AzureWIFConfig{
+		TenantID:       strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")),
+		ClientID:       strings.TrimSpace(os.Getenv("AZURE_CLIENT_ID")),
+		OpenAIEndpoint: strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
+		IDToken:        strings.TrimSpace(os.Getenv("AZURE_ID_TOKEN")),
+	}
+}
+
+// DeriveGoogleWIFConfig reads the Google Cloud federation parameters from the job environment.
+func DeriveGoogleWIFConfig() GoogleWIFConfig {
+	return GoogleWIFConfig{
+		ProjectID:                strings.TrimSpace(os.Getenv("GCP_PROJECT_ID")),
+		ProjectNumber:            strings.TrimSpace(os.Getenv("GCP_PROJECT_NUMBER")),
+		WorkloadIdentityProvider: strings.TrimSpace(os.Getenv("GCP_WORKLOAD_IDENTITY_PROVIDER")),
+		ServiceAccount:           strings.TrimSpace(os.Getenv("GCP_SERVICE_ACCOUNT")),
+		IDToken:                  strings.TrimSpace(os.Getenv("GCP_ID_TOKEN")),
 	}
 }
