@@ -68,3 +68,15 @@ module "code_reviewer" {
   gitlab_project_id    = module.baseline.project_id
   legacy_alias_enabled = true
 }
+
+module "github_mirror" {
+  source  = "gitlab.com/csning1998-lab/provisioner-github-mirror/gitlab"
+  version = "~> 0.3.0"
+
+  gitlab_project_id = module.baseline.project_id
+
+  github_repository = {
+    name  = var.gitlab_project_name
+    owner = var.github_owner
+  }
+}
