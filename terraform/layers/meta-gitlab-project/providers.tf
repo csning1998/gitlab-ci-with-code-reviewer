@@ -14,10 +14,6 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "5.7.0"
     }
-    github = {
-      source  = "integrations/github"
-      version = "6.13.0"
-    }
     gitlab = {
       source  = "gitlabhq/gitlab"
       version = "19.2.0"
@@ -54,11 +50,6 @@ provider "azurerm" {
   subscription_id = data.terraform_remote_state.group_federation_azure.outputs.subscription.id
   tenant_id       = data.terraform_remote_state.group_federation_azure.outputs.tenant.id
   features {}
-}
-
-provider "github" {
-  owner = var.github_owner
-  token = ephemeral.vault_kv_secret_v2.github_publication.data["deploy_token"]
 }
 
 provider "gitlab" {
