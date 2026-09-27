@@ -1,7 +1,7 @@
 
 module "local_credential_contexts" {
   source  = "gitlab.com/csning1998-lab/contexts-local-credential/gitlab"
-  version = "~> 0.1.2"
+  version = "~> 0.3.0"
 }
 
 resource "gitlab_project_variable" "sonar_host_url" {
@@ -15,7 +15,7 @@ resource "gitlab_project_variable" "sonar_host_url" {
 resource "gitlab_project_variable" "sonar_token" {
   project   = data.terraform_remote_state.meta_gitlab_project.outputs.project_id
   key       = "SONAR_TOKEN"
-  value     = data.vault_kv_secret_v2.sonarqube.data["token"]
+  value     = data.vault_kv_secret_v2.sonarqube.data["sonarqube_ci_token"]
   masked    = true
   protected = false
 }

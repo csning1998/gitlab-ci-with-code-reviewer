@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	projectNumberPattern  = regexp.MustCompile(`^[0-9]+$`)
-	gcpProviderPattern    = regexp.MustCompile(`^projects/[0-9]+/locations/[a-z0-9-]+/workloadIdentityPools/[a-z0-9-]+/providers/[a-z0-9-]+$`)
-	serviceAccountPattern = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
+	projectIDPattern      = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	projectNumberPattern  = regexp.MustCompile(`^[0-9]{6,20}$`)
+	gcpProviderPattern    = regexp.MustCompile(`^projects/[0-9]{6,20}/locations/global/workloadIdentityPools/[a-z0-9-]+/providers/[a-z0-9-]+$`)
+	serviceAccountPattern = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`)
 )
 
 // GoogleWIFConfig specifies parameters for Google Cloud Workload Identity Federation.
@@ -42,10 +43,21 @@ type GoogleWIF struct {
 	expiresAt  time.Time
 }
 
+func isValidWorkloadIdentityProvider(provider, projectNumber string) bool {
+	if !gcpProviderPattern.MatchString(provider) {
+		return false
+	}
+	number, _, found := strings.Cut(strings.TrimPrefix(provider, "projects/"), "/")
+	return found && number == projectNumber
+}
+
 // NewGoogleWIF constructs a GoogleWIF token source after validating required configuration fields.
 func NewGoogleWIF(cfg GoogleWIFConfig) (*GoogleWIF, error) {
 	if strings.TrimSpace(cfg.ProjectID) == "" {
 		return nil, newGoogleRequiredFieldError(FieldProjectID)
+	}
+	if !projectIDPattern.MatchString(strings.TrimSpace(cfg.ProjectID)) {
+		return nil, newGoogleInvalidFormatFieldError(FieldProjectID)
 	}
 
 	if strings.TrimSpace(cfg.ProjectNumber) == "" {
@@ -58,7 +70,7 @@ func NewGoogleWIF(cfg GoogleWIFConfig) (*GoogleWIF, error) {
 	if strings.TrimSpace(cfg.WorkloadIdentityProvider) == "" {
 		return nil, newGoogleRequiredFieldError(FieldWorkloadIdentityProvider)
 	}
-	if !gcpProviderPattern.MatchString(strings.TrimSpace(cfg.WorkloadIdentityProvider)) {
+	if !isValidWorkloadIdentityProvider(strings.TrimSpace(cfg.WorkloadIdentityProvider), strings.TrimSpace(cfg.ProjectNumber)) {
 		return nil, newGoogleInvalidFormatFieldError(FieldWorkloadIdentityProvider)
 	}
 
@@ -260,10 +272,11 @@ func (g *GoogleWIF) generateAccessToken(ctx context.Context, stsToken string) (s
 
 	var expiry time.Time
 	if iamResp.ExpireTime != "" {
-		t, err := time.Parse(time.RFC3339, iamResp.ExpireTime)
-		if err == nil {
-			expiry = t
+		parsed, err := time.Parse(time.RFC3339, iamResp.ExpireTime)
+		if err != nil {
+			return "", time.Time{}, errors.New("google wif: iam response expireTime format is invalid")
 		}
+		expiry = parsed
 	}
 
 	return iamResp.AccessToken, expiry, nil

@@ -127,6 +127,16 @@ func TestModeDescription(t *testing.T) {
 			provider: newTestVaultKV(t),
 			want:     "Mode: Workload Identity Federation (Vault)",
 		},
+		{
+			name:     "azure wif token source describes azure federation mode",
+			provider: newTestAzureWIF(t),
+			want:     "Mode: Workload Identity Federation (Azure OpenAI Native)",
+		},
+		{
+			name:     "google wif token source describes google federation mode",
+			provider: newTestGoogleWIF(t),
+			want:     "Mode: Workload Identity Federation (Google Cloud Native)",
+		},
 	}
 
 	for _, tc := range tests {

@@ -230,6 +230,48 @@ func TestNewClaudeWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 			}),
 			wantErr: true,
 		},
+		{
+			name: "workspace trailing whitespace",
+			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+				c.WorkspaceID = "wrkspc_123   "
+			}),
+			wantErr: true,
+		},
+		{
+			name: "id token leading whitespace",
+			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+				c.IDToken = " " + validTestClaudeWIFConfig.IDToken
+			}),
+			wantErr: true,
+		},
+		{
+			name: "id token trailing whitespace",
+			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+				c.IDToken = validTestClaudeWIFConfig.IDToken + " "
+			}),
+			wantErr: true,
+		},
+		{
+			name: "federation rule id leading whitespace",
+			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+				c.FederationRuleID = " " + validTestClaudeWIFConfig.FederationRuleID
+			}),
+			wantErr: true,
+		},
+		{
+			name: "service account id leading whitespace",
+			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+				c.ServiceAccountID = " " + validTestClaudeWIFConfig.ServiceAccountID
+			}),
+			wantErr: true,
+		},
+		{
+			name: "organization id leading whitespace",
+			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+				c.OrganizationID = " " + validTestClaudeWIFConfig.OrganizationID
+			}),
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {

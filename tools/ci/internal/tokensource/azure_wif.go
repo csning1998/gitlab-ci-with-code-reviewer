@@ -62,7 +62,7 @@ func NewAzureWIF(cfg AzureWIFConfig) (*AzureWIF, error) {
 	if strings.TrimSpace(cfg.OpenAIEndpoint) == "" {
 		return nil, newAzureRequiredFieldError(FieldOpenAIEndpoint)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(cfg.OpenAIEndpoint), "https://") {
+	if !isValidOpenAIEndpoint(strings.TrimSpace(cfg.OpenAIEndpoint)) {
 		return nil, newAzureInvalidFormatFieldError(FieldOpenAIEndpoint)
 	}
 
@@ -71,13 +71,8 @@ func NewAzureWIF(cfg AzureWIFConfig) (*AzureWIF, error) {
 	trimmedCfg.ClientID = strings.TrimSpace(cfg.ClientID)
 	trimmedCfg.OpenAIEndpoint = strings.TrimSpace(cfg.OpenAIEndpoint)
 	trimmedCfg.IDToken = strings.TrimSpace(cfg.IDToken)
-
-	if trimmedCfg.TokenEndpoint == "" {
-		trimmedCfg.TokenEndpoint = fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", trimmedCfg.TenantID)
-	}
-	if trimmedCfg.Scope == "" {
-		trimmedCfg.Scope = "https://cognitiveservices.azure.com/.default"
-	}
+	trimmedCfg.TokenEndpoint = strings.TrimSpace(cfg.TokenEndpoint)
+	trimmedCfg.Scope = strings.TrimSpace(cfg.Scope)
 
 	client := trimmedCfg.HTTPClient
 	if client == nil {
@@ -120,10 +115,10 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 		"client_id":             {a.cfg.ClientID},
 		"client_assertion_type": {"urn:ietf:params:oauth:client-assertion-type:jwt-bearer"},
 		"client_assertion":      {a.cfg.IDToken},
-		"scope":                 {a.cfg.Scope},
+		"scope":                 {a.resolveScope()},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.resolveTokenEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {
 		return Credential{}, fmt.Errorf("azure wif: create token request: %w", err)
 	}
@@ -158,6 +153,9 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 	if tokenResp.AccessToken == "" {
 		return Credential{}, errors.New("azure wif: token response missing access_token")
 	}
+	if tokenResp.ExpiresIn < 0 {
+		return Credential{}, errors.New("azure wif: token response expires_in is invalid")
+	}
 
 	if tokenResp.ExpiresIn > 60 {
 		a.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn-60) * time.Second)
@@ -171,4 +169,29 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 	}
 
 	return Credential{Value: tokenResp.AccessToken, Kind: KindBearer}, nil
+}
+
+func isValidOpenAIEndpoint(raw string) bool {
+	if strings.ContainsAny(raw, "\x00\r\n") {
+		return false
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	return true
+}
+
+func (a *AzureWIF) resolveTokenEndpoint() string {
+	if a.cfg.TokenEndpoint != "" {
+		return a.cfg.TokenEndpoint
+	}
+	return fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", a.cfg.TenantID)
+}
+
+func (a *AzureWIF) resolveScope() string {
+	if a.cfg.Scope != "" {
+		return a.cfg.Scope
+	}
+	return "https://cognitiveservices.azure.com/.default"
 }

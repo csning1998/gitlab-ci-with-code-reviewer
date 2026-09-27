@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,6 +29,15 @@ func withTestAzureWIFConfig(mutate func(c *tokensource.AzureWIFConfig)) tokensou
 		mutate(&cfg)
 	}
 	return cfg
+}
+
+func newTestAzureWIF(t *testing.T) *tokensource.AzureWIF {
+	t.Helper()
+	src, err := tokensource.NewAzureWIF(validTestAzureWIFConfig)
+	if err != nil {
+		t.Fatalf("NewAzureWIF() error = %v", err)
+	}
+	return src
 }
 
 func assertAzureWIFExpectedError(t *testing.T, wantErr string, got *tokensource.AzureWIF, err error) {
@@ -110,11 +120,39 @@ func TestNewAzureWIF_Validation(t *testing.T) {
 			wantErr: "azure wif: openai endpoint is required",
 		},
 		{
+			name: "whitespace openai endpoint",
+			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+				c.OpenAIEndpoint = "   \t\n"
+			}),
+			wantErr: "azure wif: openai endpoint is required",
+		},
+		{
 			name: "insecure openai endpoint",
 			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
 				c.OpenAIEndpoint = "http://oai-csning1998-lab.openai.azure.com/"
 			}),
 			wantErr: "azure wif: openai endpoint format is invalid",
+		},
+		{
+			name: "whitespace tenant id",
+			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+				c.TenantID = "  \t\n "
+			}),
+			wantErr: "azure wif: tenant id is required",
+		},
+		{
+			name: "whitespace client id",
+			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+				c.ClientID = " \t "
+			}),
+			wantErr: "azure wif: client id is required",
+		},
+		{
+			name: "whitespace id token",
+			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+				c.IDToken = " \t\n"
+			}),
+			wantErr: "azure wif: id token is required",
 		},
 	}
 
@@ -279,7 +317,6 @@ func TestAzureWIF_ContextCanceledWhileWaitingForLock(t *testing.T) {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
 
-	// Goroutine 1 starts and acquires the lock, entering the slow server call.
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -287,12 +324,10 @@ func TestAzureWIF_ContextCanceledWhileWaitingForLock(t *testing.T) {
 		_, _ = src.FetchCredential(context.Background())
 	}()
 
-	// Wait until the server has received request 1 (holding the lock in FetchCredential).
 	<-serverStarted
 
-	// Goroutine 2 attempts to fetch with a context that gets canceled while blocked on the lock.
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	cancel2() // cancel immediately before lock can be acquired
+	cancel2()
 
 	cred2, err2 := src.FetchCredential(ctx2)
 	if err2 == nil || !errors.Is(err2, context.Canceled) {
@@ -302,11 +337,9 @@ func TestAzureWIF_ContextCanceledWhileWaitingForLock(t *testing.T) {
 		t.Errorf("FetchCredential(canceledCtx) returned non-empty credential = %+v", cred2)
 	}
 
-	// Unblock server for goroutine 1.
 	close(unblockServer)
 	wg.Wait()
 
-	// Goroutine 2 MUST NOT have triggered a second network request.
 	if count := atomic.LoadInt32(&requestCount); count != 1 {
 		t.Errorf("requestCount = %d, want 1 (canceled caller must not fire network request after lock)", count)
 	}
@@ -339,7 +372,6 @@ func TestAzureWIF_FetchCredential_CanceledContextReturnsErrorEvenOnCacheHit(t *t
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
 
-	// Goroutine 1 starts and acquires the lock while executing the slow server call.
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -349,7 +381,6 @@ func TestAzureWIF_FetchCredential_CanceledContextReturnsErrorEvenOnCacheHit(t *t
 
 	<-serverStarted
 
-	// Goroutine 2 enters FetchCredential with an active context, passes line 103, and blocks on a.mu.Lock().
 	ctx2, cancel2 := context.WithCancel(context.Background())
 
 	var cred2 tokensource.Credential
@@ -360,19 +391,82 @@ func TestAzureWIF_FetchCredential_CanceledContextReturnsErrorEvenOnCacheHit(t *t
 		cred2, err2 = src.FetchCredential(ctx2)
 	}()
 
-	// Give goroutine 2 a moment to block on the mutex, then cancel its context.
 	time.Sleep(10 * time.Millisecond)
 	cancel2()
 
-	// Unblock server so goroutine 1 finishes, caches the token, and unlocks the mutex.
 	close(holdServer)
 	wg.Wait()
 
-	// Goroutine 2 acquired the lock after goroutine 1 cached the token, but its context was canceled.
 	if err2 == nil || !errors.Is(err2, context.Canceled) {
 		t.Errorf("FetchCredential(ctx2) error = %v, want context.Canceled", err2)
 	}
 	if cred2.Value != "" {
 		t.Errorf("FetchCredential(ctx2) returned credential = %+v, want empty", cred2)
+	}
+}
+
+func TestAzureWIF_TokenExpirationAndRefresh(t *testing.T) {
+	var requestCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"token_type":   "Bearer",
+			"expires_in":   0,
+			"access_token": fmt.Sprintf("azure-token-%d", count),
+		})
+	}))
+	defer server.Close()
+
+	cfg := validTestAzureWIFConfig
+	cfg.TokenEndpoint = server.URL + "/token"
+
+	src, err := tokensource.NewAzureWIF(cfg)
+	if err != nil {
+		t.Fatalf("NewAzureWIF() error = %v", err)
+	}
+
+	want1 := tokensource.Credential{Value: "azure-token-1", Kind: tokensource.KindBearer}
+	assertAzureFetchCredentialReturns(t, src, want1)
+
+	want2 := tokensource.Credential{Value: "azure-token-2", Kind: tokensource.KindBearer}
+	assertAzureFetchCredentialReturns(t, src, want2)
+
+	if count := atomic.LoadInt32(&requestCount); count != 2 {
+		t.Errorf("Token exchange request count = %d, want 2 (refreshed)", count)
+	}
+}
+
+func TestAzureWIF_FetchCredential_NilContext(t *testing.T) {
+	var requestCount int32
+	server := newMockEntraIDServer(t, &requestCount, validTestAzureWIFConfig)
+	defer server.Close()
+
+	cfg := validTestAzureWIFConfig
+	cfg.TokenEndpoint = server.URL + "/" + cfg.TenantID + "/oauth2/v2.0/token"
+
+	src, err := tokensource.NewAzureWIF(cfg)
+	if err != nil {
+		t.Fatalf("NewAzureWIF() error = %v", err)
+	}
+
+	var nilCtx context.Context
+	cred, err := src.FetchCredential(nilCtx)
+	if err != nil {
+		t.Fatalf("FetchCredential(nil) error = %v", err)
+	}
+	if cred.Value != "mocked-azure-openai-access-token" {
+		t.Errorf("FetchCredential(nil) = %q, want mocked-azure-openai-access-token", cred.Value)
+	}
+}
+
+func TestAzureWIF_ConfigIsIndependentOfLaterMutation(t *testing.T) {
+	src := newTestAzureWIF(t)
+	mutated := src.Config()
+	mutated.IDToken = "replaced"
+	mutated.TenantID = "00000000-0000-0000-0000-000000000000"
+
+	if got := src.Config(); got != validTestAzureWIFConfig {
+		t.Errorf("Config() = %+v, want %+v", got, validTestAzureWIFConfig)
 	}
 }

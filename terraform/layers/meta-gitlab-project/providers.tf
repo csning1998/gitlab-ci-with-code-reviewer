@@ -8,11 +8,11 @@ terraform {
     }
     azuread = {
       source  = "hashicorp/azuread"
-      version = "3.1.0"
+      version = "3.10.0"
     }
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "4.21.0"
+      version = "5.7.0"
     }
     gitlab = {
       source  = "gitlabhq/gitlab"
@@ -20,7 +20,7 @@ terraform {
     }
     google = {
       source  = "hashicorp/google"
-      version = "7.40.0"
+      version = "8.4.0"
     }
     vault = {
       source  = "hashicorp/vault"

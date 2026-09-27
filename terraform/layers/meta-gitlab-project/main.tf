@@ -1,7 +1,8 @@
 
 # Perform `terraform apply -target=module.local_credential_contexts.local_file.bastion_ca_cert` if greenfield
 module "local_credential_contexts" {
-  source = "../../../../parent-group-governance/terraform/modules/contexts-local-credential"
+  source  = "gitlab.com/csning1998-lab/contexts-local-credential/gitlab"
+  version = "~> 0.3.0"
 }
 
 module "baseline" {
@@ -22,7 +23,8 @@ resource "gitlab_project_cicd_catalog" "this" {
 }
 
 module "workload_identity_federation" {
-  source = "../../../../parent-group-governance/terraform/modules/provisioner-workload-identity-federation"
+  source  = "gitlab.com/csning1998-lab/provisioner-workload-identity-federation/gitlab"
+  version = "~> 0.3.0"
 
   providers = {
     vault = vault.bastion
@@ -54,6 +56,7 @@ module "workload_identity_federation" {
     subjects = [
       "project_path:${module.baseline.full_path}:ref_type:branch:ref:main",
       "project_path:${module.baseline.full_path}:ref_type:branch:ref:refactor/integration-gcp-azure",
+      "project_path:${module.baseline.full_path}:ref_type:branch:ref:test/wif-boundaries",
     ]
   }
 }

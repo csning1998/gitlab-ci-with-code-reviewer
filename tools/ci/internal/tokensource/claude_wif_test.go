@@ -260,3 +260,27 @@ func TestClaudeWIF_ConcurrentFetchCredential(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeWIF_FetchCredential_EmptyToken(t *testing.T) {
+	src := &tokensource.ClaudeWIF{}
+	_, err := src.FetchCredential(context.Background())
+	if err == nil || err.Error() != "claude wif: id token is empty" {
+		t.Fatalf("FetchCredential() error = %v, want %q", err, "claude wif: id token is empty")
+	}
+}
+
+func TestClaudeWIF_FetchCredential_NilContext(t *testing.T) {
+	src := newTestClaudeWIF(t)
+	var nilCtx context.Context
+	cred, err := src.FetchCredential(nilCtx)
+	if err != nil {
+		t.Fatalf("FetchCredential(nil) error = %v", err)
+	}
+	want := tokensource.Credential{
+		Value: validTestClaudeWIFConfig.IDToken,
+		Kind:  tokensource.KindBearer,
+	}
+	if cred != want {
+		t.Errorf("FetchCredential(nil) = %+v, want %+v", cred, want)
+	}
+}

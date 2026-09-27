@@ -7,7 +7,7 @@ ephemeral "vault_kv_secret_v2" "sonarqube_admin" {
 
 module "local_credential_contexts" {
   source  = "gitlab.com/csning1998-lab/contexts-local-credential/gitlab"
-  version = "~> 0.1.2"
+  version = "~> 0.3.0"
 }
 
 resource "sonarqube_user_token" "ci_analysis" {
@@ -19,6 +19,6 @@ resource "sonarqube_user_token" "ci_analysis" {
 resource "vault_kv_secret_v2" "sonarqube" {
   provider  = vault.bastion
   mount     = "secret"
-  name      = "gitlab-ci-with-code-reviewer/sonarqube"
-  data_json = jsonencode({ token = sonarqube_user_token.ci_analysis.token })
+  name      = "parent-group-governance/sonarqube/ci-analysis-bot"
+  data_json = jsonencode({ sonarqube_ci_token = sonarqube_user_token.ci_analysis.token })
 }

@@ -31,6 +31,9 @@
 
 Authentication enforces a zero-trust multi-tier credential hierarchy. Workload Identity Federation (WIF) eliminates static secrets from GitLab CI/CD variables.
 
+> [!IMPORTANT]
+> The Terraform layers declared in this repository represent highly customized reference blocks. The provided configurations serve solely as implementation references; operators MUST adapt Terraform layers according to specific operational requirements or choose to disable them entirely. Operators MUST adjust Workload Identity Federation configurations declared across the Terraform layers to align with active cloud infrastructure and governance environments.
+
 ```mermaid
 flowchart LR
     subgraph Tiers["Credential Resolution Hierarchy"]

@@ -1,0 +1,25 @@
+
+anthropic = {
+  enabled     = true
+  issuer_name = "issuer-gitlab-saas"
+  issuer_url  = "https://gitlab.com"
+}
+
+google = {
+  enabled                = true
+  project_id             = "your-gcp-project-id"
+  pool_id                = "gitlab-saas-pool"
+  provider_id            = "gitlab-saas-provider"
+  allowed_namespace_path = "your-gitlab-namespace"
+}
+
+azure = {
+  enabled                = true
+  tenant_id              = "00000000-0000-0000-0000-000000000000"
+  subscription_id        = "00000000-0000-0000-0000-000000000000"
+  resource_group_name    = "rg-federation-openai"
+  location               = "eastus"
+  cognitive_account_name = "oai-your-namespace"
+  model_name             = "gpt-4o"
+  model_version          = "2024-05-13"
+}

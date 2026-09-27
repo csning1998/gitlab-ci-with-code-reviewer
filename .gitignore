@@ -6,13 +6,16 @@
 # GitLab Runner project-local config (contains registration tokens)
 runner-config/
 
-## Terraform
+## HashiCorp Terraform
 terraform/**/*.tf.bak
 .terraform/
 .terraform.tfstate.lock.info
 terraform.tfstate
 terraform.tfstate.*
 terraform.tfstate.backup
+
+## HashiCorp Vault
+tls/
 
 ## SELinux
 selinux/*.mod

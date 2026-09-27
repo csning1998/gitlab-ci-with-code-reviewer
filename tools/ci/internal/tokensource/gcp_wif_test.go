@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,15 @@ func withTestGoogleWIFConfig(mutate func(c *tokensource.GoogleWIFConfig)) tokens
 		mutate(&cfg)
 	}
 	return cfg
+}
+
+func newTestGoogleWIF(t *testing.T) *tokensource.GoogleWIF {
+	t.Helper()
+	src, err := tokensource.NewGoogleWIF(validTestGoogleWIFConfig)
+	if err != nil {
+		t.Fatalf("NewGoogleWIF() error = %v", err)
+	}
+	return src
 }
 
 func assertGoogleWIFExpectedError(t *testing.T, wantErr string, got *tokensource.GoogleWIF, err error) {
@@ -123,6 +133,41 @@ func TestNewGoogleWIF_Validation(t *testing.T) {
 				c.IDToken = "short"
 			}),
 			wantErr: "google wif: id token format is invalid",
+		},
+		{
+			name: "whitespace project id",
+			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+				c.ProjectID = "  \t\n "
+			}),
+			wantErr: "google wif: project id is required",
+		},
+		{
+			name: "whitespace project number",
+			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+				c.ProjectNumber = " \t "
+			}),
+			wantErr: "google wif: project number is required",
+		},
+		{
+			name: "whitespace workload identity provider",
+			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+				c.WorkloadIdentityProvider = "  \n\t "
+			}),
+			wantErr: "google wif: workload identity provider is required",
+		},
+		{
+			name: "whitespace service account",
+			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+				c.ServiceAccount = " \t "
+			}),
+			wantErr: "google wif: service account is required",
+		},
+		{
+			name: "whitespace id token",
+			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+				c.IDToken = " \n\t "
+			}),
+			wantErr: "google wif: id token is required",
 		},
 	}
 
@@ -358,5 +403,65 @@ func TestGoogleWIF_FetchCredential_CanceledContextReturnsErrorEvenOnCacheHit(t *
 	}
 	if cred2.Value != "" {
 		t.Errorf("FetchCredential(ctx2) returned credential = %+v, want empty", cred2)
+	}
+}
+
+func TestGoogleWIF_TokenExpirationAndRefresh(t *testing.T) {
+	var stsCalls int32
+	var iamCalls int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/v1/token") {
+			atomic.AddInt32(&stsCalls, 1)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "sts-token",
+				"token_type":   "Bearer",
+				"expires_in":   3600,
+			})
+		} else {
+			call := atomic.AddInt32(&iamCalls, 1)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"accessToken": fmt.Sprintf("gcp-token-%d", call),
+				// Token expired 1 second ago to force refresh
+				"expireTime": time.Now().Add(-1 * time.Second).Format(time.RFC3339),
+			})
+		}
+	}))
+	defer server.Close()
+
+	cfg := validTestGoogleWIFConfig
+	cfg.STSEndpoint = server.URL + "/v1/token"
+	cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
+
+	src, err := tokensource.NewGoogleWIF(cfg)
+	if err != nil {
+		t.Fatalf("NewGoogleWIF() error = %v", err)
+	}
+
+	want1 := tokensource.Credential{Value: "gcp-token-1", Kind: tokensource.KindBearer}
+	assertGoogleFetchCredentialReturns(t, src, want1)
+
+	want2 := tokensource.Credential{Value: "gcp-token-2", Kind: tokensource.KindBearer}
+	assertGoogleFetchCredentialReturns(t, src, want2)
+
+	if sts := atomic.LoadInt32(&stsCalls); sts != 2 {
+		t.Errorf("STS calls = %d, want 2 (refreshed)", sts)
+	}
+	if iam := atomic.LoadInt32(&iamCalls); iam != 2 {
+		t.Errorf("IAM calls = %d, want 2 (refreshed)", iam)
+	}
+}
+
+func TestGoogleWIF_ConfigIsIndependentOfLaterMutation(t *testing.T) {
+	src := newTestGoogleWIF(t)
+	mutated := src.Config()
+	mutated.IDToken = "mutated-token"
+	if len(mutated.Scopes) > 0 {
+		mutated.Scopes[0] = "mutated-scope"
+	}
+
+	if got := src.Config(); got.IDToken == "mutated-token" {
+		t.Errorf("Config() IDToken mutated = %q, want original", got.IDToken)
 	}
 }
