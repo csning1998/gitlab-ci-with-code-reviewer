@@ -1,0 +1,8 @@
+---
+include:
+  - local: templates/iac-terraform-module.yml
+    inputs:
+      module_dir: "${CI_PROJECT_DIR}/terraform/modules/provisioner-code-reviewer"
+      module_name: "provisioner-code-reviewer"
+      module_system: "gitlab"
+      tag_prefix: "provisioner-code-reviewer-"
