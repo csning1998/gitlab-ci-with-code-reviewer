@@ -13,6 +13,7 @@ terraform/**/*.tf.bak
 terraform.tfstate
 terraform.tfstate.*
 terraform.tfstate.backup
+terraform.tfvars
 
 ## HashiCorp Vault
 tls/
