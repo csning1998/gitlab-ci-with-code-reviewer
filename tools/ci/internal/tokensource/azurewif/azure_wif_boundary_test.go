@@ -1,4 +1,4 @@
-package tokensource_test
+package azurewif_test
 
 import (
 	"context"
@@ -7,165 +7,165 @@ import (
 	"strings"
 	"testing"
 
-	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/azurewif"
 )
 
 func TestNewAzureWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     tokensource.AzureWIFConfig
+		cfg     azurewif.AzureWIFConfig
 		wantErr bool
 	}{
 		{
 			name: "tenant id uppercase uuid",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = "663BCC2A-0747-4E40-BC5D-6D8C4450E1F3"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "tenant id missing dashes",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = "663bcc2a07474e40bc5d6d8c4450e1f3"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "tenant id non hex",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = "663bcc2a-0747-4e40-bc5d-6d8c4450e1fz"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "tenant id too long",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = validTestAzureWIFConfig.TenantID + "-supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "tenant id nul injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = validTestAzureWIFConfig.TenantID + "\x00supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "tenant id crlf injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = validTestAzureWIFConfig.TenantID + "\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "client id uppercase uuid",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = "11111111-2222-3333-4444-55555555555A"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "client id missing dashes",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = "11111111222233334444555555555555"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "client id non hex",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = "11111111-2222-3333-4444-55555555555g"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "client id too long",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = validTestAzureWIFConfig.ClientID + "-supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "client id nul injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = validTestAzureWIFConfig.ClientID + "\x00supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "client id crlf injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = validTestAzureWIFConfig.ClientID + "\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token too short",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = "jwt_tok"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token too long",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = strings.Repeat("e", 4086) + "supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token disallowed character",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = "jwt_token+supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token crlf injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = "jwt_token\r\nX-Injected: supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token nul injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = "jwt_token\x00supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "openai endpoint malformed url",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "://bad-url"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "openai endpoint non https scheme",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "ftp://oai-csning1998-lab.openai.azure.com/"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "openai endpoint userinfo injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "https://user:pass@oai-csning1998-lab.openai.azure.com/"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "openai endpoint crlf injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "https://oai-csning1998-lab.openai.azure.com/\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "openai endpoint nul injection",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "https://oai-csning1998-lab.openai.azure.com/\x00supersecret"
 			}),
 			wantErr: true,
@@ -174,13 +174,13 @@ func TestNewAzureWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tokensource.NewAzureWIF(tc.cfg)
+			got, err := azurewif.NewAzureWIF(tc.cfg)
 			assertAzureWIFBoundaryResult(t, tc.cfg, tc.wantErr, got, err)
 		})
 	}
 }
 
-func assertAzureWIFBoundaryResult(t *testing.T, cfg tokensource.AzureWIFConfig, wantErr bool, got *tokensource.AzureWIF, err error) {
+func assertAzureWIFBoundaryResult(t *testing.T, cfg azurewif.AzureWIFConfig, wantErr bool, got *azurewif.AzureWIF, err error) {
 	t.Helper()
 	if (err != nil) != wantErr {
 		t.Fatalf("NewAzureWIF() error = %v, wantErr = %v", err, wantErr)
@@ -192,7 +192,7 @@ func assertAzureWIFBoundaryResult(t *testing.T, cfg tokensource.AzureWIFConfig, 
 	assertAzureWIFBoundarySuccess(t, cfg, got)
 }
 
-func assertAzureWIFBoundaryErrorSanitized(t *testing.T, cfg tokensource.AzureWIFConfig, err error) {
+func assertAzureWIFBoundaryErrorSanitized(t *testing.T, cfg azurewif.AzureWIFConfig, err error) {
 	t.Helper()
 	assertAzureWIFErrorOmitsValues(t, err, cfg)
 	if strings.Contains(err.Error(), "supersecret") {
@@ -200,7 +200,7 @@ func assertAzureWIFBoundaryErrorSanitized(t *testing.T, cfg tokensource.AzureWIF
 	}
 }
 
-func assertAzureWIFBoundarySuccess(t *testing.T, cfg tokensource.AzureWIFConfig, got *tokensource.AzureWIF) {
+func assertAzureWIFBoundarySuccess(t *testing.T, cfg azurewif.AzureWIFConfig, got *azurewif.AzureWIF) {
 	t.Helper()
 	if got == nil {
 		t.Fatal("NewAzureWIF() returned nil")
@@ -210,7 +210,7 @@ func assertAzureWIFBoundarySuccess(t *testing.T, cfg tokensource.AzureWIFConfig,
 	}
 }
 
-func assertAzureWIFErrorOmitsValues(t *testing.T, err error, cfg tokensource.AzureWIFConfig) {
+func assertAzureWIFErrorOmitsValues(t *testing.T, err error, cfg azurewif.AzureWIFConfig) {
 	t.Helper()
 	for _, value := range []string{
 		cfg.TenantID,
@@ -297,7 +297,7 @@ func TestAzureWIF_FetchCredential_AdverseHttp(t *testing.T) {
 			cfg := validTestAzureWIFConfig
 			cfg.TokenEndpoint = server.URL + "/token"
 
-			src, err := tokensource.NewAzureWIF(cfg)
+			src, err := azurewif.NewAzureWIF(cfg)
 			if err != nil {
 				t.Fatalf("NewAzureWIF() error = %v", err)
 			}
@@ -319,7 +319,7 @@ func TestAzureWIF_FetchCredential_NetworkFailure(t *testing.T) {
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = endpoint
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
