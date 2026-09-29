@@ -1,4 +1,4 @@
-package tokensource_test
+package claudewif_test
 
 import (
 	"context"
@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/claudewif"
 )
 
-var validTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
+var validTestClaudeWIFConfig = claudewif.ClaudeWIFConfig{
 	FederationRuleID: "fdrl_123",
 	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_123",
@@ -17,7 +18,7 @@ var validTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
 	WorkspaceID:      "wrkspc_123",
 }
 
-func withTestClaudeWIFConfig(mutate func(c *tokensource.ClaudeWIFConfig)) tokensource.ClaudeWIFConfig {
+func withTestClaudeWIFConfig(mutate func(c *claudewif.ClaudeWIFConfig)) claudewif.ClaudeWIFConfig {
 	cfg := validTestClaudeWIFConfig
 	if mutate != nil {
 		mutate(&cfg)
@@ -25,9 +26,9 @@ func withTestClaudeWIFConfig(mutate func(c *tokensource.ClaudeWIFConfig)) tokens
 	return cfg
 }
 
-func newTestClaudeWIF(t *testing.T) *tokensource.ClaudeWIF {
+func newTestClaudeWIF(t *testing.T) *claudewif.ClaudeWIF {
 	t.Helper()
-	src, err := tokensource.NewClaudeWIF(validTestClaudeWIFConfig)
+	src, err := claudewif.NewClaudeWIF(validTestClaudeWIFConfig)
 	if err != nil {
 		t.Fatalf("NewClaudeWIF() error = %v", err)
 	}
@@ -37,12 +38,12 @@ func newTestClaudeWIF(t *testing.T) *tokensource.ClaudeWIF {
 func TestNewClaudeWIF_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     tokensource.ClaudeWIFConfig
+		cfg     claudewif.ClaudeWIFConfig
 		wantErr string
 	}{
 		{
 			name: "required fields without workspace",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.WorkspaceID = ""
 			}),
 		},
@@ -52,95 +53,95 @@ func TestNewClaudeWIF_Validation(t *testing.T) {
 		},
 		{
 			name: "long id token",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.IDToken = strings.Repeat("a", 4096)
 			}),
 		},
 		{
 			name: "missing federation rule id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.FederationRuleID = ""
 			}),
 			wantErr: "claude wif: federation rule id is required",
 		},
 		{
 			name: "whitespace federation rule id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.FederationRuleID = " \t\n"
 			}),
 			wantErr: "claude wif: federation rule id is required",
 		},
 		{
 			name: "nbsp federation rule id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.FederationRuleID = "\u00a0"
 			}),
 			wantErr: "claude wif: federation rule id is required",
 		},
 		{
 			name: "missing organization id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.OrganizationID = ""
 			}),
 			wantErr: "claude wif: organization id is required",
 		},
 		{
 			name: "whitespace organization id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.OrganizationID = "   "
 			}),
 			wantErr: "claude wif: organization id is required",
 		},
 		{
 			name: "missing service account id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.ServiceAccountID = ""
 			}),
 			wantErr: "claude wif: service account id is required",
 		},
 		{
 			name: "whitespace service account id",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.ServiceAccountID = " \t\n "
 			}),
 			wantErr: "claude wif: service account id is required",
 		},
 		{
 			name: "missing id token",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.IDToken = ""
 			}),
 			wantErr: "claude wif: id token is required",
 		},
 		{
 			name: "whitespace id token",
-			cfg: withTestClaudeWIFConfig(func(c *tokensource.ClaudeWIFConfig) {
+			cfg: withTestClaudeWIFConfig(func(c *claudewif.ClaudeWIFConfig) {
 				c.IDToken = "  "
 			}),
 			wantErr: "claude wif: id token is required",
 		},
 		{
 			name:    "empty config reports federation rule id",
-			cfg:     tokensource.ClaudeWIFConfig{},
+			cfg:     claudewif.ClaudeWIFConfig{},
 			wantErr: "claude wif: federation rule id is required",
 		},
 		{
 			name: "workspace alone reports federation rule id",
-			cfg: tokensource.ClaudeWIFConfig{
+			cfg: claudewif.ClaudeWIFConfig{
 				WorkspaceID: "wrkspc_123",
 			},
 			wantErr: "claude wif: federation rule id is required",
 		},
 		{
 			name: "organization id precedes later fields",
-			cfg: tokensource.ClaudeWIFConfig{
+			cfg: claudewif.ClaudeWIFConfig{
 				FederationRuleID: "fdrl_123",
 			},
 			wantErr: "claude wif: organization id is required",
 		},
 		{
 			name: "service account id precedes id token",
-			cfg: tokensource.ClaudeWIFConfig{
+			cfg: claudewif.ClaudeWIFConfig{
 				FederationRuleID: "fdrl_123",
 				OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 			},
@@ -150,7 +151,7 @@ func TestNewClaudeWIF_Validation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tokensource.NewClaudeWIF(tc.cfg)
+			got, err := claudewif.NewClaudeWIF(tc.cfg)
 			if tc.wantErr != "" {
 				assertClaudeWIFExpectedError(t, tc.cfg, tc.wantErr, got, err)
 				return
@@ -160,7 +161,7 @@ func TestNewClaudeWIF_Validation(t *testing.T) {
 	}
 }
 
-func assertClaudeWIFSuccess(t *testing.T, cfg tokensource.ClaudeWIFConfig, got *tokensource.ClaudeWIF, err error) {
+func assertClaudeWIFSuccess(t *testing.T, cfg claudewif.ClaudeWIFConfig, got *claudewif.ClaudeWIF, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("NewClaudeWIF() error = %v", err)
@@ -180,7 +181,7 @@ func assertClaudeWIFSuccess(t *testing.T, cfg tokensource.ClaudeWIFConfig, got *
 	}
 }
 
-func assertClaudeWIFExpectedError(t *testing.T, cfg tokensource.ClaudeWIFConfig, wantErr string, got *tokensource.ClaudeWIF, err error) {
+func assertClaudeWIFExpectedError(t *testing.T, cfg claudewif.ClaudeWIFConfig, wantErr string, got *claudewif.ClaudeWIF, err error) {
 	t.Helper()
 	if err == nil || err.Error() != wantErr {
 		t.Fatalf("NewClaudeWIF() error = %v, want %q", err, wantErr)
@@ -262,7 +263,7 @@ func TestClaudeWIF_ConcurrentFetchCredential(t *testing.T) {
 }
 
 func TestClaudeWIF_FetchCredential_EmptyToken(t *testing.T) {
-	src := &tokensource.ClaudeWIF{}
+	src := &claudewif.ClaudeWIF{}
 	_, err := src.FetchCredential(context.Background())
 	if err == nil || err.Error() != "claude wif: id token is empty" {
 		t.Fatalf("FetchCredential() error = %v, want %q", err, "claude wif: id token is empty")
