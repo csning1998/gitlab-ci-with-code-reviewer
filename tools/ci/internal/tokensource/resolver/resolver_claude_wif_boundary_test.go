@@ -1,4 +1,4 @@
-package config
+package resolver
 
 import (
 	"strings"
