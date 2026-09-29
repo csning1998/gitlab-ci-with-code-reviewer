@@ -6,7 +6,7 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 )
 
 // MinThinkingBudget is the floor the Messages API enforces on a manual thinking budget.
@@ -43,7 +43,7 @@ type thinkingPlan struct {
 }
 
 // planThinking MUST reject cross-generation thinking parameters to ensure Anthropic API compatibility.
-func planThinking(model string, opts config.ModelOptions) (thinkingPlan, error) {
+func planThinking(model string, opts reviewerconfig.ModelOptions) (thinkingPlan, error) {
 	adaptive := adaptiveThinkingModels[model]
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	budget := 0

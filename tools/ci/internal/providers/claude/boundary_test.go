@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
 )
 
@@ -56,7 +56,7 @@ func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.P
 	t.Cleanup(server.Close)
 
 	return mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Provider: "claude", Model: "claude-sonnet-5", BaseURL: server.URL, Timeout: timeout},
+		ModelOptions: reviewerconfig.ModelOptions{Provider: "claude", Model: "claude-sonnet-5", BaseURL: server.URL, Timeout: timeout},
 		Tokens:       tokens,
 	})
 }
@@ -236,7 +236,7 @@ func TestReview_HostileEnvironmentDoesNotRedirectRequests(t *testing.T) {
 	t.Cleanup(intended.Close)
 
 	client := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Provider: "claude", Model: "claude-sonnet-5", BaseURL: intended.URL, Timeout: 10 * time.Second},
+		ModelOptions: reviewerconfig.ModelOptions{Provider: "claude", Model: "claude-sonnet-5", BaseURL: intended.URL, Timeout: 10 * time.Second},
 		Tokens:       tokensource.Static("explicit-key"),
 	})
 	if _, err := client.Review("prompt"); err != nil {
@@ -260,7 +260,7 @@ func TestReview_EmptyBaseURLIgnoresAmbientEndpoint(t *testing.T) {
 	t.Setenv("ANTHROPIC_BASE_URL", hostile.URL)
 
 	client := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Provider: "claude", Model: "claude-sonnet-5", Timeout: 2 * time.Second},
+		ModelOptions: reviewerconfig.ModelOptions{Provider: "claude", Model: "claude-sonnet-5", Timeout: 2 * time.Second},
 		Tokens:       tokensource.Static("key"),
 	})
 	_, _ = client.Review("prompt")

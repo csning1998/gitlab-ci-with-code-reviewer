@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/testutil"
 	"ci-tools/internal/tokensource"
 )
@@ -29,7 +29,7 @@ func mustNewClient(t *testing.T, cfg Config) *Client {
 }
 
 // stubCapturingClient serves a fixed completion response and records the decoded request body.
-func stubCapturingClient(t *testing.T, opts config.ModelOptions, gotBody *map[string]any) *Client {
+func stubCapturingClient(t *testing.T, opts reviewerconfig.ModelOptions, gotBody *map[string]any) *Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -52,7 +52,7 @@ func stubRespondingClient(t *testing.T, statusCode int, responseBody string, tok
 	t.Cleanup(server.Close)
 
 	return mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{
+		ModelOptions: reviewerconfig.ModelOptions{
 			Provider:  "openai",
 			Model:     "test-model",
 			MaxTokens: 512,
@@ -66,52 +66,52 @@ func stubRespondingClient(t *testing.T, statusCode int, responseBody string, tok
 func TestResolveEndpoint_TableDriven(t *testing.T) {
 	tests := []struct {
 		name string
-		opts config.ModelOptions
+		opts reviewerconfig.ModelOptions
 		want string
 	}{
 		{
 			name: "standard base URL without trailing slash",
-			opts: config.ModelOptions{BaseURL: "https://api.x.ai", Model: "grok-4.6"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://api.x.ai", Model: "grok-4.6"},
 			want: "https://api.x.ai/v1/chat/completions",
 		},
 		{
 			name: "standard base URL with trailing slash",
-			opts: config.ModelOptions{BaseURL: "https://api.x.ai/", Model: "grok-4.6"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://api.x.ai/", Model: "grok-4.6"},
 			want: "https://api.x.ai/v1/chat/completions",
 		},
 		{
 			name: "standard base URL ending with /v1",
-			opts: config.ModelOptions{BaseURL: "https://api.openai.com/v1", Model: "gpt-4o"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://api.openai.com/v1", Model: "gpt-4o"},
 			want: "https://api.openai.com/v1/chat/completions",
 		},
 		{
 			name: "standard base URL ending with /v1/",
-			opts: config.ModelOptions{BaseURL: "https://api.openai.com/v1/", Model: "gpt-4o"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://api.openai.com/v1/", Model: "gpt-4o"},
 			want: "https://api.openai.com/v1/chat/completions",
 		},
 		{
 			name: "local base URL without trailing slash",
-			opts: config.ModelOptions{BaseURL: "http://localhost:8000", Model: "llama-3.3-70b"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "http://localhost:8000", Model: "llama-3.3-70b"},
 			want: "http://localhost:8000/v1/chat/completions",
 		},
 		{
 			name: "local base URL with trailing slash",
-			opts: config.ModelOptions{BaseURL: "http://localhost:8000/", Model: "llama-3.3-70b"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "http://localhost:8000/", Model: "llama-3.3-70b"},
 			want: "http://localhost:8000/v1/chat/completions",
 		},
 		{
 			name: "local base URL ending with /v1",
-			opts: config.ModelOptions{BaseURL: "http://localhost:8000/v1", Model: "llama-3.3-70b"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "http://localhost:8000/v1", Model: "llama-3.3-70b"},
 			want: "http://localhost:8000/v1/chat/completions",
 		},
 		{
 			name: "local base URL ending with /v1/",
-			opts: config.ModelOptions{BaseURL: "http://localhost:8000/v1/", Model: "llama-3.3-70b"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "http://localhost:8000/v1/", Model: "llama-3.3-70b"},
 			want: "http://localhost:8000/v1/chat/completions",
 		},
 		{
 			name: "azure shape without trailing slash",
-			opts: config.ModelOptions{
+			opts: reviewerconfig.ModelOptions{
 				BaseURL:    "https://example.openai.azure.com",
 				Model:      "gpt-deployment",
 				APIVersion: "2026-01-01",
@@ -120,7 +120,7 @@ func TestResolveEndpoint_TableDriven(t *testing.T) {
 		},
 		{
 			name: "azure shape with trailing slash",
-			opts: config.ModelOptions{
+			opts: reviewerconfig.ModelOptions{
 				BaseURL:    "https://example.openai.azure.com/",
 				Model:      "gpt-deployment",
 				APIVersion: "2026-01-01",
@@ -129,22 +129,22 @@ func TestResolveEndpoint_TableDriven(t *testing.T) {
 		},
 		{
 			name: "subpath base URL without trailing slash",
-			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix", Model: "gpt-4o"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix", Model: "gpt-4o"},
 			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
 		},
 		{
 			name: "subpath base URL with trailing slash",
-			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/", Model: "gpt-4o"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/", Model: "gpt-4o"},
 			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
 		},
 		{
 			name: "subpath base URL ending with /v1",
-			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/v1", Model: "gpt-4o"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/v1", Model: "gpt-4o"},
 			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
 		},
 		{
 			name: "subpath base URL ending with /v1/",
-			opts: config.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/v1/", Model: "gpt-4o"},
+			opts: reviewerconfig.ModelOptions{BaseURL: "https://gateway.internal:8443/custom/prefix/v1/", Model: "gpt-4o"},
 			want: "https://gateway.internal:8443/custom/prefix/v1/chat/completions",
 		},
 	}
@@ -177,7 +177,7 @@ func TestName_DerivesFromProvider(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.provider, func(t *testing.T) {
 			c := mustNewClient(t, Config{
-				ModelOptions: config.ModelOptions{
+				ModelOptions: reviewerconfig.ModelOptions{
 					Provider:   tc.provider,
 					Model:      "test-model",
 					BaseURL:    tc.baseURL,
@@ -200,13 +200,13 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 	}{
 		{
 			name:      "rejects nil tokens",
-			cfg:       Config{ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4.6"}},
+			cfg:       Config{ModelOptions: reviewerconfig.ModelOptions{Provider: "grok", Model: "grok-4.6"}},
 			wantError: "tokens",
 		},
 		{
 			name: "rejects empty model",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "grok"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "grok"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "model",
@@ -214,7 +214,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects azure-openai with empty base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", APIVersion: "2024-02-15-preview"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", APIVersion: "2024-02-15-preview"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -222,7 +222,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects azure-openai with whitespace base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "   ", APIVersion: "2024-02-15-preview"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "   ", APIVersion: "2024-02-15-preview"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -230,7 +230,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects azure-openai with empty api_version",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "https://example.openai.azure.com"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "https://example.openai.azure.com"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "api_version",
@@ -238,7 +238,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects azure-openai with whitespace api_version",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "https://example.openai.azure.com", APIVersion: "   "},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-deployment", BaseURL: "https://example.openai.azure.com", APIVersion: "   "},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "api_version",
@@ -246,7 +246,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects local with empty base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "local", Model: "gemma4"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "local", Model: "gemma4"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -254,7 +254,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects local with whitespace base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "local", Model: "gemma4", BaseURL: "   "},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "local", Model: "gemma4", BaseURL: "   "},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -262,7 +262,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects unknown provider with empty base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -270,7 +270,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects unknown provider with whitespace base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "custom-gateway", Model: "custom-model", BaseURL: "   "},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "custom-gateway", Model: "custom-model", BaseURL: "   "},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -278,7 +278,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects empty provider with empty base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "", Model: "custom-model"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "", Model: "custom-model"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -286,7 +286,7 @@ func TestNew_ConfigurationRejection(t *testing.T) {
 		{
 			name: "rejects empty provider with whitespace base_url",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "", Model: "custom-model", BaseURL: "   "},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "", Model: "custom-model", BaseURL: "   "},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantError: "base_url",
@@ -312,7 +312,7 @@ func TestNew_ConfigurationDefaults(t *testing.T) {
 		{
 			name: "defaults timeout when unset",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantURL: "https://api.openai.com/v1/chat/completions",
@@ -320,7 +320,7 @@ func TestNew_ConfigurationDefaults(t *testing.T) {
 		{
 			name: "defaults openai base_url to official endpoint",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantURL: "https://api.openai.com/v1/chat/completions",
@@ -328,7 +328,7 @@ func TestNew_ConfigurationDefaults(t *testing.T) {
 		{
 			name: "defaults openai whitespace base_url to official endpoint",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o", BaseURL: "   "},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o", BaseURL: "   "},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantURL: "https://api.openai.com/v1/chat/completions",
@@ -336,7 +336,7 @@ func TestNew_ConfigurationDefaults(t *testing.T) {
 		{
 			name: "defaults grok base_url to official endpoint",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4"},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "grok", Model: "grok-4"},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantURL: "https://api.x.ai/v1/chat/completions",
@@ -344,7 +344,7 @@ func TestNew_ConfigurationDefaults(t *testing.T) {
 		{
 			name: "defaults grok whitespace base_url to official endpoint",
 			cfg: Config{
-				ModelOptions: config.ModelOptions{Provider: "grok", Model: "grok-4", BaseURL: "   "},
+				ModelOptions: reviewerconfig.ModelOptions{Provider: "grok", Model: "grok-4", BaseURL: "   "},
 				Tokens:       tokensource.Static("test-token"),
 			},
 			wantURL: "https://api.x.ai/v1/chat/completions",
@@ -357,8 +357,8 @@ func TestNew_ConfigurationDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(...) returned unexpected error: %v", err)
 			}
-			if c.modelOptions.Timeout != config.DefaultTimeout {
-				t.Errorf("Timeout = %v, want default %v", c.modelOptions.Timeout, config.DefaultTimeout)
+			if c.modelOptions.Timeout != reviewerconfig.DefaultTimeout {
+				t.Errorf("Timeout = %v, want default %v", c.modelOptions.Timeout, reviewerconfig.DefaultTimeout)
 			}
 			if c.url != tc.wantURL {
 				t.Errorf("url = %q, want %q", c.url, tc.wantURL)
@@ -375,7 +375,7 @@ func TestReview_ReportsCredentialFailureBeforeRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	c := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Provider: "openai", Model: "gpt-4o", BaseURL: server.URL},
+		ModelOptions: reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o", BaseURL: server.URL},
 		Tokens:       testutil.FailingTokenProvider{},
 	})
 
@@ -438,7 +438,7 @@ func TestReview_ResponseHandling_TableDriven(t *testing.T) {
 
 func TestReview_InjectsOptionalParametersWhenConfigured(t *testing.T) {
 	var gotBody map[string]any
-	c := stubCapturingClient(t, config.ModelOptions{
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
 		Provider:         "openai",
 		Model:            "gpt-4o",
 		Temperature:      testutil.Ptr(0.7),
@@ -485,7 +485,7 @@ func TestReview_InjectsOptionalParametersWhenConfigured(t *testing.T) {
 
 func TestReview_OmitsOptionalParametersWhenNil(t *testing.T) {
 	var gotBody map[string]any
-	c := stubCapturingClient(t, config.ModelOptions{Provider: "openai", Model: "gpt-4o"}, &gotBody)
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o"}, &gotBody)
 
 	if _, err := c.Review("prompt"); err != nil {
 		t.Fatalf("Review() error = %v", err)
@@ -517,7 +517,7 @@ func TestReview_ReasoningModel_FiltersConflictingParameters(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotBody map[string]any
-			c := stubCapturingClient(t, config.ModelOptions{
+			c := stubCapturingClient(t, reviewerconfig.ModelOptions{
 				Model:            tc.model,
 				ReasoningLevel:   tc.reasoningLevel,
 				FrequencyPenalty: testutil.Ptr(0.5),
@@ -559,7 +559,7 @@ func TestReview_OutputTokens_RoutesCorrectField(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.model, func(t *testing.T) {
 			var gotBody map[string]any
-			c := stubCapturingClient(t, config.ModelOptions{Model: tc.model, MaxTokens: 1500}, &gotBody)
+			c := stubCapturingClient(t, reviewerconfig.ModelOptions{Model: tc.model, MaxTokens: 1500}, &gotBody)
 
 			if _, err := c.Review("prompt"); err != nil {
 				t.Fatalf("Review() error = %v", err)
@@ -581,7 +581,7 @@ func TestReview_OutputTokens_RoutesCorrectField(t *testing.T) {
 
 func TestReview_OpenSourceInferenceParameters(t *testing.T) {
 	var gotBody map[string]any
-	c := stubCapturingClient(t, config.ModelOptions{
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
 		Provider:          "local",
 		Model:             "meta-llama-3",
 		RepetitionPenalty: testutil.Ptr(1.15),
@@ -634,7 +634,7 @@ func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.P
 	t.Cleanup(server.Close)
 
 	return mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{
+		ModelOptions: reviewerconfig.ModelOptions{
 			Provider:  "openai",
 			Model:     "gpt-4o",
 			MaxTokens: 64,
@@ -884,14 +884,14 @@ func TestReview_CrossHostRedirectDoesNotForwardCredential(t *testing.T) {
 func TestBuildPayload_NumericBoundariesSerialize(t *testing.T) {
 	tests := []struct {
 		name string
-		opts config.ModelOptions
+		opts reviewerconfig.ModelOptions
 		key  string
 		want any
 	}{
-		{name: "zero temperature is sent", opts: config.ModelOptions{Temperature: testutil.Ptr(0.0)}, key: "temperature", want: float64(0)},
-		{name: "zero top p is sent", opts: config.ModelOptions{TopP: testutil.Ptr(0.0)}, key: "top_p", want: float64(0)},
-		{name: "zero seed is sent", opts: config.ModelOptions{Seed: testutil.Ptr(int64(0))}, key: "seed", want: float64(0)},
-		{name: "negative seed is sent", opts: config.ModelOptions{Seed: testutil.Ptr(int64(-1))}, key: "seed", want: float64(-1)},
+		{name: "zero temperature is sent", opts: reviewerconfig.ModelOptions{Temperature: testutil.Ptr(0.0)}, key: "temperature", want: float64(0)},
+		{name: "zero top p is sent", opts: reviewerconfig.ModelOptions{TopP: testutil.Ptr(0.0)}, key: "top_p", want: float64(0)},
+		{name: "zero seed is sent", opts: reviewerconfig.ModelOptions{Seed: testutil.Ptr(int64(0))}, key: "seed", want: float64(0)},
+		{name: "negative seed is sent", opts: reviewerconfig.ModelOptions{Seed: testutil.Ptr(int64(-1))}, key: "seed", want: float64(-1)},
 	}
 
 	for _, tc := range tests {
@@ -929,119 +929,119 @@ func (s staticCredProvider) Token(context.Context) (string, error) {
 func TestReview_HeaderDispatch_Permutations(t *testing.T) {
 	tests := []struct {
 		name       string
-		opts       config.ModelOptions
+		opts       reviewerconfig.ModelOptions
 		cred       tokensource.Credential
 		wantAuth   string
 		wantAPIKey string
 	}{
 		{
 			name:       "azure-openai with api-key credential sends api-key header",
-			opts:       config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2024-02-15-preview"},
+			opts:       reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2024-02-15-preview"},
 			cred:       tokensource.Credential{Value: "azure-secret-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "",
 			wantAPIKey: "azure-secret-key",
 		},
 		{
 			name:       "azure-openai with bearer credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2024-02-15-preview"},
+			opts:       reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2024-02-15-preview"},
 			cred:       tokensource.Credential{Value: "azure-jwt-token", Kind: tokensource.KindBearer},
 			wantAuth:   "Bearer azure-jwt-token",
 			wantAPIKey: "",
 		},
 		{
 			name:       "openai with api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+			opts:       reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o"},
 			cred:       tokensource.Credential{Value: "sk-openai-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer sk-openai-key",
 			wantAPIKey: "",
 		},
 		{
 			name:       "openai with bearer credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o"},
+			opts:       reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o"},
 			cred:       tokensource.Credential{Value: "bearer-token", Kind: tokensource.KindBearer},
 			wantAuth:   "Bearer bearer-token",
 			wantAPIKey: "",
 		},
 		{
 			name:       "openai with api_version and api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o", APIVersion: "2024-02-15"},
+			opts:       reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o", APIVersion: "2024-02-15"},
 			cred:       tokensource.Credential{Value: "sk-openai-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer sk-openai-key",
 			wantAPIKey: "",
 		},
 		{
 			name:       "openai with api_version and bearer credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "openai", Model: "gpt-4o", APIVersion: "2024-02-15"},
+			opts:       reviewerconfig.ModelOptions{Provider: "openai", Model: "gpt-4o", APIVersion: "2024-02-15"},
 			cred:       tokensource.Credential{Value: "bearer-token", Kind: tokensource.KindBearer},
 			wantAuth:   "Bearer bearer-token",
 			wantAPIKey: "",
 		},
 		{
 			name:       "grok with api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "grok", Model: "grok-4"},
+			opts:       reviewerconfig.ModelOptions{Provider: "grok", Model: "grok-4"},
 			cred:       tokensource.Credential{Value: "xai-api-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer xai-api-key",
 			wantAPIKey: "",
 		},
 		{
 			name:       "grok with bearer credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "grok", Model: "grok-4"},
+			opts:       reviewerconfig.ModelOptions{Provider: "grok", Model: "grok-4"},
 			cred:       tokensource.Credential{Value: "xai-bearer-token", Kind: tokensource.KindBearer},
 			wantAuth:   "Bearer xai-bearer-token",
 			wantAPIKey: "",
 		},
 		{
 			name:       "local with empty api-key credential sends no headers",
-			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			opts:       reviewerconfig.ModelOptions{Provider: "local", Model: "llama-3.3"},
 			cred:       tokensource.Credential{Value: "", Kind: tokensource.KindAPIKey},
 			wantAuth:   "",
 			wantAPIKey: "",
 		},
 		{
 			name:       "local with empty bearer credential sends no headers",
-			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			opts:       reviewerconfig.ModelOptions{Provider: "local", Model: "llama-3.3"},
 			cred:       tokensource.Credential{Value: "", Kind: tokensource.KindBearer},
 			wantAuth:   "",
 			wantAPIKey: "",
 		},
 		{
 			name:       "local with non-empty api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			opts:       reviewerconfig.ModelOptions{Provider: "local", Model: "llama-3.3"},
 			cred:       tokensource.Credential{Value: "local-auth-token", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer local-auth-token",
 			wantAPIKey: "",
 		},
 		{
 			name:       "local with non-empty bearer credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "local", Model: "llama-3.3"},
+			opts:       reviewerconfig.ModelOptions{Provider: "local", Model: "llama-3.3"},
 			cred:       tokensource.Credential{Value: "local-bearer-token", Kind: tokensource.KindBearer},
 			wantAuth:   "Bearer local-bearer-token",
 			wantAPIKey: "",
 		},
 		{
 			name:       "custom provider with api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
+			opts:       reviewerconfig.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
 			cred:       tokensource.Credential{Value: "gateway-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer gateway-key",
 			wantAPIKey: "",
 		},
 		{
 			name:       "custom provider with bearer credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
+			opts:       reviewerconfig.ModelOptions{Provider: "custom-gateway", Model: "custom-model"},
 			cred:       tokensource.Credential{Value: "gateway-bearer", Kind: tokensource.KindBearer},
 			wantAuth:   "Bearer gateway-bearer",
 			wantAPIKey: "",
 		},
 		{
 			name:       "custom provider with api_version and api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "custom-gateway", Model: "custom-model", APIVersion: "2025-01-01"},
+			opts:       reviewerconfig.ModelOptions{Provider: "custom-gateway", Model: "custom-model", APIVersion: "2025-01-01"},
 			cred:       tokensource.Credential{Value: "gateway-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer gateway-key",
 			wantAPIKey: "",
 		},
 		{
 			name:       "empty provider with api-key credential sends Authorization Bearer header",
-			opts:       config.ModelOptions{Provider: "", Model: "custom-model"},
+			opts:       reviewerconfig.ModelOptions{Provider: "", Model: "custom-model"},
 			cred:       tokensource.Credential{Value: "gateway-key", Kind: tokensource.KindAPIKey},
 			wantAuth:   "Bearer gateway-key",
 			wantAPIKey: "",

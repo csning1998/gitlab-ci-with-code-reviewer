@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 )
 
 // gemmaThinkingLevels lists the two switch positions Gemma 4 accepts on the Gemini API.
@@ -24,7 +24,7 @@ func isGemmaModel(model string) bool {
 }
 
 // validateGeneration MUST reject cross-generation thinking parameters at construction to prevent upstream HTTP 400 errors.
-func validateGeneration(model string, opts config.ModelOptions) error {
+func validateGeneration(model string, opts reviewerconfig.ModelOptions) error {
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	hasBudget := opts.ThinkingBudget != nil && *opts.ThinkingBudget > 0
 
@@ -64,7 +64,7 @@ func validateThinkingLevel(model, level string) error {
 
 // buildGenerationConfig assembles generationConfig from opts. A field left unset stays absent,
 // which preserves the default the model publishes.
-func buildGenerationConfig(model string, opts config.ModelOptions) map[string]any {
+func buildGenerationConfig(model string, opts reviewerconfig.ModelOptions) map[string]any {
 	generationConfig := map[string]any{"responseMimeType": "application/json"}
 	if mimeType := strings.TrimSpace(opts.ResponseMIMEType); mimeType != "" {
 		generationConfig["responseMimeType"] = mimeType
@@ -108,7 +108,7 @@ func buildGenerationConfig(model string, opts config.ModelOptions) map[string]an
 }
 
 // buildThinkingConfig emits the single thinking control the generation of model accepts.
-func buildThinkingConfig(model string, opts config.ModelOptions) map[string]any {
+func buildThinkingConfig(model string, opts reviewerconfig.ModelOptions) map[string]any {
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	if supportsThinkingLevel(model) {
 		if level == "" || level == "none" {

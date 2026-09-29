@@ -12,9 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"ci-tools/internal/config"
 	"ci-tools/internal/httpguard"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/gcpwif"
 )
 
 // maxErrorBodyBytes bounds an upstream error body before the body enters an error message.
@@ -23,7 +24,7 @@ const maxErrorBodyBytes = 512
 // Config declares the injection surface shared by every provider package. The calling binary
 // resolves both members from the CI job environment.
 type Config struct {
-	ModelOptions config.ModelOptions
+	ModelOptions reviewerconfig.ModelOptions
 	Tokens       tokensource.Provider
 }
 
@@ -50,7 +51,7 @@ func New(cfg Config) (*Client, error) {
 
 	timeout := cfg.ModelOptions.Timeout
 	if timeout <= 0 {
-		timeout = config.DefaultTimeout
+		timeout = reviewerconfig.DefaultTimeout
 	}
 
 	if err := validateGeneration(model, cfg.ModelOptions); err != nil {
@@ -77,7 +78,7 @@ func resolveLocation() string {
 func resolveProjectID(tokens tokensource.Provider) string {
 	if tokens != nil {
 		type gcpConfigProvider interface {
-			Config() tokensource.GoogleWIFConfig
+			Config() gcpwif.GoogleWIFConfig
 		}
 		if p, ok := tokens.(gcpConfigProvider); ok {
 			if id := strings.TrimSpace(p.Config().ProjectID); id != "" {
@@ -93,7 +94,7 @@ func isGoogleWIF(tokens tokensource.Provider) bool {
 		return false
 	}
 	type gcpConfigProvider interface {
-		Config() tokensource.GoogleWIFConfig
+		Config() gcpwif.GoogleWIFConfig
 	}
 	_, ok := tokens.(gcpConfigProvider)
 	return ok
@@ -116,7 +117,7 @@ func buildVertexAIEndpoint(location, projectID, model string) string {
 	)
 }
 
-func resolveEndpoint(model string, opts config.ModelOptions, tokens tokensource.Provider) string {
+func resolveEndpoint(model string, opts reviewerconfig.ModelOptions, tokens tokensource.Provider) string {
 	if baseURL := strings.TrimSpace(opts.BaseURL); baseURL != "" {
 		base := strings.TrimSuffix(baseURL, "/")
 		if strings.HasSuffix(base, ":generateContent") {
