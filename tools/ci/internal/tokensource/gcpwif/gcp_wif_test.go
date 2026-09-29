@@ -1,4 +1,4 @@
-package tokensource_test
+package gcpwif_test
 
 import (
 	"context"
@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/gcpwif"
 )
 
-var validTestGoogleWIFConfig = tokensource.GoogleWIFConfig{
+var validTestGoogleWIFConfig = gcpwif.GoogleWIFConfig{
 	ProjectID:                "test-gcp-project",
 	ProjectNumber:            "123456789012",
 	WorkloadIdentityProvider: "projects/123456789012/locations/global/workloadIdentityPools/gitlab-pool/providers/gitlab-provider",
@@ -24,7 +25,7 @@ var validTestGoogleWIFConfig = tokensource.GoogleWIFConfig{
 	IDToken:                  "jwt.token.gcp.test",
 }
 
-func withTestGoogleWIFConfig(mutate func(c *tokensource.GoogleWIFConfig)) tokensource.GoogleWIFConfig {
+func withTestGoogleWIFConfig(mutate func(c *gcpwif.GoogleWIFConfig)) gcpwif.GoogleWIFConfig {
 	cfg := validTestGoogleWIFConfig
 	if mutate != nil {
 		mutate(&cfg)
@@ -32,16 +33,16 @@ func withTestGoogleWIFConfig(mutate func(c *tokensource.GoogleWIFConfig)) tokens
 	return cfg
 }
 
-func newTestGoogleWIF(t *testing.T) *tokensource.GoogleWIF {
+func newTestGoogleWIF(t *testing.T) *gcpwif.GoogleWIF {
 	t.Helper()
-	src, err := tokensource.NewGoogleWIF(validTestGoogleWIFConfig)
+	src, err := gcpwif.NewGoogleWIF(validTestGoogleWIFConfig)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
 	return src
 }
 
-func assertGoogleWIFExpectedError(t *testing.T, wantErr string, got *tokensource.GoogleWIF, err error) {
+func assertGoogleWIFExpectedError(t *testing.T, wantErr string, got *gcpwif.GoogleWIF, err error) {
 	t.Helper()
 	if err == nil || err.Error() != wantErr {
 		t.Fatalf("NewGoogleWIF() error = %v, want %q", err, wantErr)
@@ -51,7 +52,7 @@ func assertGoogleWIFExpectedError(t *testing.T, wantErr string, got *tokensource
 	}
 }
 
-func assertGoogleWIFSuccess(t *testing.T, got *tokensource.GoogleWIF, err error) {
+func assertGoogleWIFSuccess(t *testing.T, got *gcpwif.GoogleWIF, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() unexpected error = %v", err)
@@ -64,7 +65,7 @@ func assertGoogleWIFSuccess(t *testing.T, got *tokensource.GoogleWIF, err error)
 func TestNewGoogleWIF_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     tokensource.GoogleWIFConfig
+		cfg     gcpwif.GoogleWIFConfig
 		wantErr string
 	}{
 		{
@@ -73,98 +74,98 @@ func TestNewGoogleWIF_Validation(t *testing.T) {
 		},
 		{
 			name: "missing project id",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectID = ""
 			}),
 			wantErr: "google wif: project id is required",
 		},
 		{
 			name: "missing project number",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectNumber = ""
 			}),
 			wantErr: "google wif: project number is required",
 		},
 		{
 			name: "invalid project number",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectNumber = "not-a-number"
 			}),
 			wantErr: "google wif: project number format is invalid",
 		},
 		{
 			name: "missing workload identity provider",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.WorkloadIdentityProvider = ""
 			}),
 			wantErr: "google wif: workload identity provider is required",
 		},
 		{
 			name: "invalid workload identity provider format",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.WorkloadIdentityProvider = "invalid/provider/path"
 			}),
 			wantErr: "google wif: workload identity provider format is invalid",
 		},
 		{
 			name: "missing service account",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ServiceAccount = ""
 			}),
 			wantErr: "google wif: service account is required",
 		},
 		{
 			name: "invalid service account format",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ServiceAccount = "not-an-email"
 			}),
 			wantErr: "google wif: service account format is invalid",
 		},
 		{
 			name: "missing id token",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = ""
 			}),
 			wantErr: "google wif: id token is required",
 		},
 		{
 			name: "invalid id token",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = "short"
 			}),
 			wantErr: "google wif: id token format is invalid",
 		},
 		{
 			name: "whitespace project id",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectID = "  \t\n "
 			}),
 			wantErr: "google wif: project id is required",
 		},
 		{
 			name: "whitespace project number",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectNumber = " \t "
 			}),
 			wantErr: "google wif: project number is required",
 		},
 		{
 			name: "whitespace workload identity provider",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.WorkloadIdentityProvider = "  \n\t "
 			}),
 			wantErr: "google wif: workload identity provider is required",
 		},
 		{
 			name: "whitespace service account",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ServiceAccount = " \t "
 			}),
 			wantErr: "google wif: service account is required",
 		},
 		{
 			name: "whitespace id token",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = " \n\t "
 			}),
 			wantErr: "google wif: id token is required",
@@ -173,7 +174,7 @@ func TestNewGoogleWIF_Validation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tokensource.NewGoogleWIF(tc.cfg)
+			got, err := gcpwif.NewGoogleWIF(tc.cfg)
 			if tc.wantErr != "" {
 				assertGoogleWIFExpectedError(t, tc.wantErr, got, err)
 				return
@@ -259,7 +260,7 @@ func TestGoogleWIF_FetchCredential_ExchangesSTSAndIAMToken(t *testing.T) {
 	cfg.STSEndpoint = server.URL + "/v1/token"
 	cfg.IAMCredentialsEndpoint = server.URL + "/v1/projects/-/serviceAccounts/" + cfg.ServiceAccount + ":generateAccessToken"
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
@@ -303,7 +304,7 @@ func TestGoogleWIF_ConcurrentFetchCredential(t *testing.T) {
 	cfg.STSEndpoint = server.URL + "/v1/token"
 	cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
@@ -363,7 +364,7 @@ func TestGoogleWIF_FetchCredential_CanceledContextReturnsErrorEvenOnCacheHit(t *
 	cfg.STSEndpoint = server.URL + "/v1/token"
 	cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
@@ -434,7 +435,7 @@ func TestGoogleWIF_TokenExpirationAndRefresh(t *testing.T) {
 	cfg.STSEndpoint = server.URL + "/v1/token"
 	cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
