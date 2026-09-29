@@ -12,9 +12,10 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
-	"ci-tools/internal/config"
 	"ci-tools/internal/httpguard"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/claudewif"
 )
 
 // DefaultMaxTokens bounds the visible response when ModelOptions omits an explicit limit.
@@ -27,7 +28,7 @@ const responseHeaderTimeout = 10 * time.Minute
 // Config declares the injection surface shared by every provider package. The calling binary
 // resolves both members from the CI job environment.
 type Config struct {
-	ModelOptions config.ModelOptions
+	ModelOptions reviewerconfig.ModelOptions
 	Tokens       tokensource.Provider
 }
 
@@ -39,7 +40,7 @@ type Client struct {
 	baseURL      string
 	tokens       tokensource.Provider
 	http         *http.Client
-	modelOptions config.ModelOptions
+	modelOptions reviewerconfig.ModelOptions
 	thinking     thinkingPlan
 	openSDK      func(ctx context.Context) (sdk.Client, error)
 }
@@ -61,7 +62,7 @@ func New(cfg Config) (*Client, error) {
 	}
 	timeout := cfg.ModelOptions.Timeout
 	if timeout <= 0 {
-		timeout = config.DefaultTimeout
+		timeout = reviewerconfig.DefaultTimeout
 	}
 
 	cfg.ModelOptions.MaxTokens = maxTokens
@@ -81,7 +82,7 @@ func New(cfg Config) (*Client, error) {
 		thinking:     plan,
 	}
 
-	if wif, ok := cfg.Tokens.(*tokensource.ClaudeWIF); ok {
+	if wif, ok := cfg.Tokens.(*claudewif.ClaudeWIF); ok {
 		wifCfg := wif.Config()
 		opts := []option.RequestOption{
 			option.WithoutEnvironmentDefaults(),

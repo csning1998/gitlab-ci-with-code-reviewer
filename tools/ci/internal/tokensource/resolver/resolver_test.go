@@ -1,4 +1,4 @@
-package config
+package resolver
 
 import (
 	"strings"
@@ -45,7 +45,7 @@ func TestResolveTokenProvider_StaticWhenVaultUnconfigured(t *testing.T) {
 	}
 	static, ok := provider.(tokensource.Static)
 	if !ok {
-		t.Fatalf("provider has type %T, want tokensource.Static", provider)
+		t.Fatalf("provider has type %T, want Static", provider)
 	}
 	if string(static) != "grok-key" {
 		t.Errorf("static credential = %q, want %q", string(static), "grok-key")
@@ -72,7 +72,7 @@ func TestResolveTokenProvider_FederationWhenVaultConfigured(t *testing.T) {
 		t.Fatalf("ResolveTokenProvider(...) returned an unexpected error: %v", err)
 	}
 	if _, ok := provider.(*tokensource.VaultKV); !ok {
-		t.Fatalf("provider has type %T, want *tokensource.VaultKV", provider)
+		t.Fatalf("provider has type %T, want *VaultKV", provider)
 	}
 }
 

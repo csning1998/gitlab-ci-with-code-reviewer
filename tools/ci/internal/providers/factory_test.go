@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/resolver"
 )
 
 func TestNew_DispatchesByProvider(t *testing.T) {
@@ -32,7 +33,7 @@ func TestNew_DispatchesByProvider(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.provider, func(t *testing.T) {
 			llm, err := New(
-				config.ModelOptions{
+				reviewerconfig.ModelOptions{
 					Provider:   tc.provider,
 					Model:      tc.model,
 					BaseURL:    tc.baseURL,
@@ -52,7 +53,7 @@ func TestNew_DispatchesByProvider(t *testing.T) {
 
 func TestNew_RejectsUnsupportedProvider(t *testing.T) {
 	_, err := New(
-		config.ModelOptions{Provider: "deepseek", Model: "deepseek-r1"},
+		reviewerconfig.ModelOptions{Provider: "deepseek", Model: "deepseek-r1"},
 		tokensource.Static("test-token"),
 	)
 	if err == nil || !strings.Contains(err.Error(), "deepseek") {
@@ -63,42 +64,42 @@ func TestNew_RejectsUnsupportedProvider(t *testing.T) {
 func TestNew_PropagatesProviderConstructionError(t *testing.T) {
 	tests := []struct {
 		name     string
-		opts     config.ModelOptions
+		opts     reviewerconfig.ModelOptions
 		tokens   tokensource.Provider
 		wantWord string
 	}{
 		{
 			name:     "claude without tokens",
-			opts:     config.ModelOptions{Provider: "claude", Model: "claude-sonnet-5"},
+			opts:     reviewerconfig.ModelOptions{Provider: "claude", Model: "claude-sonnet-5"},
 			wantWord: "tokens",
 		},
 		{
 			name:     "gemini without model",
-			opts:     config.ModelOptions{Provider: "gemini"},
+			opts:     reviewerconfig.ModelOptions{Provider: "gemini"},
 			tokens:   tokensource.Static("test-token"),
 			wantWord: "model",
 		},
 		{
 			name:     "grok without model",
-			opts:     config.ModelOptions{Provider: "grok"},
+			opts:     reviewerconfig.ModelOptions{Provider: "grok"},
 			tokens:   tokensource.Static("test-token"),
 			wantWord: "model",
 		},
 		{
 			name:     "azure-openai without base_url",
-			opts:     config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2026-01-01"},
+			opts:     reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", APIVersion: "2026-01-01"},
 			tokens:   tokensource.Static("test-token"),
 			wantWord: "base_url",
 		},
 		{
 			name:     "azure-openai without api_version",
-			opts:     config.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", BaseURL: "https://example.openai.azure.com"},
+			opts:     reviewerconfig.ModelOptions{Provider: "azure-openai", Model: "gpt-4o", BaseURL: "https://example.openai.azure.com"},
 			tokens:   tokensource.Static("test-token"),
 			wantWord: "api_version",
 		},
 		{
 			name:     "local without base_url",
-			opts:     config.ModelOptions{Provider: "local", Model: "llama-3.3-70b"},
+			opts:     reviewerconfig.ModelOptions{Provider: "local", Model: "llama-3.3-70b"},
 			tokens:   tokensource.Static("test-token"),
 			wantWord: "base_url",
 		},
@@ -160,12 +161,12 @@ func TestNew_FederatedCredentialReachesProviderRequest(t *testing.T) {
 	t.Setenv("VAULT_SECRET_FIELD", "")
 	t.Setenv("VAULT_CACERT", "")
 
-	tokens, err := config.ResolveTokenProvider("grok")
+	tokens, err := resolver.Resolve("grok")
 	if err != nil {
 		t.Fatalf("ResolveTokenProvider(...) returned an unexpected error: %v", err)
 	}
 
-	llm, err := New(config.ModelOptions{
+	llm, err := New(reviewerconfig.ModelOptions{
 		Provider: "grok",
 		Model:    "grok-4.6",
 		BaseURL:  provider.URL,

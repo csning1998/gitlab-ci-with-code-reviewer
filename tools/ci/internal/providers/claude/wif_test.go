@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/claudewif"
 )
 
-var validClaudeWIFConfig = tokensource.ClaudeWIFConfig{
+var validClaudeWIFConfig = claudewif.ClaudeWIFConfig{
 	FederationRuleID: "fdrl_123456",
 	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_789012",
@@ -19,9 +20,9 @@ var validClaudeWIFConfig = tokensource.ClaudeWIFConfig{
 	WorkspaceID:      "wrkspc_123456",
 }
 
-func mustNewClaudeWIF(t *testing.T, cfg tokensource.ClaudeWIFConfig) *tokensource.ClaudeWIF {
+func mustNewClaudeWIF(t *testing.T, cfg claudewif.ClaudeWIFConfig) *claudewif.ClaudeWIF {
 	t.Helper()
-	wif, err := tokensource.NewClaudeWIF(cfg)
+	wif, err := claudewif.NewClaudeWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewClaudeWIF(...) error = %v", err)
 	}
@@ -68,7 +69,7 @@ func newMockAnthropicServer(t *testing.T) *mockAnthropicServer {
 func (m *mockAnthropicServer) newClient(t *testing.T, tokens tokensource.Provider) *Client {
 	t.Helper()
 	return mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{
+		ModelOptions: reviewerconfig.ModelOptions{
 			Model:   "claude-sonnet-5",
 			BaseURL: m.server.URL,
 			Timeout: 10 * time.Second,

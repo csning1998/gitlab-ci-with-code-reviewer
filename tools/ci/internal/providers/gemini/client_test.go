@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/testutil"
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/gcpwif"
 )
 
 // redirectTransport rewrites every outbound request to target a local httptest server.
@@ -45,7 +46,7 @@ func mustNewClient(t *testing.T, cfg Config) *Client {
 }
 
 // stubCapturingClient records the decoded generateContent request body.
-func stubCapturingClient(t *testing.T, opts config.ModelOptions, gotBody *map[string]any) *Client {
+func stubCapturingClient(t *testing.T, opts reviewerconfig.ModelOptions, gotBody *map[string]any) *Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -72,7 +73,7 @@ func stubRespondingClient(t *testing.T, statusCode int, responseBody string) *Cl
 	t.Cleanup(server.Close)
 
 	c := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Model: "gemini-test-model", Timeout: 5 * time.Second},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-test-model", Timeout: 5 * time.Second},
 		Tokens:       tokensource.Static("test-api-key"),
 	})
 	c.http = &http.Client{Transport: redirectTransport{target: server.URL, base: http.DefaultTransport}}
@@ -87,7 +88,7 @@ func TestName_ReturnsGemini(t *testing.T) {
 
 func TestNew_DefaultGenerativeLanguageURL(t *testing.T) {
 	c, err := New(Config{
-		ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-2.5-pro"},
 		Tokens:       tokensource.Static("key"),
 	})
 	if err != nil {
@@ -107,7 +108,7 @@ func TestNew_RejectsInvalidConfiguration(t *testing.T) {
 	}{
 		{
 			name:     "rejects nil tokens",
-			cfg:      Config{ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"}},
+			cfg:      Config{ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-2.5-pro"}},
 			wantWord: "tokens",
 		},
 		{
@@ -130,7 +131,7 @@ func TestNew_RejectsInvalidConfiguration(t *testing.T) {
 func TestNew_VertexAIEndpointGeneration(t *testing.T) {
 	t.Setenv("GCP_PROJECT_ID", "test-project-123")
 	t.Setenv("GCP_LOCATION", "")
-	wif, err := tokensource.NewGoogleWIF(tokensource.GoogleWIFConfig{
+	wif, err := gcpwif.NewGoogleWIF(gcpwif.GoogleWIFConfig{
 		ProjectID:                "test-project-123",
 		ProjectNumber:            "1234567890",
 		WorkloadIdentityProvider: "projects/1234567890/locations/global/workloadIdentityPools/pool/providers/prov",
@@ -141,7 +142,7 @@ func TestNew_VertexAIEndpointGeneration(t *testing.T) {
 		t.Fatalf("NewGoogleWIF error = %v", err)
 	}
 	c, err := New(Config{
-		ModelOptions: config.ModelOptions{Model: "gemini-3.7-flash"},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-3.7-flash"},
 		Tokens:       wif,
 	})
 	if err != nil {
@@ -155,7 +156,7 @@ func TestNew_VertexAIEndpointGeneration(t *testing.T) {
 
 func TestNew_TimeoutResolution(t *testing.T) {
 	cCustom := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro", Timeout: 42 * time.Second},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-2.5-pro", Timeout: 42 * time.Second},
 		Tokens:       tokensource.Static("key"),
 	})
 	if cCustom.http.Timeout != 42*time.Second {
@@ -163,11 +164,11 @@ func TestNew_TimeoutResolution(t *testing.T) {
 	}
 
 	cDefault := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-2.5-pro"},
 		Tokens:       tokensource.Static("key"),
 	})
-	if cDefault.http.Timeout != config.DefaultTimeout {
-		t.Errorf("http.Timeout = %v, want %v", cDefault.http.Timeout, config.DefaultTimeout)
+	if cDefault.http.Timeout != reviewerconfig.DefaultTimeout {
+		t.Errorf("http.Timeout = %v, want %v", cDefault.http.Timeout, reviewerconfig.DefaultTimeout)
 	}
 }
 
@@ -179,7 +180,7 @@ func TestReview_ReportsCredentialFailureBeforeRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	c := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Model: "gemini-2.5-pro"},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "gemini-2.5-pro"},
 		Tokens:       testutil.FailingTokenProvider{},
 	})
 	c.http = &http.Client{Transport: redirectTransport{target: server.URL, base: http.DefaultTransport}}
@@ -267,7 +268,7 @@ func TestReview_ResponseHandling_TableDriven(t *testing.T) {
 
 func TestReview_UnreachableHost(t *testing.T) {
 	c := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Model: "model", Timeout: 5 * time.Second},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "model", Timeout: 5 * time.Second},
 		Tokens:       tokensource.Static("key"),
 	})
 	c.http = &http.Client{Transport: redirectTransport{target: "http://127.0.0.1:1", base: http.DefaultTransport}}
@@ -279,7 +280,7 @@ func TestReview_UnreachableHost(t *testing.T) {
 
 func TestReview_InjectsGenerationConfig(t *testing.T) {
 	var gotBody map[string]any
-	c := stubCapturingClient(t, config.ModelOptions{
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
 		Provider:         "gemini",
 		Model:            "gemini-2.5-flash",
 		MaxTokens:        2048,
@@ -321,7 +322,7 @@ func TestReview_InjectsGenerationConfig(t *testing.T) {
 
 func TestReview_OmitsGenerationFieldsWhenUnset(t *testing.T) {
 	var gotBody map[string]any
-	c := stubCapturingClient(t, config.ModelOptions{Model: "gemini-2.5-flash"}, &gotBody)
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{Model: "gemini-2.5-flash"}, &gotBody)
 
 	if _, err := c.Review("prompt"); err != nil {
 		t.Fatalf("Review(...) returned an unexpected error: %v", err)
@@ -341,12 +342,12 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 	t.Run("rejects invalid thinking configuration", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			opts      config.ModelOptions
+			opts      reviewerconfig.ModelOptions
 			wantError string
 		}{
 			{
 				name: "gemini 3.6 rejects thinkingBudget",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-3.6-flash",
 					ThinkingBudget: testutil.Ptr(4096),
 				},
@@ -354,7 +355,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "gemini 2.5 rejects reasoningLevel",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-2.5-pro",
 					ReasoningLevel: "high",
 				},
@@ -362,7 +363,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "gemma 4 rejects medium level",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemma-4-31b-it",
 					ReasoningLevel: "medium",
 				},
@@ -383,14 +384,14 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 	t.Run("generates valid thinking payload", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			opts      config.ModelOptions
+			opts      reviewerconfig.ModelOptions
 			wantKey   string
 			wantValue any
 			unwantKey string
 		}{
 			{
 				name: "gemini 2.5 sends thinkingBudget",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-2.5-pro",
 					ThinkingBudget: testutil.Ptr(4096),
 				},
@@ -400,7 +401,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "gemini 3.6 sends thinkingLevel",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-3.6-flash",
 					ReasoningLevel: "high",
 				},
@@ -410,7 +411,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "gemma 4 accepts high level",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemma-4-31b-it",
 					ReasoningLevel: "high",
 				},
@@ -420,7 +421,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "gemma 4 accepts minimal level",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "gemma-4-31b-it",
 					ReasoningLevel: "minimal",
 				},
@@ -496,7 +497,7 @@ func newBoundaryClient(t *testing.T, timeout time.Duration, tokens tokensource.P
 	t.Cleanup(server.Close)
 
 	client := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", Timeout: timeout},
+		ModelOptions: reviewerconfig.ModelOptions{Provider: "gemini", Model: "gemini-3.5-flash", Timeout: timeout},
 		Tokens:       tokens,
 	})
 	client.http.Transport = hostRewriteTransport{target: server.URL}
@@ -740,7 +741,7 @@ func TestReview_CredentialHeaders_APIKeyAndBearer(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			client := mustNewClient(t, Config{
-				ModelOptions: config.ModelOptions{
+				ModelOptions: reviewerconfig.ModelOptions{
 					Provider: "gemini",
 					Model:    "gemini-2.5-flash",
 					Timeout:  5 * time.Second,
@@ -804,7 +805,7 @@ func TestReview_BearerRoutesToVertexAI(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	client := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{
+		ModelOptions: reviewerconfig.ModelOptions{
 			Provider: "gemini",
 			Model:    "gemini-3.7-flash",
 			Timeout:  5 * time.Second,
@@ -834,7 +835,7 @@ func TestReview_BearerRoutesToVertexAI(t *testing.T) {
 }
 
 type mockGCPWIFTokenSource struct {
-	cfg tokensource.GoogleWIFConfig
+	cfg gcpwif.GoogleWIFConfig
 }
 
 func (m mockGCPWIFTokenSource) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
@@ -844,7 +845,7 @@ func (m mockGCPWIFTokenSource) FetchCredential(ctx context.Context) (tokensource
 	}, nil
 }
 
-func (m mockGCPWIFTokenSource) Config() tokensource.GoogleWIFConfig {
+func (m mockGCPWIFTokenSource) Config() gcpwif.GoogleWIFConfig {
 	return m.cfg
 }
 
@@ -860,13 +861,13 @@ func TestReview_GoogleWIF_UserProjectHeaderDerivedFromTokenSource(t *testing.T) 
 	t.Cleanup(server.Close)
 
 	client := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{
+		ModelOptions: reviewerconfig.ModelOptions{
 			Provider: "gemini",
 			Model:    "gemini-3.7-flash",
 			Timeout:  5 * time.Second,
 		},
 		Tokens: mockGCPWIFTokenSource{
-			cfg: tokensource.GoogleWIFConfig{
+			cfg: gcpwif.GoogleWIFConfig{
 				ProjectID: "token-source-project-456",
 			},
 		},

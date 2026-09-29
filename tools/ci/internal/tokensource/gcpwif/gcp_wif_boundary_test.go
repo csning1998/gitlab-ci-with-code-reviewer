@@ -1,4 +1,4 @@
-package tokensource_test
+package gcpwif_test
 
 import (
 	"context"
@@ -10,53 +10,53 @@ import (
 	"testing"
 	"time"
 
-	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/gcpwif"
 )
 
 func TestNewGoogleWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     tokensource.GoogleWIFConfig
+		cfg     gcpwif.GoogleWIFConfig
 		wantErr bool
 	}{
 		{
 			name: "project id crlf injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectID = "test-project\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "project id nul injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectID = "test-project\x00supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "project number crlf injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectNumber = "123456789012\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "project number nul injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ProjectNumber = "123456789012\x00supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "workload identity provider crlf injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.WorkloadIdentityProvider = validTestGoogleWIFConfig.WorkloadIdentityProvider + "\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "workload identity provider nul injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.WorkloadIdentityProvider = validTestGoogleWIFConfig.WorkloadIdentityProvider + "\x00supersecret"
 			}),
 			wantErr: true,
@@ -64,49 +64,49 @@ func TestNewGoogleWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 
 		{
 			name: "service account crlf injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ServiceAccount = validTestGoogleWIFConfig.ServiceAccount + "\r\nsupersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "service account nul injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.ServiceAccount = validTestGoogleWIFConfig.ServiceAccount + "\x00supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token too short",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = "jwt_tok"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token too long",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = strings.Repeat("e", 4086) + "supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token disallowed character",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = "jwt_token+supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token crlf injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = "jwt_token\r\nX-Injected: supersecret"
 			}),
 			wantErr: true,
 		},
 		{
 			name: "id token nul injection",
-			cfg: withTestGoogleWIFConfig(func(c *tokensource.GoogleWIFConfig) {
+			cfg: withTestGoogleWIFConfig(func(c *gcpwif.GoogleWIFConfig) {
 				c.IDToken = "jwt_token\x00supersecret"
 			}),
 			wantErr: true,
@@ -115,13 +115,13 @@ func TestNewGoogleWIF_LengthFormatInjectionAndLeak(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tokensource.NewGoogleWIF(tc.cfg)
+			got, err := gcpwif.NewGoogleWIF(tc.cfg)
 			assertGoogleWIFBoundaryResult(t, tc.cfg, tc.wantErr, got, err)
 		})
 	}
 }
 
-func assertGoogleWIFBoundaryResult(t *testing.T, cfg tokensource.GoogleWIFConfig, wantErr bool, got *tokensource.GoogleWIF, err error) {
+func assertGoogleWIFBoundaryResult(t *testing.T, cfg gcpwif.GoogleWIFConfig, wantErr bool, got *gcpwif.GoogleWIF, err error) {
 	t.Helper()
 	if (err != nil) != wantErr {
 		t.Fatalf("NewGoogleWIF() error = %v, wantErr = %v", err, wantErr)
@@ -133,7 +133,7 @@ func assertGoogleWIFBoundaryResult(t *testing.T, cfg tokensource.GoogleWIFConfig
 	assertGoogleWIFBoundarySuccess(t, cfg, got)
 }
 
-func assertGoogleWIFBoundaryErrorSanitized(t *testing.T, cfg tokensource.GoogleWIFConfig, err error) {
+func assertGoogleWIFBoundaryErrorSanitized(t *testing.T, cfg gcpwif.GoogleWIFConfig, err error) {
 	t.Helper()
 	assertGoogleWIFErrorOmitsValues(t, err, cfg)
 	if strings.Contains(err.Error(), "supersecret") {
@@ -141,7 +141,7 @@ func assertGoogleWIFBoundaryErrorSanitized(t *testing.T, cfg tokensource.GoogleW
 	}
 }
 
-func assertGoogleWIFBoundarySuccess(t *testing.T, cfg tokensource.GoogleWIFConfig, got *tokensource.GoogleWIF) {
+func assertGoogleWIFBoundarySuccess(t *testing.T, cfg gcpwif.GoogleWIFConfig, got *gcpwif.GoogleWIF) {
 	t.Helper()
 	if got == nil {
 		t.Fatal("NewGoogleWIF() returned nil")
@@ -151,7 +151,7 @@ func assertGoogleWIFBoundarySuccess(t *testing.T, cfg tokensource.GoogleWIFConfi
 	}
 }
 
-func assertGoogleWIFErrorOmitsValues(t *testing.T, err error, cfg tokensource.GoogleWIFConfig) {
+func assertGoogleWIFErrorOmitsValues(t *testing.T, err error, cfg gcpwif.GoogleWIFConfig) {
 	t.Helper()
 	for _, value := range []string{
 		cfg.ProjectID,
@@ -292,7 +292,7 @@ func TestGoogleWIF_FetchCredential_AdverseHttp(t *testing.T) {
 			cfg.STSEndpoint = server.URL + "/v1/token"
 			cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
 
-			src, err := tokensource.NewGoogleWIF(cfg)
+			src, err := gcpwif.NewGoogleWIF(cfg)
 			if err != nil {
 				t.Fatalf("NewGoogleWIF() error = %v", err)
 			}
@@ -320,7 +320,7 @@ func TestGoogleWIF_FetchCredential_NetworkFailure(t *testing.T) {
 	cfg.STSEndpoint = endpoint
 	cfg.IAMCredentialsEndpoint = endpoint
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
@@ -346,7 +346,7 @@ func TestGoogleWIF_FetchCredential_ContextCancellation(t *testing.T) {
 	cfg.STSEndpoint = server.URL + "/v1/token"
 	cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}
@@ -382,7 +382,7 @@ func TestGoogleWIF_FetchCredential_NilContext(t *testing.T) {
 	cfg.STSEndpoint = server.URL + "/v1/token"
 	cfg.IAMCredentialsEndpoint = server.URL + "/generateAccessToken"
 
-	src, err := tokensource.NewGoogleWIF(cfg)
+	src, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewGoogleWIF() error = %v", err)
 	}

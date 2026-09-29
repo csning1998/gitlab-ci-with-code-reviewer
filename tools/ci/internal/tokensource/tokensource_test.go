@@ -7,7 +7,53 @@ import (
 	"testing"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/azurewif"
+	"ci-tools/internal/tokensource/claudewif"
+	"ci-tools/internal/tokensource/gcpwif"
 )
+
+func newTestClaudeWIF(t *testing.T) *claudewif.ClaudeWIF {
+	t.Helper()
+	src, err := claudewif.NewClaudeWIF(claudewif.ClaudeWIFConfig{
+		FederationRuleID: "fdrl_123",
+		OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
+		ServiceAccountID: "svac_123",
+		IDToken:          "jwt_token",
+	})
+	if err != nil {
+		t.Fatalf("NewClaudeWIF() error = %v", err)
+	}
+	return src
+}
+
+func newTestAzureWIF(t *testing.T) *azurewif.AzureWIF {
+	t.Helper()
+	src, err := azurewif.NewAzureWIF(azurewif.AzureWIFConfig{
+		TenantID:       "663bcc2a-0747-4e40-bc5d-6d8c4450e1f3",
+		ClientID:       "11111111-2222-3333-4444-555555555555",
+		OpenAIEndpoint: "https://oai-csning1998-lab.openai.azure.com/",
+		IDToken:        "jwt.token.here",
+	})
+	if err != nil {
+		t.Fatalf("NewAzureWIF() error = %v", err)
+	}
+	return src
+}
+
+func newTestGoogleWIF(t *testing.T) *gcpwif.GoogleWIF {
+	t.Helper()
+	src, err := gcpwif.NewGoogleWIF(gcpwif.GoogleWIFConfig{
+		ProjectID:                "test-gcp-project",
+		ProjectNumber:            "123456789012",
+		WorkloadIdentityProvider: "projects/123456789012/locations/global/workloadIdentityPools/gitlab-pool/providers/gitlab-provider",
+		ServiceAccount:           "sa-p-example-app@test-gcp-project.iam.gserviceaccount.com",
+		IDToken:                  "jwt.token.gcp.test",
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleWIF() error = %v", err)
+	}
+	return src
+}
 
 func TestStatic_FetchCredential(t *testing.T) {
 	got, err := tokensource.Static("static-credential").FetchCredential(context.Background())

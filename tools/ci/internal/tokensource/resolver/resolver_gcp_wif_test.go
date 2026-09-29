@@ -1,13 +1,13 @@
-package config
+package resolver
 
 import (
 	"strings"
 	"testing"
 
-	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/gcpwif"
 )
 
-var defaultTestGoogleWIFConfig = tokensource.GoogleWIFConfig{
+var defaultTestGoogleWIFConfig = GoogleWIFConfig{
 	ProjectID:                "test-gcp-project",
 	ProjectNumber:            "123456789012",
 	WorkloadIdentityProvider: "projects/123456789012/locations/global/workloadIdentityPools/gitlab-pool/providers/gitlab-provider",
@@ -16,7 +16,7 @@ var defaultTestGoogleWIFConfig = tokensource.GoogleWIFConfig{
 }
 
 // setGoogleWIFEnvFrom declares the Google WIF variables of cfg for the current test.
-func setGoogleWIFEnvFrom(t *testing.T, cfg tokensource.GoogleWIFConfig) {
+func setGoogleWIFEnvFrom(t *testing.T, cfg GoogleWIFConfig) {
 	t.Helper()
 	t.Setenv("GCP_PROJECT_ID", cfg.ProjectID)
 	t.Setenv("GCP_PROJECT_NUMBER", cfg.ProjectNumber)
@@ -35,12 +35,12 @@ func TestDeriveGoogleWIFConfig_ValueBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string
 		setupEnv func(t *testing.T)
-		want     tokensource.GoogleWIFConfig
+		want     GoogleWIFConfig
 	}{
 		{
 			name:     "unset",
 			setupEnv: func(t *testing.T) {},
-			want:     tokensource.GoogleWIFConfig{},
+			want:     GoogleWIFConfig{},
 		},
 		{
 			name: "surrounding whitespace trimmed",
@@ -62,7 +62,7 @@ func TestDeriveGoogleWIFConfig_ValueBoundaries(t *testing.T) {
 				t.Setenv("GCP_SERVICE_ACCOUNT", "\u00a0")
 				t.Setenv("GCP_ID_TOKEN", " \t\n")
 			},
-			want: tokensource.GoogleWIFConfig{},
+			want: GoogleWIFConfig{},
 		},
 	}
 
@@ -103,9 +103,9 @@ func TestResolveTokenProvider_GoogleWIF_ProviderSpellings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ResolveTokenProvider(%q) returned an unexpected error: %v", tc.provider, err)
 			}
-			wif, ok := provider.(*tokensource.GoogleWIF)
+			wif, ok := provider.(*gcpwif.GoogleWIF)
 			if !ok {
-				t.Fatalf("provider has type %T, want *tokensource.GoogleWIF", provider)
+				t.Fatalf("provider has type %T, want *gcpwif.GoogleWIF", provider)
 			}
 			if got := wif.Config(); got.ProjectID != defaultTestGoogleWIFConfig.ProjectID || got.ServiceAccount != defaultTestGoogleWIFConfig.ServiceAccount {
 				t.Errorf("Config() = %+v, want %+v", got, defaultTestGoogleWIFConfig)

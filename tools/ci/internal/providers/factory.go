@@ -5,17 +5,17 @@ package providers
 import (
 	"fmt"
 
-	"ci-tools/internal/config"
 	"ci-tools/internal/providers/claude"
 	"ci-tools/internal/providers/gemini"
 	"ci-tools/internal/providers/openaicompat"
 	"ci-tools/internal/review"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
 )
 
 // New constructs the client which implements the wire format of opts.Provider. Construction
 // errors raised by the selected provider package pass through unchanged.
-func New(opts config.ModelOptions, tokens tokensource.Provider) (review.LLMClient, error) {
+func New(opts reviewerconfig.ModelOptions, tokens tokensource.Provider) (review.LLMClient, error) {
 	switch opts.Provider {
 	case "claude":
 		client, err := claude.New(claude.Config{ModelOptions: opts, Tokens: tokens})

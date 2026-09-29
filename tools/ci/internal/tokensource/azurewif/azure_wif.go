@@ -1,4 +1,4 @@
-package tokensource
+package azurewif
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ci-tools/internal/tokensource"
 )
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -36,34 +38,52 @@ type AzureWIF struct {
 	expiresAt  time.Time
 }
 
+// isJWTRune checks whether r is a valid JWT character (alphanumeric, dot, underscore, or hyphen).
+func isJWTRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
+}
+
+// validateIDToken checks that token length is within 8..4096 and contains only base64url/JWT characters.
+func validateIDToken(token string) bool {
+	if len(token) < 8 || len(token) > 4096 {
+		return false
+	}
+	for _, r := range token {
+		if !isJWTRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // NewAzureWIF constructs an AzureWIF token source after validating required configuration fields.
 func NewAzureWIF(cfg AzureWIFConfig) (*AzureWIF, error) {
 	if strings.TrimSpace(cfg.TenantID) == "" {
-		return nil, newAzureRequiredFieldError(FieldTenantID)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldTenantID, Reason: tokensource.ReasonRequired}
 	}
 	if !uuidPattern.MatchString(strings.TrimSpace(cfg.TenantID)) {
-		return nil, newAzureInvalidFormatFieldError(FieldTenantID)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldTenantID, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.ClientID) == "" {
-		return nil, newAzureRequiredFieldError(FieldClientID)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldClientID, Reason: tokensource.ReasonRequired}
 	}
 	if !uuidPattern.MatchString(strings.TrimSpace(cfg.ClientID)) {
-		return nil, newAzureInvalidFormatFieldError(FieldClientID)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldClientID, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.IDToken) == "" {
-		return nil, newAzureRequiredFieldError(FieldIDToken)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldIDToken, Reason: tokensource.ReasonRequired}
 	}
 	if !validateIDToken(strings.TrimSpace(cfg.IDToken)) {
-		return nil, newAzureInvalidFormatFieldError(FieldIDToken)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldIDToken, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.OpenAIEndpoint) == "" {
-		return nil, newAzureRequiredFieldError(FieldOpenAIEndpoint)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldOpenAIEndpoint, Reason: tokensource.ReasonRequired}
 	}
 	if !isValidOpenAIEndpoint(strings.TrimSpace(cfg.OpenAIEndpoint)) {
-		return nil, newAzureInvalidFormatFieldError(FieldOpenAIEndpoint)
+		return nil, &tokensource.FieldError{Provider: "azure", Field: tokensource.FieldOpenAIEndpoint, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	trimmedCfg := cfg
@@ -91,23 +111,23 @@ func (a *AzureWIF) Config() AzureWIFConfig {
 }
 
 // FetchCredential exchanges the GitLab ID token for an Azure Entra ID access token.
-func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
+func (a *AzureWIF) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return tokensource.Credential{}, err
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return tokensource.Credential{}, err
 	}
 
 	if a.cachedTok != "" && time.Now().Before(a.expiresAt) {
-		return Credential{Value: a.cachedTok, Kind: KindBearer}, nil
+		return tokensource.Credential{Value: a.cachedTok, Kind: tokensource.KindBearer}, nil
 	}
 
 	data := url.Values{
@@ -120,13 +140,13 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.resolveTokenEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {
-		return Credential{}, fmt.Errorf("azure wif: create token request: %w", err)
+		return tokensource.Credential{}, fmt.Errorf("azure wif: create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return Credential{}, fmt.Errorf("azure wif: token exchange request failed: %w", err)
+		return tokensource.Credential{}, fmt.Errorf("azure wif: token exchange request failed: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -134,11 +154,11 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Credential{}, fmt.Errorf("azure wif: read token response body: %w", err)
+		return tokensource.Credential{}, fmt.Errorf("azure wif: read token response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return Credential{}, fmt.Errorf("azure wif: token exchange failed with status %d: %s", resp.StatusCode, string(body))
+		return tokensource.Credential{}, fmt.Errorf("azure wif: token exchange failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tokenResp struct {
@@ -147,14 +167,14 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 		AccessToken string `json:"access_token"`
 	}
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return Credential{}, fmt.Errorf("azure wif: unmarshal token response: %w", err)
+		return tokensource.Credential{}, fmt.Errorf("azure wif: unmarshal token response: %w", err)
 	}
 
 	if tokenResp.AccessToken == "" {
-		return Credential{}, errors.New("azure wif: token response missing access_token")
+		return tokensource.Credential{}, errors.New("azure wif: token response missing access_token")
 	}
 	if tokenResp.ExpiresIn < 0 {
-		return Credential{}, errors.New("azure wif: token response expires_in is invalid")
+		return tokensource.Credential{}, errors.New("azure wif: token response expires_in is invalid")
 	}
 
 	if tokenResp.ExpiresIn > 60 {
@@ -168,7 +188,7 @@ func (a *AzureWIF) FetchCredential(ctx context.Context) (Credential, error) {
 		a.expiresAt = time.Time{}
 	}
 
-	return Credential{Value: tokenResp.AccessToken, Kind: KindBearer}, nil
+	return tokensource.Credential{Value: tokenResp.AccessToken, Kind: tokensource.KindBearer}, nil
 }
 
 func isValidOpenAIEndpoint(raw string) bool {
@@ -194,4 +214,9 @@ func (a *AzureWIF) resolveScope() string {
 		return a.cfg.Scope
 	}
 	return "https://cognitiveservices.azure.com/.default"
+}
+
+// ModeDescription returns the Microsoft Azure native workload identity federation mode label.
+func (a *AzureWIF) ModeDescription() string {
+	return "Mode: Workload Identity Federation (Azure OpenAI Native)"
 }

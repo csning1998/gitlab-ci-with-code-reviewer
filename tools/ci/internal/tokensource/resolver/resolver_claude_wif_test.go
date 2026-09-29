@@ -1,4 +1,4 @@
-package config
+package resolver
 
 import (
 	"context"
@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/claudewif"
 )
 
-var defaultTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
+var defaultTestClaudeWIFConfig = ClaudeWIFConfig{
 	FederationRuleID: "fdrl_123456",
 	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_789012",
@@ -17,7 +18,7 @@ var defaultTestClaudeWIFConfig = tokensource.ClaudeWIFConfig{
 }
 
 // setClaudeWIFEnvFrom declares the Claude WIF variables of cfg for the current test.
-func setClaudeWIFEnvFrom(t *testing.T, cfg tokensource.ClaudeWIFConfig) {
+func setClaudeWIFEnvFrom(t *testing.T, cfg ClaudeWIFConfig) {
 	t.Helper()
 	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", cfg.FederationRuleID)
 	t.Setenv("ANTHROPIC_ORGANIZATION_ID", cfg.OrganizationID)
@@ -36,12 +37,12 @@ func TestDeriveClaudeWIFConfig_ValueBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string
 		setupEnv func(t *testing.T)
-		want     tokensource.ClaudeWIFConfig
+		want     ClaudeWIFConfig
 	}{
 		{
 			name:     "unset",
 			setupEnv: func(t *testing.T) {},
-			want:     tokensource.ClaudeWIFConfig{},
+			want:     ClaudeWIFConfig{},
 		},
 		{
 			name: "surrounding whitespace trimmed",
@@ -52,7 +53,7 @@ func TestDeriveClaudeWIFConfig_ValueBoundaries(t *testing.T) {
 				t.Setenv("ANTHROPIC_ID_TOKEN", "\nheader.payload.signature  ")
 				t.Setenv("ANTHROPIC_WORKSPACE_ID", "  wrkspc_optional_123\n")
 			},
-			want: tokensource.ClaudeWIFConfig{
+			want: ClaudeWIFConfig{
 				FederationRuleID: "fdrl_123456",
 				OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 				ServiceAccountID: "svac_789012",
@@ -69,7 +70,7 @@ func TestDeriveClaudeWIFConfig_ValueBoundaries(t *testing.T) {
 				t.Setenv("ANTHROPIC_ID_TOKEN", "  ")
 				t.Setenv("ANTHROPIC_WORKSPACE_ID", " \t\n")
 			},
-			want: tokensource.ClaudeWIFConfig{},
+			want: ClaudeWIFConfig{},
 		},
 		{
 			name: "workspace omitted",
@@ -112,9 +113,9 @@ func TestResolveTokenProvider_ClaudeWIF_ProviderSpellings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ResolveTokenProvider(%q) returned an unexpected error: %v", tc.provider, err)
 			}
-			wif, ok := provider.(*tokensource.ClaudeWIF)
+			wif, ok := provider.(*claudewif.ClaudeWIF)
 			if !ok {
-				t.Fatalf("provider has type %T, want *tokensource.ClaudeWIF", provider)
+				t.Fatalf("provider has type %T, want *claudewif.ClaudeWIF", provider)
 			}
 			if got := wif.Config(); got != defaultTestClaudeWIFConfig {
 				t.Errorf("Config() = %+v, want %+v", got, defaultTestClaudeWIFConfig)
@@ -336,7 +337,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsKeepStatic(t *testing.T) 
 			}
 			static, ok := provider.(tokensource.Static)
 			if !ok {
-				t.Fatalf("provider has type %T, want tokensource.Static", provider)
+				t.Fatalf("provider has type %T, want Static", provider)
 			}
 			if string(static) != tc.want {
 				t.Errorf("static credential = %q, want %q", string(static), tc.want)
@@ -398,7 +399,7 @@ func TestResolveTokenProvider_ClaudeWIF_InactiveSignalsKeepVault(t *testing.T) {
 				t.Fatalf("ResolveTokenProvider(...) returned an unexpected error: %v", err)
 			}
 			if _, ok := provider.(*tokensource.VaultKV); !ok {
-				t.Fatalf("provider has type %T, want *tokensource.VaultKV", provider)
+				t.Fatalf("provider has type %T, want *VaultKV", provider)
 			}
 		})
 	}
@@ -476,9 +477,9 @@ func TestResolveTokenProvider_ClaudeWIF_TrimsValuesIntoCredential(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ResolveTokenProvider(...) returned an unexpected error: %v", err)
 	}
-	wif, ok := provider.(*tokensource.ClaudeWIF)
+	wif, ok := provider.(*claudewif.ClaudeWIF)
 	if !ok {
-		t.Fatalf("provider has type %T, want *tokensource.ClaudeWIF", provider)
+		t.Fatalf("provider has type %T, want *claudewif.ClaudeWIF", provider)
 	}
 	want := defaultTestClaudeWIFConfig
 	want.WorkspaceID = "wrkspc_optional_123"
@@ -514,7 +515,7 @@ func TestResolveTokenProvider_ClaudeWIF_MissingRequiredFieldReportsFieldError(t 
 			_, err := ResolveTokenProvider("claude")
 			fieldErr, ok := errors.AsType[*tokensource.FieldError](err)
 			if !ok {
-				t.Fatalf("ResolveTokenProvider(...) error = %v, want a wrapped *tokensource.FieldError", err)
+				t.Fatalf("ResolveTokenProvider(...) error = %v, want a wrapped *FieldError", err)
 			}
 			if fieldErr.Field != tc.wantField {
 				t.Errorf("FieldError.Field = %q, want %q", fieldErr.Field, tc.wantField)
@@ -552,7 +553,7 @@ func TestResolveTokenProvider_ClaudeWIF_InvalidFormatNamesEnvironmentVariable(t 
 			_, err := ResolveTokenProvider("claude")
 			fieldErr, ok := errors.AsType[*tokensource.FieldError](err)
 			if !ok {
-				t.Fatalf("ResolveTokenProvider(...) error = %v, want a wrapped *tokensource.FieldError", err)
+				t.Fatalf("ResolveTokenProvider(...) error = %v, want a wrapped *FieldError", err)
 			}
 			if fieldErr.Field != tc.wantField {
 				t.Errorf("FieldError.Field = %q, want %q", fieldErr.Field, tc.wantField)

@@ -1,13 +1,13 @@
-package config
+package resolver
 
 import (
 	"strings"
 	"testing"
 
-	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/azurewif"
 )
 
-var defaultTestAzureWIFConfig = tokensource.AzureWIFConfig{
+var defaultTestAzureWIFConfig = AzureWIFConfig{
 	TenantID:       "663bcc2a-0747-4e40-bc5d-6d8c4450e1f3",
 	ClientID:       "11111111-2222-3333-4444-555555555555",
 	OpenAIEndpoint: "https://oai-csning1998-lab.openai.azure.com/",
@@ -15,7 +15,7 @@ var defaultTestAzureWIFConfig = tokensource.AzureWIFConfig{
 }
 
 // setAzureWIFEnvFrom declares the Azure WIF variables of cfg for the current test.
-func setAzureWIFEnvFrom(t *testing.T, cfg tokensource.AzureWIFConfig) {
+func setAzureWIFEnvFrom(t *testing.T, cfg AzureWIFConfig) {
 	t.Helper()
 	t.Setenv("AZURE_TENANT_ID", cfg.TenantID)
 	t.Setenv("AZURE_CLIENT_ID", cfg.ClientID)
@@ -33,12 +33,12 @@ func TestDeriveAzureWIFConfig_ValueBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string
 		setupEnv func(t *testing.T)
-		want     tokensource.AzureWIFConfig
+		want     AzureWIFConfig
 	}{
 		{
 			name:     "unset",
 			setupEnv: func(t *testing.T) {},
-			want:     tokensource.AzureWIFConfig{},
+			want:     AzureWIFConfig{},
 		},
 		{
 			name: "surrounding whitespace trimmed",
@@ -58,7 +58,7 @@ func TestDeriveAzureWIFConfig_ValueBoundaries(t *testing.T) {
 				t.Setenv("AZURE_OPENAI_ENDPOINT", "  ")
 				t.Setenv("AZURE_ID_TOKEN", " \t\n")
 			},
-			want: tokensource.AzureWIFConfig{},
+			want: AzureWIFConfig{},
 		},
 	}
 
@@ -94,9 +94,9 @@ func TestResolveTokenProvider_AzureWIF_ProviderSpellings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ResolveTokenProvider(%q) returned an unexpected error: %v", tc.provider, err)
 			}
-			wif, ok := provider.(*tokensource.AzureWIF)
+			wif, ok := provider.(*azurewif.AzureWIF)
 			if !ok {
-				t.Fatalf("provider has type %T, want *tokensource.AzureWIF", provider)
+				t.Fatalf("provider has type %T, want *azurewif.AzureWIF", provider)
 			}
 			if got := wif.Config(); got.ClientID != defaultTestAzureWIFConfig.ClientID || got.TenantID != defaultTestAzureWIFConfig.TenantID {
 				t.Errorf("Config() = %+v, want %+v", got, defaultTestAzureWIFConfig)

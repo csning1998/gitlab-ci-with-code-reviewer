@@ -11,7 +11,7 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 
-	"ci-tools/internal/config"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/testutil"
 	"ci-tools/internal/tokensource"
 )
@@ -47,7 +47,7 @@ func mustNewClient(t *testing.T, cfg Config) *Client {
 }
 
 // stubCapturingClient serves one streamed text block and records the decoded request body.
-func stubCapturingClient(t *testing.T, opts config.ModelOptions, gotBody *map[string]any) *Client {
+func stubCapturingClient(t *testing.T, opts reviewerconfig.ModelOptions, gotBody *map[string]any) *Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -94,7 +94,7 @@ func TestNew_ConfigurationValidation(t *testing.T) {
 		}{
 			{
 				name:     "rejects nil tokens",
-				cfg:      Config{ModelOptions: config.ModelOptions{Model: "claude-sonnet-5"}},
+				cfg:      Config{ModelOptions: reviewerconfig.ModelOptions{Model: "claude-sonnet-5"}},
 				wantWord: "tokens",
 			},
 			{
@@ -116,7 +116,7 @@ func TestNew_ConfigurationValidation(t *testing.T) {
 
 	t.Run("applies default maxTokens and timeout when unset", func(t *testing.T) {
 		c, err := New(Config{
-			ModelOptions: config.ModelOptions{Model: "claude-sonnet-5"},
+			ModelOptions: reviewerconfig.ModelOptions{Model: "claude-sonnet-5"},
 			Tokens:       tokensource.Static("test-api-key"),
 		})
 		if err != nil {
@@ -125,8 +125,8 @@ func TestNew_ConfigurationValidation(t *testing.T) {
 		if c.maxTokens != DefaultMaxTokens {
 			t.Errorf("maxTokens = %d, want default %d", c.maxTokens, DefaultMaxTokens)
 		}
-		if c.timeout != config.DefaultTimeout {
-			t.Errorf("timeout = %v, want default %v", c.timeout, config.DefaultTimeout)
+		if c.timeout != reviewerconfig.DefaultTimeout {
+			t.Errorf("timeout = %v, want default %v", c.timeout, reviewerconfig.DefaultTimeout)
 		}
 	})
 }
@@ -140,7 +140,7 @@ func TestReview_ReportsCredentialFailureBeforeRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	c := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{Model: "claude-sonnet-5", BaseURL: server.URL},
+		ModelOptions: reviewerconfig.ModelOptions{Model: "claude-sonnet-5", BaseURL: server.URL},
 		Tokens:       testutil.FailingTokenProvider{},
 	})
 
@@ -167,7 +167,7 @@ func TestReview_SendsResolvedCredentialAndOptions(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	c := mustNewClient(t, Config{
-		ModelOptions: config.ModelOptions{
+		ModelOptions: reviewerconfig.ModelOptions{
 			Model:     "claude-sonnet-5",
 			MaxTokens: 4096,
 			BaseURL:   server.URL,
@@ -214,7 +214,7 @@ func TestReview_SamplingParameters_TableDriven(t *testing.T) {
 	t.Parallel()
 	t.Run("injects sampling parameters when configured", func(t *testing.T) {
 		var gotBody map[string]any
-		c := stubCapturingClient(t, config.ModelOptions{
+		c := stubCapturingClient(t, reviewerconfig.ModelOptions{
 			Provider:    "claude",
 			Model:       "claude-sonnet-5",
 			MaxTokens:   4096,
@@ -244,7 +244,7 @@ func TestReview_SamplingParameters_TableDriven(t *testing.T) {
 
 	t.Run("omits sampling parameters when unset", func(t *testing.T) {
 		var gotBody map[string]any
-		c := stubCapturingClient(t, config.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096}, &gotBody)
+		c := stubCapturingClient(t, reviewerconfig.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096}, &gotBody)
 
 		if _, err := c.Review("prompt"); err != nil {
 			t.Fatalf("Review(...) returned unexpected error: %v", err)
@@ -258,12 +258,12 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 	t.Run("rejects invalid thinking configuration", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			opts      config.ModelOptions
+			opts      reviewerconfig.ModelOptions
 			wantError string
 		}{
 			{
 				name: "rejects manual budget on adaptive generation",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-opus-4-7",
 					MaxTokens:      8192,
 					ThinkingBudget: testutil.Ptr(2048),
@@ -272,7 +272,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "rejects budget below 1024 floor",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-sonnet-4-5-20250929",
 					MaxTokens:      8192,
 					ThinkingBudget: testutil.Ptr(512),
@@ -281,7 +281,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "rejects budget equal or above max_tokens",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-sonnet-4-5-20250929",
 					MaxTokens:      2048,
 					ThinkingBudget: testutil.Ptr(2048),
@@ -303,19 +303,19 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 	t.Run("generates valid thinking payload", func(t *testing.T) {
 		tests := []struct {
 			name       string
-			opts       config.ModelOptions
+			opts       reviewerconfig.ModelOptions
 			assertBody func(t *testing.T, body map[string]any)
 		}{
 			{
 				name: "defaults to disabled thinking",
-				opts: config.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096},
+				opts: reviewerconfig.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096},
 				assertBody: func(t *testing.T, body map[string]any) {
 					assertThinkingField(t, body, "type", "disabled")
 				},
 			},
 			{
 				name: "legacy generation uses manual thinking budget",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-sonnet-4-5-20250929",
 					MaxTokens:      8192,
 					ThinkingBudget: testutil.Ptr(2048),
@@ -327,7 +327,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "adaptive generation uses effort",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-opus-4-7",
 					MaxTokens:      8192,
 					ReasoningLevel: "xhigh",
@@ -339,7 +339,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			},
 			{
 				name: "thinking suppresses sampling overrides",
-				opts: config.ModelOptions{
+				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-opus-4-7",
 					MaxTokens:      8192,
 					ReasoningLevel: "high",

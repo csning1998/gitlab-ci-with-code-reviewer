@@ -1,4 +1,4 @@
-package config
+package resolver
 
 import (
 	"errors"
@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/claudewif"
 )
 
-var documentedFormatClaudeWIFConfig = tokensource.ClaudeWIFConfig{
+var documentedFormatClaudeWIFConfig = ClaudeWIFConfig{
 	FederationRuleID: "fdrl_TESTRULE000000000000000",
 	OrganizationID:   "abcdef01-2345-4678-89ab-cdef01234567",
 	ServiceAccountID: "svac_TESTACCOUNT0000000000000",
@@ -24,7 +25,7 @@ func TestResolveTokenProvider_ClaudeWIF_DocumentedIdentifierFormats(t *testing.T
 	if err != nil {
 		t.Fatalf("ResolveTokenProvider(...) returned an unexpected error: %v", err)
 	}
-	wif, ok := provider.(*tokensource.ClaudeWIF)
+	wif, ok := provider.(*claudewif.ClaudeWIF)
 	if !ok {
 		t.Fatalf("provider has type %T, want *tokensource.ClaudeWIF", provider)
 	}

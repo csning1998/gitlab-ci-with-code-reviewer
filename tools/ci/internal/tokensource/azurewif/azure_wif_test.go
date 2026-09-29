@@ -1,4 +1,4 @@
-package tokensource_test
+package azurewif_test
 
 import (
 	"context"
@@ -14,16 +14,17 @@ import (
 	"time"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/azurewif"
 )
 
-var validTestAzureWIFConfig = tokensource.AzureWIFConfig{
+var validTestAzureWIFConfig = azurewif.AzureWIFConfig{
 	TenantID:       "663bcc2a-0747-4e40-bc5d-6d8c4450e1f3",
 	ClientID:       "11111111-2222-3333-4444-555555555555",
 	OpenAIEndpoint: "https://oai-csning1998-lab.openai.azure.com/",
 	IDToken:        "jwt.token.here",
 }
 
-func withTestAzureWIFConfig(mutate func(c *tokensource.AzureWIFConfig)) tokensource.AzureWIFConfig {
+func withTestAzureWIFConfig(mutate func(c *azurewif.AzureWIFConfig)) azurewif.AzureWIFConfig {
 	cfg := validTestAzureWIFConfig
 	if mutate != nil {
 		mutate(&cfg)
@@ -31,16 +32,16 @@ func withTestAzureWIFConfig(mutate func(c *tokensource.AzureWIFConfig)) tokensou
 	return cfg
 }
 
-func newTestAzureWIF(t *testing.T) *tokensource.AzureWIF {
+func newTestAzureWIF(t *testing.T) *azurewif.AzureWIF {
 	t.Helper()
-	src, err := tokensource.NewAzureWIF(validTestAzureWIFConfig)
+	src, err := azurewif.NewAzureWIF(validTestAzureWIFConfig)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
 	return src
 }
 
-func assertAzureWIFExpectedError(t *testing.T, wantErr string, got *tokensource.AzureWIF, err error) {
+func assertAzureWIFExpectedError(t *testing.T, wantErr string, got *azurewif.AzureWIF, err error) {
 	t.Helper()
 	if err == nil || err.Error() != wantErr {
 		t.Fatalf("NewAzureWIF() error = %v, want %q", err, wantErr)
@@ -50,7 +51,7 @@ func assertAzureWIFExpectedError(t *testing.T, wantErr string, got *tokensource.
 	}
 }
 
-func assertAzureWIFSuccess(t *testing.T, got *tokensource.AzureWIF, err error) {
+func assertAzureWIFSuccess(t *testing.T, got *azurewif.AzureWIF, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("NewAzureWIF() unexpected error = %v", err)
@@ -63,7 +64,7 @@ func assertAzureWIFSuccess(t *testing.T, got *tokensource.AzureWIF, err error) {
 func TestNewAzureWIF_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     tokensource.AzureWIFConfig
+		cfg     azurewif.AzureWIFConfig
 		wantErr string
 	}{
 		{
@@ -72,84 +73,84 @@ func TestNewAzureWIF_Validation(t *testing.T) {
 		},
 		{
 			name: "missing tenant id",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = ""
 			}),
 			wantErr: "azure wif: tenant id is required",
 		},
 		{
 			name: "invalid tenant id format",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = "invalid-uuid"
 			}),
 			wantErr: "azure wif: tenant id format is invalid",
 		},
 		{
 			name: "missing client id",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = ""
 			}),
 			wantErr: "azure wif: client id is required",
 		},
 		{
 			name: "invalid client id format",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = "invalid-uuid"
 			}),
 			wantErr: "azure wif: client id format is invalid",
 		},
 		{
 			name: "missing id token",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = ""
 			}),
 			wantErr: "azure wif: id token is required",
 		},
 		{
 			name: "invalid id token",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = "short"
 			}),
 			wantErr: "azure wif: id token format is invalid",
 		},
 		{
 			name: "missing openai endpoint",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = ""
 			}),
 			wantErr: "azure wif: openai endpoint is required",
 		},
 		{
 			name: "whitespace openai endpoint",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "   \t\n"
 			}),
 			wantErr: "azure wif: openai endpoint is required",
 		},
 		{
 			name: "insecure openai endpoint",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.OpenAIEndpoint = "http://oai-csning1998-lab.openai.azure.com/"
 			}),
 			wantErr: "azure wif: openai endpoint format is invalid",
 		},
 		{
 			name: "whitespace tenant id",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.TenantID = "  \t\n "
 			}),
 			wantErr: "azure wif: tenant id is required",
 		},
 		{
 			name: "whitespace client id",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.ClientID = " \t "
 			}),
 			wantErr: "azure wif: client id is required",
 		},
 		{
 			name: "whitespace id token",
-			cfg: withTestAzureWIFConfig(func(c *tokensource.AzureWIFConfig) {
+			cfg: withTestAzureWIFConfig(func(c *azurewif.AzureWIFConfig) {
 				c.IDToken = " \t\n"
 			}),
 			wantErr: "azure wif: id token is required",
@@ -158,7 +159,7 @@ func TestNewAzureWIF_Validation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tokensource.NewAzureWIF(tc.cfg)
+			got, err := azurewif.NewAzureWIF(tc.cfg)
 			if tc.wantErr != "" {
 				assertAzureWIFExpectedError(t, tc.wantErr, got, err)
 				return
@@ -168,7 +169,7 @@ func TestNewAzureWIF_Validation(t *testing.T) {
 	}
 }
 
-func newMockEntraIDServer(t *testing.T, requestCount *int32, expectedConfig tokensource.AzureWIFConfig) *httptest.Server {
+func newMockEntraIDServer(t *testing.T, requestCount *int32, expectedConfig azurewif.AzureWIFConfig) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(requestCount, 1)
@@ -183,7 +184,7 @@ func newMockEntraIDServer(t *testing.T, requestCount *int32, expectedConfig toke
 	}))
 }
 
-func verifyEntraIDRequest(t *testing.T, r *http.Request, expectedConfig tokensource.AzureWIFConfig) {
+func verifyEntraIDRequest(t *testing.T, r *http.Request, expectedConfig azurewif.AzureWIFConfig) {
 	t.Helper()
 	if r.Method != http.MethodPost {
 		t.Errorf("Method = %s, want POST", r.Method)
@@ -228,7 +229,7 @@ func TestAzureWIF_FetchCredential_ExchangesTokenWithEntraID(t *testing.T) {
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = server.URL + "/" + cfg.TenantID + "/oauth2/v2.0/token"
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
@@ -263,7 +264,7 @@ func TestAzureWIF_ConcurrentFetchCredential(t *testing.T) {
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = server.URL + "/token"
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
@@ -312,7 +313,7 @@ func TestAzureWIF_ContextCanceledWhileWaitingForLock(t *testing.T) {
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = server.URL + "/token"
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
@@ -367,7 +368,7 @@ func TestAzureWIF_FetchCredential_CanceledContextReturnsErrorEvenOnCacheHit(t *t
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = server.URL + "/token"
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
@@ -421,7 +422,7 @@ func TestAzureWIF_TokenExpirationAndRefresh(t *testing.T) {
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = server.URL + "/token"
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}
@@ -445,7 +446,7 @@ func TestAzureWIF_FetchCredential_NilContext(t *testing.T) {
 	cfg := validTestAzureWIFConfig
 	cfg.TokenEndpoint = server.URL + "/" + cfg.TenantID + "/oauth2/v2.0/token"
 
-	src, err := tokensource.NewAzureWIF(cfg)
+	src, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		t.Fatalf("NewAzureWIF() error = %v", err)
 	}

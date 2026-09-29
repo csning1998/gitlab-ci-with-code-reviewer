@@ -13,12 +13,14 @@ import (
 	"ci-tools/internal/gitlab"
 	"ci-tools/internal/providers"
 	"ci-tools/internal/review"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/resolver"
 )
 
 // resolvePrompt reads the review prompt declared for the model. A prompt_file MUST stay inside
 // the working directory, since the declaration comes from the repository under review.
-func resolvePrompt(opts config.ModelOptions) (string, error) {
+func resolvePrompt(opts reviewerconfig.ModelOptions) (string, error) {
 	file := strings.TrimSpace(opts.PromptFile)
 	if file != "" {
 		confined, err := confinePromptFile(file)
@@ -68,16 +70,16 @@ func confinePromptFile(path string) (string, error) {
 
 // resolveOptions reads REVIEW_MODEL as a declaration key first and as a model id second. The
 // declaration carries per-model parameters which a CI input cannot express.
-func resolveOptions() (config.ModelOptions, error) {
+func resolveOptions() (reviewerconfig.ModelOptions, error) {
 	key := os.Getenv("REVIEW_MODEL")
-	opts, err := config.ResolveDeclaredOptions(os.Getenv("REVIEW_CONFIG_FILE"), key)
+	opts, err := reviewerconfig.ResolveDeclaredOptions(os.Getenv("REVIEW_CONFIG_FILE"), key)
 	if err == nil {
 		return opts, nil
 	}
-	if !errors.Is(err, config.ErrSlotNotConfigured) {
-		return config.ModelOptions{}, err
+	if !errors.Is(err, reviewerconfig.ErrSlotNotConfigured) {
+		return reviewerconfig.ModelOptions{}, err
 	}
-	return config.ResolveReviewOptions()
+	return reviewerconfig.ResolveReviewOptions()
 }
 
 func main() {
@@ -90,7 +92,7 @@ func main() {
 	}
 
 	opts, err := resolveOptions()
-	if errors.Is(err, config.ErrSlotNotConfigured) {
+	if errors.Is(err, reviewerconfig.ErrSlotNotConfigured) {
 		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'REVIEW_MODEL' is missing.")
 		os.Exit(1)
 	}
@@ -99,7 +101,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	tokens, err := config.ResolveTokenProvider(opts.Provider)
+	tokens, err := resolver.Resolve(opts.Provider)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)

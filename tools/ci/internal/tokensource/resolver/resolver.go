@@ -1,4 +1,4 @@
-package config
+package resolver
 
 import (
 	"errors"
@@ -7,21 +7,24 @@ import (
 	"strings"
 
 	"ci-tools/internal/tokensource"
+	"ci-tools/internal/tokensource/azurewif"
+	"ci-tools/internal/tokensource/claudewif"
+	"ci-tools/internal/tokensource/gcpwif"
 )
 
-// ClaudeWIFConfig specifies parameters for Claude Workload Identity Federation.
-type ClaudeWIFConfig = tokensource.ClaudeWIFConfig
+// ClaudeWIFConfig specifies parameters for Anthropic Claude Workload Identity Federation.
+type ClaudeWIFConfig = claudewif.ClaudeWIFConfig
 
-// AzureWIFConfig specifies parameters for Azure Workload Identity Federation.
-type AzureWIFConfig = tokensource.AzureWIFConfig
+// AzureWIFConfig specifies parameters for Microsoft Azure Workload Identity Federation.
+type AzureWIFConfig = azurewif.AzureWIFConfig
 
 // GoogleWIFConfig specifies parameters for Google Cloud Workload Identity Federation.
-type GoogleWIFConfig = tokensource.GoogleWIFConfig
+type GoogleWIFConfig = gcpwif.GoogleWIFConfig
 
-// ResolveTokenProvider selects the credential source for provider. A declared native WIF configuration
+// Resolve selects the credential source for provider. A declared native WIF configuration
 // takes precedence for the matching provider. A declared VAULT_ADDR selects Workload Identity Federation
 // via Vault. Every other case uses the static provider credential.
-func ResolveTokenProvider(provider string) (tokensource.Provider, error) {
+func Resolve(provider string) (tokensource.Provider, error) {
 	normalized := strings.ToLower(strings.TrimSpace(provider))
 	switch normalized {
 	case "claude":
@@ -52,24 +55,29 @@ func ResolveTokenProvider(provider string) (tokensource.Provider, error) {
 	return tokensource.Static(apiKey), nil
 }
 
+// ResolveTokenProvider is an alias for Resolve.
+func ResolveTokenProvider(provider string) (tokensource.Provider, error) {
+	return Resolve(provider)
+}
+
 // hasClaudeWIFSignal checks whether ANTHROPIC_FEDERATION_RULE_ID is configured.
-func hasClaudeWIFSignal(cfg ClaudeWIFConfig) bool {
+func hasClaudeWIFSignal(cfg claudewif.ClaudeWIFConfig) bool {
 	return cfg.FederationRuleID != ""
 }
 
 // hasAzureWIFSignal checks whether AZURE_CLIENT_ID is configured.
-func hasAzureWIFSignal(cfg AzureWIFConfig) bool {
+func hasAzureWIFSignal(cfg azurewif.AzureWIFConfig) bool {
 	return cfg.ClientID != ""
 }
 
 // hasGoogleWIFSignal checks whether GCP_WORKLOAD_IDENTITY_PROVIDER is configured.
-func hasGoogleWIFSignal(cfg GoogleWIFConfig) bool {
+func hasGoogleWIFSignal(cfg gcpwif.GoogleWIFConfig) bool {
 	return cfg.WorkloadIdentityProvider != ""
 }
 
 // newClaudeWIFProvider builds the Anthropic Claude WIF credential source.
-func newClaudeWIFProvider(cfg ClaudeWIFConfig) (tokensource.Provider, error) {
-	wif, err := tokensource.NewClaudeWIF(cfg)
+func newClaudeWIFProvider(cfg claudewif.ClaudeWIFConfig) (tokensource.Provider, error) {
+	wif, err := claudewif.NewClaudeWIF(cfg)
 	if err != nil {
 		return nil, mapClaudeWIFValidationError(err)
 	}
@@ -77,8 +85,8 @@ func newClaudeWIFProvider(cfg ClaudeWIFConfig) (tokensource.Provider, error) {
 }
 
 // newAzureWIFProvider builds the Azure WIF credential source.
-func newAzureWIFProvider(cfg AzureWIFConfig) (tokensource.Provider, error) {
-	wif, err := tokensource.NewAzureWIF(cfg)
+func newAzureWIFProvider(cfg azurewif.AzureWIFConfig) (tokensource.Provider, error) {
+	wif, err := azurewif.NewAzureWIF(cfg)
 	if err != nil {
 		return nil, mapAzureWIFValidationError(err)
 	}
@@ -86,8 +94,8 @@ func newAzureWIFProvider(cfg AzureWIFConfig) (tokensource.Provider, error) {
 }
 
 // newGoogleWIFProvider builds the Google Cloud WIF credential source.
-func newGoogleWIFProvider(cfg GoogleWIFConfig) (tokensource.Provider, error) {
-	wif, err := tokensource.NewGoogleWIF(cfg)
+func newGoogleWIFProvider(cfg gcpwif.GoogleWIFConfig) (tokensource.Provider, error) {
+	wif, err := gcpwif.NewGoogleWIF(cfg)
 	if err != nil {
 		return nil, mapGoogleWIFValidationError(err)
 	}
@@ -189,8 +197,8 @@ func DeriveVaultSecretField(provider string) string {
 }
 
 // DeriveClaudeWIFConfig reads the Anthropic Claude federation parameters from the job environment.
-func DeriveClaudeWIFConfig() ClaudeWIFConfig {
-	return ClaudeWIFConfig{
+func DeriveClaudeWIFConfig() claudewif.ClaudeWIFConfig {
+	return claudewif.ClaudeWIFConfig{
 		FederationRuleID: strings.TrimSpace(os.Getenv("ANTHROPIC_FEDERATION_RULE_ID")),
 		OrganizationID:   strings.TrimSpace(os.Getenv("ANTHROPIC_ORGANIZATION_ID")),
 		ServiceAccountID: strings.TrimSpace(os.Getenv("ANTHROPIC_SERVICE_ACCOUNT_ID")),
@@ -200,8 +208,8 @@ func DeriveClaudeWIFConfig() ClaudeWIFConfig {
 }
 
 // DeriveAzureWIFConfig reads the Microsoft Azure federation parameters from the job environment.
-func DeriveAzureWIFConfig() AzureWIFConfig {
-	return AzureWIFConfig{
+func DeriveAzureWIFConfig() azurewif.AzureWIFConfig {
+	return azurewif.AzureWIFConfig{
 		TenantID:       strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")),
 		ClientID:       strings.TrimSpace(os.Getenv("AZURE_CLIENT_ID")),
 		OpenAIEndpoint: strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
@@ -210,12 +218,43 @@ func DeriveAzureWIFConfig() AzureWIFConfig {
 }
 
 // DeriveGoogleWIFConfig reads the Google Cloud federation parameters from the job environment.
-func DeriveGoogleWIFConfig() GoogleWIFConfig {
-	return GoogleWIFConfig{
+func DeriveGoogleWIFConfig() gcpwif.GoogleWIFConfig {
+	return gcpwif.GoogleWIFConfig{
 		ProjectID:                strings.TrimSpace(os.Getenv("GCP_PROJECT_ID")),
 		ProjectNumber:            strings.TrimSpace(os.Getenv("GCP_PROJECT_NUMBER")),
 		WorkloadIdentityProvider: strings.TrimSpace(os.Getenv("GCP_WORKLOAD_IDENTITY_PROVIDER")),
 		ServiceAccount:           strings.TrimSpace(os.Getenv("GCP_SERVICE_ACCOUNT")),
 		IDToken:                  strings.TrimSpace(os.Getenv("GCP_ID_TOKEN")),
 	}
+}
+
+// ResolveProviderAPIKey returns the credential for provider. REVIEW_API_KEY applies to every
+// provider and takes precedence over the provider-specific variable.
+func ResolveProviderAPIKey(provider string) string {
+	if value := strings.TrimSpace(os.Getenv("REVIEW_API_KEY")); value != "" {
+		return value
+	}
+	name := DeriveProviderAPIKeyEnv(provider)
+	if name == "" {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv(name))
+}
+
+// DeriveProviderAPIKeyEnv derives the provider-specific credential variable name, mapping
+// azure-openai to AZURE_OPENAI_API_KEY. An empty provider yields an empty name.
+func DeriveProviderAPIKeyEnv(provider string) string {
+	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(provider), "-", "_"))
+	if normalized == "" {
+		return ""
+	}
+	return normalized + "_API_KEY"
+}
+
+func lookupEnv(name, def string) string {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return def
+	}
+	return v
 }

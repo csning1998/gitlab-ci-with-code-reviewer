@@ -1,4 +1,4 @@
-package tokensource
+package gcpwif
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ci-tools/internal/tokensource"
 )
 
 var (
@@ -51,41 +53,59 @@ func isValidWorkloadIdentityProvider(provider, projectNumber string) bool {
 	return found && number == projectNumber
 }
 
+// isJWTRune checks whether r is a valid JWT character (alphanumeric, dot, underscore, or hyphen).
+func isJWTRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
+}
+
+// validateIDToken checks that token length is within 8..4096 and contains only base64url/JWT characters.
+func validateIDToken(token string) bool {
+	if len(token) < 8 || len(token) > 4096 {
+		return false
+	}
+	for _, r := range token {
+		if !isJWTRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // NewGoogleWIF constructs a GoogleWIF token source after validating required configuration fields.
 func NewGoogleWIF(cfg GoogleWIFConfig) (*GoogleWIF, error) {
 	if strings.TrimSpace(cfg.ProjectID) == "" {
-		return nil, newGoogleRequiredFieldError(FieldProjectID)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldProjectID, Reason: tokensource.ReasonRequired}
 	}
 	if !projectIDPattern.MatchString(strings.TrimSpace(cfg.ProjectID)) {
-		return nil, newGoogleInvalidFormatFieldError(FieldProjectID)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldProjectID, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.ProjectNumber) == "" {
-		return nil, newGoogleRequiredFieldError(FieldProjectNumber)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldProjectNumber, Reason: tokensource.ReasonRequired}
 	}
 	if !projectNumberPattern.MatchString(strings.TrimSpace(cfg.ProjectNumber)) {
-		return nil, newGoogleInvalidFormatFieldError(FieldProjectNumber)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldProjectNumber, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.WorkloadIdentityProvider) == "" {
-		return nil, newGoogleRequiredFieldError(FieldWorkloadIdentityProvider)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldWorkloadIdentityProvider, Reason: tokensource.ReasonRequired}
 	}
 	if !isValidWorkloadIdentityProvider(strings.TrimSpace(cfg.WorkloadIdentityProvider), strings.TrimSpace(cfg.ProjectNumber)) {
-		return nil, newGoogleInvalidFormatFieldError(FieldWorkloadIdentityProvider)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldWorkloadIdentityProvider, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.ServiceAccount) == "" {
-		return nil, newGoogleRequiredFieldError(FieldServiceAccount)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldServiceAccount, Reason: tokensource.ReasonRequired}
 	}
 	if !serviceAccountPattern.MatchString(strings.TrimSpace(cfg.ServiceAccount)) {
-		return nil, newGoogleInvalidFormatFieldError(FieldServiceAccount)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldServiceAccount, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	if strings.TrimSpace(cfg.IDToken) == "" {
-		return nil, newGoogleRequiredFieldError(FieldIDToken)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldIDToken, Reason: tokensource.ReasonRequired}
 	}
 	if !validateIDToken(strings.TrimSpace(cfg.IDToken)) {
-		return nil, newGoogleInvalidFormatFieldError(FieldIDToken)
+		return nil, &tokensource.FieldError{Provider: "google", Field: tokensource.FieldIDToken, Reason: tokensource.ReasonInvalidFormat}
 	}
 
 	trimmedCfg := cfg
@@ -125,60 +145,48 @@ func (g *GoogleWIF) Config() GoogleWIFConfig {
 }
 
 // FetchCredential exchanges the GitLab ID token for a Google Cloud service account access token.
-func (g *GoogleWIF) FetchCredential(ctx context.Context) (Credential, error) {
+func (g *GoogleWIF) FetchCredential(ctx context.Context) (tokensource.Credential, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return tokensource.Credential{}, err
 	}
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return tokensource.Credential{}, err
 	}
 
 	if g.cachedTok != "" && time.Now().Before(g.expiresAt) {
-		return Credential{Value: g.cachedTok, Kind: KindBearer}, nil
+		return tokensource.Credential{Value: g.cachedTok, Kind: tokensource.KindBearer}, nil
 	}
 
 	stsToken, err := g.exchangeSTS(ctx)
 	if err != nil {
-		return Credential{}, err
+		return tokensource.Credential{}, err
 	}
 
-	saToken, expiry, err := g.generateAccessToken(ctx, stsToken)
+	tok, expiresAt, err := g.generateAccessToken(ctx, stsToken)
 	if err != nil {
-		return Credential{}, err
+		return tokensource.Credential{}, err
 	}
 
-	g.cachedTok = saToken
-	if !expiry.IsZero() && expiry.After(time.Now().Add(60*time.Second)) {
-		g.expiresAt = expiry.Add(-60 * time.Second)
-	} else if !expiry.IsZero() {
-		g.expiresAt = expiry
-	} else {
-		g.expiresAt = time.Now().Add(3500 * time.Second)
-	}
-
-	return Credential{Value: saToken, Kind: KindBearer}, nil
+	g.cachedTok = tok
+	g.expiresAt = expiresAt
+	return tokensource.Credential{Value: tok, Kind: tokensource.KindBearer}, nil
 }
 
 func (g *GoogleWIF) exchangeSTS(ctx context.Context) (string, error) {
-	audience := g.cfg.WorkloadIdentityProvider
-	if !strings.HasPrefix(audience, "//iam.googleapis.com/") {
-		audience = "//iam.googleapis.com/" + audience
-	}
-
-	stsPayload := map[string]string{
-		"audience":           audience,
+	stsPayload := map[string]any{
+		"audience":           "//iam.googleapis.com/" + g.cfg.WorkloadIdentityProvider,
 		"grantType":          "urn:ietf:params:oauth:grant-type:token-exchange",
 		"requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
+		"scope":              "https://www.googleapis.com/auth/cloud-platform",
 		"subjectTokenType":   "urn:ietf:params:oauth:token-type:jwt",
 		"subjectToken":       g.cfg.IDToken,
-		"scope":              strings.Join(g.cfg.Scopes, " "),
 	}
 
 	reqBody, err := json.Marshal(stsPayload)
@@ -280,4 +288,9 @@ func (g *GoogleWIF) generateAccessToken(ctx context.Context, stsToken string) (s
 	}
 
 	return iamResp.AccessToken, expiry, nil
+}
+
+// ModeDescription returns the Google Cloud native workload identity federation mode label.
+func (g *GoogleWIF) ModeDescription() string {
+	return "Mode: Workload Identity Federation (Google Cloud Native)"
 }

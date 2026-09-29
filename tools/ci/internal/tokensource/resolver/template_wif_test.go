@@ -1,4 +1,4 @@
-package config_test
+package resolver_test
 
 import (
 	"bytes"
@@ -62,7 +62,7 @@ func (d *templateBodyDoc) UnmarshalYAML(node *yaml.Node) error {
 
 func readCoreTemplateBytes(t *testing.T) []byte {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "..", "templates", "core.yml")
+	path := filepath.Join("..", "..", "..", "..", "..", "templates", "core.yml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile(%q) error = %v", path, err)

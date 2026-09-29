@@ -13,15 +13,15 @@ import (
 	"net/http"
 	"strings"
 
-	"ci-tools/internal/config"
 	"ci-tools/internal/httpguard"
+	"ci-tools/internal/reviewerconfig"
 	"ci-tools/internal/tokensource"
 )
 
 // Config declares the injection surface shared by every provider package. The calling binary
 // resolves both members from the CI job environment.
 type Config struct {
-	ModelOptions config.ModelOptions
+	ModelOptions reviewerconfig.ModelOptions
 	Tokens       tokensource.Provider
 }
 
@@ -40,7 +40,7 @@ var displayNames = map[string]string{
 type Client struct {
 	name         string
 	url          string
-	modelOptions config.ModelOptions
+	modelOptions reviewerconfig.ModelOptions
 	tokens       tokensource.Provider
 	http         *http.Client
 }
@@ -91,7 +91,7 @@ func New(cfg Config) (*Client, error) {
 	cfg.ModelOptions.APIVersion = apiVersion
 
 	if cfg.ModelOptions.Timeout <= 0 {
-		cfg.ModelOptions.Timeout = config.DefaultTimeout
+		cfg.ModelOptions.Timeout = reviewerconfig.DefaultTimeout
 	}
 
 	return &Client{
@@ -114,7 +114,7 @@ func resolveDisplayName(provider string) string {
 
 // resolveEndpoint builds the Chat Completions URL. Azure OpenAI addresses a named deployment
 // and requires an explicit api-version, whereas other providers expose model as request body.
-func resolveEndpoint(modelOptions config.ModelOptions) string {
+func resolveEndpoint(modelOptions reviewerconfig.ModelOptions) string {
 	base := strings.TrimSuffix(strings.TrimSpace(modelOptions.BaseURL), "/")
 	if modelOptions.APIVersion != "" {
 		return fmt.Sprintf(
