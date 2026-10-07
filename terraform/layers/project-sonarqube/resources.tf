@@ -1,7 +1,7 @@
 
 module "local_credential_contexts" {
   source  = "gitlab.com/csning1998-lab/contexts-local-credential/gitlab"
-  version = "~> 0.3.0"
+  version = "0.4.0"
 }
 
 resource "gitlab_project_variable" "sonar_host_url" {

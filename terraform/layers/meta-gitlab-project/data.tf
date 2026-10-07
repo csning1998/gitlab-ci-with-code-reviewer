@@ -1,30 +1,30 @@
 
 data "terraform_remote_state" "group_foundation" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-foundation"
-  })
+  }
 }
 
 data "terraform_remote_state" "group_federation_anthropic" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-federation-anthropic"
-  })
+  }
 }
 
 data "terraform_remote_state" "group_federation_gcp" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-federation-gcp"
-  })
+  }
 }
 
 data "terraform_remote_state" "group_federation_azure" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-federation-azure"
-  })
+  }
 }
 
 ephemeral "vault_kv_secret_v2" "state_backend" {
@@ -65,10 +65,10 @@ variable "github_owner" {
 
 output "project_id" {
   description = "Numeric identifier of the project 'gitlab-ci-with-code-reviewer'."
-  value       = module.baseline.project_id
+  value       = module.provisioner_gitlab_project.project_id
 }
 
 output "repository_ssh_url" {
   description = "SSH repository clone URI."
-  value       = module.baseline.repository_ssh_url
+  value       = module.provisioner_gitlab_project.repository_ssh_url
 }

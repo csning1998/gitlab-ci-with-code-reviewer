@@ -7,7 +7,7 @@ ephemeral "vault_kv_secret_v2" "sonarqube_admin" {
 
 module "local_credential_contexts" {
   source  = "gitlab.com/csning1998-lab/contexts-local-credential/gitlab"
-  version = "~> 0.3.0"
+  version = "0.4.0"
 }
 
 resource "sonarqube_user_token" "ci_analysis" {
