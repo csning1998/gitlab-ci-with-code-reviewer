@@ -13,9 +13,10 @@ terraform/**/*.tf.bak
 terraform.tfstate
 terraform.tfstate.*
 terraform.tfstate.backup
+terraform.tfvars
+**/tls/bastion-ca.pem
 
 ## HashiCorp Vault
-tls/
 
 ## SELinux
 selinux/*.mod

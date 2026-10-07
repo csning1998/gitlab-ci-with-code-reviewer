@@ -135,7 +135,7 @@ The review engine operates as a decoupled, state-agnostic consumer:
             vault = vault.bastion
         }
 
-        gitlab_project_id    = module.baseline.project_id
+        gitlab_project_id    = module.provisioner_gitlab_project.project_id
         legacy_alias_enabled = true
     }
     ```

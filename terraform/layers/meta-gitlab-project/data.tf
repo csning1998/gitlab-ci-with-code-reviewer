@@ -1,30 +1,30 @@
 
 data "terraform_remote_state" "group_foundation" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-foundation"
-  })
+  }
 }
 
 data "terraform_remote_state" "group_federation_anthropic" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-federation-anthropic"
-  })
+  }
 }
 
 data "terraform_remote_state" "group_federation_gcp" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-federation-gcp"
-  })
+  }
 }
 
 data "terraform_remote_state" "group_federation_azure" {
   backend = "http"
-  config = merge(module.local_credential_contexts.state_auth_gitlab_saas, {
+  config = {
     address = "https://gitlab.com/api/v4/projects/86417732/terraform/state/group-federation-azure"
-  })
+  }
 }
 
 ephemeral "vault_kv_secret_v2" "state_backend" {
@@ -41,6 +41,11 @@ ephemeral "vault_kv_secret_v2" "anthropic_admin_key" {
   name     = "parent-group-governance/ai-provider-console/anthropic"
 }
 
+ephemeral "vault_kv_secret_v2" "github_publication" {
+  provider = vault.bastion
+  mount    = "secret"
+  name     = "parent-group-governance/github/publication"
+}
 
 variable "gitlab_project_name" {
   description = "The title of this project"
@@ -48,12 +53,22 @@ variable "gitlab_project_name" {
   default     = "gitlab-ci-with-code-reviewer"
 }
 
+variable "github_owner" {
+  description = "Specifies the GitHub account or organization login hosting the mirrored repository."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", var.github_owner))
+    error_message = "github_owner must be a GitHub login of 1 to 39 characters. A hyphen must not be the first or last character."
+  }
+}
+
 output "project_id" {
   description = "Numeric identifier of the project 'gitlab-ci-with-code-reviewer'."
-  value       = module.baseline.project_id
+  value       = module.provisioner_gitlab_project.project_id
 }
 
 output "repository_ssh_url" {
   description = "SSH repository clone URI."
-  value       = module.baseline.repository_ssh_url
+  value       = module.provisioner_gitlab_project.repository_ssh_url
 }
