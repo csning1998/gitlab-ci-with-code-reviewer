@@ -25,6 +25,9 @@ func isGemmaModel(model string) bool {
 
 // validateGeneration MUST reject cross-generation thinking parameters at construction to prevent upstream HTTP 400 errors.
 func validateGeneration(model string, opts reviewerconfig.ModelOptions) error {
+	if opts.GoogleSearch != nil && *opts.GoogleSearch && isGemmaModel(model) {
+		return fmt.Errorf("gemini: model %q does not support google_search grounding", model)
+	}
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	hasBudget := opts.ThinkingBudget != nil && *opts.ThinkingBudget > 0
 

@@ -158,6 +158,56 @@ func TestValidate_IncompatibleProviderFields_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidate_GoogleSearchProviderRestriction(t *testing.T) {
+	t.Parallel()
+
+	validGemini := ModelOptions{
+		Provider:     "gemini",
+		Model:        "gemini-3.8-flash",
+		GoogleSearch: testutil.Ptr(true),
+	}
+	if err := Validate(validGemini); err != nil {
+		t.Errorf("Validate() for gemini with GoogleSearch error = %v, want nil", err)
+	}
+
+	invalidProviders := []string{"claude", "openai", "azure-openai", "grok", "local"}
+	for _, p := range invalidProviders {
+		opts := ModelOptions{
+			Provider:     p,
+			Model:        "some-model",
+			GoogleSearch: testutil.Ptr(true),
+		}
+		if err := Validate(opts); err == nil {
+			t.Errorf("Validate() for provider %q with GoogleSearch expected error, got nil", p)
+		}
+	}
+}
+
+func TestValidate_WebSearchProviderRestriction(t *testing.T) {
+	t.Parallel()
+
+	validClaude := ModelOptions{
+		Provider:  "claude",
+		Model:     "claude-sonnet-5.5",
+		WebSearch: testutil.Ptr(true),
+	}
+	if err := Validate(validClaude); err != nil {
+		t.Errorf("Validate() for claude with WebSearch error = %v, want nil", err)
+	}
+
+	invalidProviders := []string{"gemini", "openai", "azure-openai", "grok", "local"}
+	for _, p := range invalidProviders {
+		opts := ModelOptions{
+			Provider:  p,
+			Model:     "some-model",
+			WebSearch: testutil.Ptr(true),
+		}
+		if err := Validate(opts); err == nil {
+			t.Errorf("Validate() for provider %q with WebSearch expected error, got nil", p)
+		}
+	}
+}
+
 func TestValidate_PromptAndPromptFileMutualExclusion(t *testing.T) {
 	opts := ModelOptions{
 		Provider:   "claude",
@@ -294,6 +344,8 @@ func TestNormalizeAndValidateModel_ValidAliasesNormalized(t *testing.T) {
 		alias    string
 		want     string
 	}{
+		{"claude", "claude-opus-5.5", "claude-opus-5-5"},
+		{"claude", "claude-sonnet-5.5", "claude-sonnet-5-5"},
 		{"claude", "claude-opus-4.7", "claude-opus-4-7"},
 		{"claude", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929"},
 		{"claude", "claude-opus-4-5", "claude-opus-4-5-20251101"},
@@ -328,6 +380,8 @@ func TestNormalizeAndValidateModel_ApprovedModelsAccepted(t *testing.T) {
 		"claude": {
 			"claude-fable-5.1",
 			"claude-fable-5",
+			"claude-opus-5-5",
+			"claude-sonnet-5-5",
 			"claude-opus-5",
 			"claude-sonnet-5",
 			"claude-opus-4-8",
@@ -944,4 +998,30 @@ func manyModelEntries(count int) string {
 		fmt.Fprintf(&b, "  k%d:\n    model: grok-4.6\n", i)
 	}
 	return b.String()
+}
+
+func TestResolveModelOptions_MalformedSearchTunables_Rejected(t *testing.T) {
+	t.Run("malformed google search", func(t *testing.T) {
+		t.Setenv("GEMINI_MODEL", "gemini-3.8-flash")
+		t.Setenv("GEMINI_GOOGLE_SEARCH", "not-a-bool")
+		_, err := ResolveModelOptions("gemini", "primary")
+		if err == nil {
+			t.Fatal("expected error for malformed GEMINI_GOOGLE_SEARCH, got nil")
+		}
+		if !strings.Contains(err.Error(), "GOOGLE_SEARCH") {
+			t.Fatalf("error %v does not name GOOGLE_SEARCH", err)
+		}
+	})
+
+	t.Run("malformed web search", func(t *testing.T) {
+		t.Setenv("CLAUDE_MODEL", "claude-sonnet-5.5")
+		t.Setenv("CLAUDE_WEB_SEARCH", "not-a-bool")
+		_, err := ResolveModelOptions("claude", "primary")
+		if err == nil {
+			t.Fatal("expected error for malformed CLAUDE_WEB_SEARCH, got nil")
+		}
+		if !strings.Contains(err.Error(), "WEB_SEARCH") {
+			t.Fatalf("error %v does not name WEB_SEARCH", err)
+		}
+	})
 }

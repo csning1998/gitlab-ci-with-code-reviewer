@@ -404,3 +404,65 @@ func assertOutputConfigField(t *testing.T, body map[string]any, key string, want
 		t.Errorf("output_config[%q] = %v, want %v", key, got, want)
 	}
 }
+
+func TestReview_WebSearch_PayloadInjected(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]any
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
+		Provider:  "claude",
+		Model:     "claude-sonnet-5.5",
+		MaxTokens: 4096,
+		WebSearch: testutil.Ptr(true),
+	}, &gotBody)
+
+	if _, err := c.Review("prompt"); err != nil {
+		t.Fatalf("Review(...) returned unexpected error: %v", err)
+	}
+
+	tools, ok := gotBody["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("expected 1 tool in payload, got %v", gotBody["tools"])
+	}
+	toolMap, ok := tools[0].(map[string]any)
+	if !ok {
+		t.Fatalf("tool is not a map[string]any: %T", tools[0])
+	}
+	if toolMap["name"] != "web_search" {
+		t.Errorf("tool name = %v, want web_search", toolMap["name"])
+	}
+	if toolMap["type"] != "web_search_20260209" {
+		t.Errorf("tool type = %v, want web_search_20260209", toolMap["type"])
+	}
+}
+
+func TestReview_WebSearch_OmittedWhenFalseOrUnset(t *testing.T) {
+	t.Parallel()
+	t.Run("omitted when unset", func(t *testing.T) {
+		var gotBody map[string]any
+		c := stubCapturingClient(t, reviewerconfig.ModelOptions{
+			Provider:  "claude",
+			Model:     "claude-sonnet-5.5",
+			MaxTokens: 4096,
+		}, &gotBody)
+
+		if _, err := c.Review("prompt"); err != nil {
+			t.Fatalf("Review(...) returned unexpected error: %v", err)
+		}
+		assertOmittedKeys(t, gotBody, "tools")
+	})
+
+	t.Run("omitted when explicitly false", func(t *testing.T) {
+		var gotBody map[string]any
+		c := stubCapturingClient(t, reviewerconfig.ModelOptions{
+			Provider:  "claude",
+			Model:     "claude-sonnet-5.5",
+			MaxTokens: 4096,
+			WebSearch: new(bool),
+		}, &gotBody)
+
+		if _, err := c.Review("prompt"); err != nil {
+			t.Fatalf("Review(...) returned unexpected error: %v", err)
+		}
+		assertOmittedKeys(t, gotBody, "tools")
+	})
+}

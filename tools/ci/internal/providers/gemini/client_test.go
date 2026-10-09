@@ -885,3 +885,63 @@ func TestReview_GoogleWIF_UserProjectHeaderDerivedFromTokenSource(t *testing.T) 
 		t.Errorf("x-goog-user-project header = %q, want %q", gotProjectHeader, wantProjectHeader)
 	}
 }
+
+func TestReview_GoogleSearch_PayloadInjected(t *testing.T) {
+	var gotBody map[string]any
+	client := stubCapturingClient(t, reviewerconfig.ModelOptions{
+		Model:        "gemini-3.8-flash",
+		GoogleSearch: testutil.Ptr(true),
+	}, &gotBody)
+
+	if _, err := client.Review("test prompt"); err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	toolsRaw, ok := gotBody["tools"]
+	if !ok {
+		t.Fatal("expected 'tools' in payload, got none")
+	}
+	toolsSlice, ok := toolsRaw.([]any)
+	if !ok || len(toolsSlice) != 1 {
+		t.Fatalf("expected tools slice of length 1, got %v", toolsRaw)
+	}
+	toolMap, ok := toolsSlice[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected tool map, got %T", toolsSlice[0])
+	}
+	if _, ok := toolMap["googleSearch"]; !ok {
+		t.Errorf("expected 'googleSearch' in tool map, got %v", toolMap)
+	}
+}
+
+func TestReview_GoogleSearch_OmittedWhenFalseOrUnset(t *testing.T) {
+	var gotBody map[string]any
+	client := stubCapturingClient(t, reviewerconfig.ModelOptions{
+		Model:        "gemini-3.8-flash",
+		GoogleSearch: new(bool),
+	}, &gotBody)
+
+	if _, err := client.Review("test prompt"); err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	if _, ok := gotBody["tools"]; ok {
+		t.Errorf("expected 'tools' to be omitted when google_search is false, got %v", gotBody["tools"])
+	}
+}
+
+func TestNew_GoogleSearch_RejectedForGemma(t *testing.T) {
+	_, err := New(Config{
+		ModelOptions: reviewerconfig.ModelOptions{
+			Model:        "gemma-4-31b-it",
+			GoogleSearch: testutil.Ptr(true),
+		},
+		Tokens: tokensource.Static("test-key"),
+	})
+	if err == nil {
+		t.Fatal("expected error for gemma with google_search enabled, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not support google_search") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
