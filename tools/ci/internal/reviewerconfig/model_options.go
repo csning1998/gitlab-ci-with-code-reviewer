@@ -251,96 +251,10 @@ func ResolveModelOptions(provider string, slot string) (ModelOptions, error) {
 		Timeout:  DefaultTimeout,
 	}
 
-	// Resolve max tokens
-	maxTokensStr := lookupSlotEnv(prefix, "MAX_TOKENS", isSecondary)
-	if maxTokensStr != "" {
-		if n, err := strconv.Atoi(maxTokensStr); err == nil && n > 0 {
-			opts.MaxTokens = n
-		}
-	}
-
-	// Resolve temperature
-	tempStr := lookupSlotEnv(prefix, "TEMPERATURE", isSecondary)
-	if tempStr != "" {
-		if f, err := strconv.ParseFloat(tempStr, 64); err == nil {
-			opts.Temperature = &f
-		}
-	}
-
-	// Resolve top_p
-	topPStr := lookupSlotEnv(prefix, "TOP_P", isSecondary)
-	if topPStr != "" {
-		if f, err := strconv.ParseFloat(topPStr, 64); err == nil {
-			opts.TopP = &f
-		}
-	}
-
-	// Resolve top_k
-	topKStr := lookupSlotEnv(prefix, "TOP_K", isSecondary)
-	if topKStr != "" {
-		if n, err := strconv.Atoi(topKStr); err == nil {
-			opts.TopK = &n
-		}
-	}
-
-	// Resolve thinking budget
-	thinkingBudgetStr := lookupSlotEnv(prefix, "THINKING_BUDGET", isSecondary)
-	if thinkingBudgetStr != "" {
-		if n, err := strconv.Atoi(thinkingBudgetStr); err == nil {
-			opts.ThinkingBudget = &n
-		}
-	}
-
-	// Resolve reasoning effort
-	reasoningEffortStr := lookupSlotEnv(prefix, "REASONING_EFFORT", isSecondary)
-	if reasoningEffortStr != "" {
-		opts.ReasoningLevel = reasoningEffortStr
-	}
-
-	// Resolve frequency penalty
-	freqPenaltyStr := lookupSlotEnv(prefix, "FREQUENCY_PENALTY", isSecondary)
-	if freqPenaltyStr != "" {
-		if f, err := strconv.ParseFloat(freqPenaltyStr, 64); err == nil {
-			opts.FrequencyPenalty = &f
-		}
-	}
-
-	// Resolve presence penalty
-	presPenaltyStr := lookupSlotEnv(prefix, "PRESENCE_PENALTY", isSecondary)
-	if presPenaltyStr != "" {
-		if f, err := strconv.ParseFloat(presPenaltyStr, 64); err == nil {
-			opts.PresencePenalty = &f
-		}
-	}
-
-	// Resolve prompt overrides
-	promptVal := lookupSlotEnv(prefix, "PROMPT", isSecondary)
-	if promptVal == "" {
-		promptVal = strings.TrimSpace(os.Getenv("REVIEWER_PROMPT"))
-	}
-	opts.Prompt = promptVal
-
-	// Resolve prompt file overrides
-	promptFileVal := lookupSlotEnv(prefix, "PROMPT_FILE", isSecondary)
-	if promptFileVal == "" {
-		promptFileVal = strings.TrimSpace(os.Getenv("REVIEWER_PROMPT_FILE"))
-	}
-	opts.PromptFile = promptFileVal
-
-	// Resolve google search
-	googleSearchStr := lookupSlotEnv(prefix, "GOOGLE_SEARCH", isSecondary)
-	if googleSearchStr != "" {
-		if b, err := strconv.ParseBool(googleSearchStr); err == nil {
-			opts.GoogleSearch = &b
-		}
-	}
-
-	// Resolve web search
-	webSearchStr := lookupSlotEnv(prefix, "WEB_SEARCH", isSecondary)
-	if webSearchStr != "" {
-		if b, err := strconv.ParseBool(webSearchStr); err == nil {
-			opts.WebSearch = &b
-		}
+	applySlotNumericOverrides(&opts, prefix, isSecondary)
+	applySlotStringOverrides(&opts, prefix, isSecondary)
+	if err := applySlotSearchOverrides(&opts, prefix, isSecondary); err != nil {
+		return ModelOptions{}, err
 	}
 
 	normalizedModel, err := NormalizeModel(provider, opts.Model)
@@ -354,6 +268,83 @@ func ResolveModelOptions(provider string, slot string) (ModelOptions, error) {
 	}
 
 	return opts, nil
+}
+
+func parseSlotInt(prefix, param string, isSecondary bool) (int, bool) {
+	s := lookupSlotEnv(prefix, param, isSecondary)
+	if s == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil
+}
+
+func parseSlotFloat(prefix, param string, isSecondary bool) (float64, bool) {
+	s := lookupSlotEnv(prefix, param, isSecondary)
+	if s == "" {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	return f, err == nil
+}
+
+func applySlotNumericOverrides(opts *ModelOptions, prefix string, isSecondary bool) {
+	if n, ok := parseSlotInt(prefix, "MAX_TOKENS", isSecondary); ok && n > 0 {
+		opts.MaxTokens = n
+	}
+	if f, ok := parseSlotFloat(prefix, "TEMPERATURE", isSecondary); ok {
+		opts.Temperature = &f
+	}
+	if f, ok := parseSlotFloat(prefix, "TOP_P", isSecondary); ok {
+		opts.TopP = &f
+	}
+	if n, ok := parseSlotInt(prefix, "TOP_K", isSecondary); ok {
+		opts.TopK = &n
+	}
+	if n, ok := parseSlotInt(prefix, "THINKING_BUDGET", isSecondary); ok {
+		opts.ThinkingBudget = &n
+	}
+	if f, ok := parseSlotFloat(prefix, "FREQUENCY_PENALTY", isSecondary); ok {
+		opts.FrequencyPenalty = &f
+	}
+	if f, ok := parseSlotFloat(prefix, "PRESENCE_PENALTY", isSecondary); ok {
+		opts.PresencePenalty = &f
+	}
+}
+
+func applySlotStringOverrides(opts *ModelOptions, prefix string, isSecondary bool) {
+	if s := lookupSlotEnv(prefix, "REASONING_EFFORT", isSecondary); s != "" {
+		opts.ReasoningLevel = s
+	}
+	promptVal := lookupSlotEnv(prefix, "PROMPT", isSecondary)
+	if promptVal == "" {
+		promptVal = strings.TrimSpace(os.Getenv("REVIEWER_PROMPT"))
+	}
+	opts.Prompt = promptVal
+
+	promptFileVal := lookupSlotEnv(prefix, "PROMPT_FILE", isSecondary)
+	if promptFileVal == "" {
+		promptFileVal = strings.TrimSpace(os.Getenv("REVIEWER_PROMPT_FILE"))
+	}
+	opts.PromptFile = promptFileVal
+}
+
+func applySlotSearchOverrides(opts *ModelOptions, prefix string, isSecondary bool) error {
+	if s := lookupSlotEnv(prefix, "GOOGLE_SEARCH", isSecondary); s != "" {
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return newInvalidTunableError("GOOGLE_SEARCH", s, "a boolean (true or false)")
+		}
+		opts.GoogleSearch = &b
+	}
+	if s := lookupSlotEnv(prefix, "WEB_SEARCH", isSecondary); s != "" {
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return newInvalidTunableError("WEB_SEARCH", s, "a boolean (true or false)")
+		}
+		opts.WebSearch = &b
+	}
+	return nil
 }
 
 // validateNumericBounds enforces the numeric bounds which the generated JSON schema advertises.
@@ -425,31 +416,52 @@ func Validate(opts ModelOptions) error {
 		}
 	}
 
-	if opts.Temperature != nil {
-		if *opts.Temperature < 0.0 || *opts.Temperature > 2.0 {
-			return fmt.Errorf("temperature %v out of range [0.0, 2.0]", *opts.Temperature)
-		}
-		if opts.Provider == "claude" && *opts.Temperature > 1.0 {
-			return fmt.Errorf("temperature %v exceeds claude limit of 1.0", *opts.Temperature)
-		}
-	}
-
-	if opts.TopP != nil && (*opts.TopP < 0.0 || *opts.TopP > 1.0) {
-		return fmt.Errorf("top_p %v out of range [0.0, 1.0]", *opts.TopP)
-	}
-
-	if err := validateNumericBounds(opts); err != nil {
-		return err
-	}
-
-	if opts.ThinkingBudget != nil && *opts.ThinkingBudget < 0 {
-		return errors.New("thinking_budget must be non-negative")
-	}
-
 	if strings.TrimSpace(opts.Prompt) != "" && strings.TrimSpace(opts.PromptFile) != "" {
 		return errors.New("cannot configure both 'prompt' and 'prompt_file'")
 	}
 
+	if err := validateNumericOptions(opts); err != nil {
+		return err
+	}
+	if err := validateEnumOptions(opts); err != nil {
+		return err
+	}
+	if err := validateSearchOptions(opts); err != nil {
+		return err
+	}
+	return validateProviderCompatibility(opts)
+}
+
+func validateTemperature(temperature *float64, provider string) error {
+	if temperature == nil {
+		return nil
+	}
+	if *temperature < 0.0 || *temperature > 2.0 {
+		return fmt.Errorf("temperature %v out of range [0.0, 2.0]", *temperature)
+	}
+	if provider == "claude" && *temperature > 1.0 {
+		return fmt.Errorf("temperature %v exceeds claude limit of 1.0", *temperature)
+	}
+	return nil
+}
+
+func validateNumericOptions(opts ModelOptions) error {
+	if err := validateTemperature(opts.Temperature, opts.Provider); err != nil {
+		return err
+	}
+	if opts.TopP != nil && (*opts.TopP < 0.0 || *opts.TopP > 1.0) {
+		return fmt.Errorf("top_p %v out of range [0.0, 1.0]", *opts.TopP)
+	}
+	if err := validateNumericBounds(opts); err != nil {
+		return err
+	}
+	if opts.ThinkingBudget != nil && *opts.ThinkingBudget < 0 {
+		return errors.New("thinking_budget must be non-negative")
+	}
+	return nil
+}
+
+func validateEnumOptions(opts ModelOptions) error {
 	if opts.ReasoningLevel != "" {
 		switch opts.ReasoningLevel {
 		case "none", "minimal", "low", "medium", "high", "xhigh", "max":
@@ -457,7 +469,6 @@ func Validate(opts ModelOptions) error {
 			return fmt.Errorf("invalid reasoning_level %q", opts.ReasoningLevel)
 		}
 	}
-
 	if opts.ThinkingType != "" {
 		switch opts.ThinkingType {
 		case "disabled", "enabled", "adaptive":
@@ -465,7 +476,6 @@ func Validate(opts ModelOptions) error {
 			return fmt.Errorf("invalid thinking_type %q", opts.ThinkingType)
 		}
 	}
-
 	if opts.Verbosity != "" {
 		switch opts.Verbosity {
 		case "low", "medium", "high":
@@ -473,7 +483,6 @@ func Validate(opts ModelOptions) error {
 			return fmt.Errorf("invalid verbosity %q", opts.Verbosity)
 		}
 	}
-
 	if opts.MediaResolution != "" {
 		switch opts.MediaResolution {
 		case "MEDIA_RESOLUTION_LOW", "MEDIA_RESOLUTION_MEDIUM", "MEDIA_RESOLUTION_HIGH":
@@ -481,38 +490,52 @@ func Validate(opts ModelOptions) error {
 			return fmt.Errorf("invalid media_resolution %q", opts.MediaResolution)
 		}
 	}
+	return nil
+}
 
+func validateSearchOptions(opts ModelOptions) error {
 	if opts.GoogleSearch != nil && *opts.GoogleSearch && opts.Provider != "gemini" {
 		return fmt.Errorf("google_search is not supported by %s", opts.Provider)
 	}
-
 	if opts.WebSearch != nil && *opts.WebSearch && opts.Provider != "claude" {
 		return fmt.Errorf("web_search is not supported by %s", opts.Provider)
 	}
+	return nil
+}
 
+func validateClaudeOptions(opts ModelOptions) error {
+	if opts.FrequencyPenalty != nil || opts.PresencePenalty != nil {
+		return errors.New("frequency_penalty and presence_penalty are not supported by claude")
+	}
+	if opts.RepetitionPenalty != nil || opts.MinP != nil {
+		return errors.New("repetition_penalty and min_p are not supported by claude")
+	}
+	return nil
+}
+
+func validateOpenAICompatOptions(opts ModelOptions) error {
+	if opts.TopK != nil {
+		return fmt.Errorf("top_k is not supported by %s", opts.Provider)
+	}
+	if opts.ThinkingBudget != nil {
+		return fmt.Errorf("thinking_budget is not supported by %s; use reasoning_level", opts.Provider)
+	}
+	if opts.RepetitionPenalty != nil || opts.MinP != nil {
+		return fmt.Errorf("repetition_penalty and min_p are not supported by %s", opts.Provider)
+	}
+	return nil
+}
+
+func validateProviderCompatibility(opts ModelOptions) error {
 	switch opts.Provider {
 	case "claude":
-		if opts.FrequencyPenalty != nil || opts.PresencePenalty != nil {
-			return errors.New("frequency_penalty and presence_penalty are not supported by claude")
-		}
-		if opts.RepetitionPenalty != nil || opts.MinP != nil {
-			return errors.New("repetition_penalty and min_p are not supported by claude")
-		}
+		return validateClaudeOptions(opts)
 	case "gemini":
 		if opts.RepetitionPenalty != nil || opts.MinP != nil {
 			return errors.New("repetition_penalty and min_p are not supported by gemini")
 		}
 	case "openai", "azure-openai", "grok":
-		if opts.TopK != nil {
-			return fmt.Errorf("top_k is not supported by %s", opts.Provider)
-		}
-		if opts.ThinkingBudget != nil {
-			return fmt.Errorf("thinking_budget is not supported by %s; use reasoning_level", opts.Provider)
-		}
-		if opts.RepetitionPenalty != nil || opts.MinP != nil {
-			return fmt.Errorf("repetition_penalty and min_p are not supported by %s", opts.Provider)
-		}
+		return validateOpenAICompatOptions(opts)
 	}
-
 	return nil
 }

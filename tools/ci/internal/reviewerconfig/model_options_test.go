@@ -999,3 +999,29 @@ func manyModelEntries(count int) string {
 	}
 	return b.String()
 }
+
+func TestResolveModelOptions_MalformedSearchTunables_Rejected(t *testing.T) {
+	t.Run("malformed google search", func(t *testing.T) {
+		t.Setenv("GEMINI_MODEL", "gemini-3.8-flash")
+		t.Setenv("GEMINI_GOOGLE_SEARCH", "not-a-bool")
+		_, err := ResolveModelOptions("gemini", "primary")
+		if err == nil {
+			t.Fatal("expected error for malformed GEMINI_GOOGLE_SEARCH, got nil")
+		}
+		if !strings.Contains(err.Error(), "GOOGLE_SEARCH") {
+			t.Fatalf("error %v does not name GOOGLE_SEARCH", err)
+		}
+	})
+
+	t.Run("malformed web search", func(t *testing.T) {
+		t.Setenv("CLAUDE_MODEL", "claude-sonnet-5.5")
+		t.Setenv("CLAUDE_WEB_SEARCH", "not-a-bool")
+		_, err := ResolveModelOptions("claude", "primary")
+		if err == nil {
+			t.Fatal("expected error for malformed CLAUDE_WEB_SEARCH, got nil")
+		}
+		if !strings.Contains(err.Error(), "WEB_SEARCH") {
+			t.Fatalf("error %v does not name WEB_SEARCH", err)
+		}
+	})
+}
