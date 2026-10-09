@@ -181,6 +181,9 @@ func mergeModelOptions(base, entry ModelOptions) ModelOptions {
 	if len(entry.SafetySettings) > 0 {
 		merged.SafetySettings = entry.SafetySettings
 	}
+	if entry.GoogleSearch != nil {
+		merged.GoogleSearch = entry.GoogleSearch
+	}
 
 	return merged
 }

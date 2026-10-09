@@ -158,6 +158,31 @@ func TestValidate_IncompatibleProviderFields_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidate_GoogleSearchProviderRestriction(t *testing.T) {
+	t.Parallel()
+
+	validGemini := ModelOptions{
+		Provider:     "gemini",
+		Model:        "gemini-3.8-flash",
+		GoogleSearch: testutil.Ptr(true),
+	}
+	if err := Validate(validGemini); err != nil {
+		t.Errorf("Validate() for gemini with GoogleSearch error = %v, want nil", err)
+	}
+
+	invalidProviders := []string{"claude", "openai", "azure-openai", "grok", "local"}
+	for _, p := range invalidProviders {
+		opts := ModelOptions{
+			Provider:     p,
+			Model:        "some-model",
+			GoogleSearch: testutil.Ptr(true),
+		}
+		if err := Validate(opts); err == nil {
+			t.Errorf("Validate() for provider %q with GoogleSearch expected error, got nil", p)
+		}
+	}
+}
+
 func TestValidate_PromptAndPromptFileMutualExclusion(t *testing.T) {
 	opts := ModelOptions{
 		Provider:   "claude",

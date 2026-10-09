@@ -35,6 +35,7 @@ type Client struct {
 	timeout          time.Duration
 	tokens           tokensource.Provider
 	generationConfig map[string]any
+	tools            []any
 	http             *http.Client
 }
 
@@ -58,12 +59,22 @@ func New(cfg Config) (*Client, error) {
 		return nil, err
 	}
 
+	var tools []any
+	if cfg.ModelOptions.GoogleSearch != nil && *cfg.ModelOptions.GoogleSearch {
+		tools = []any{
+			map[string]any{
+				"googleSearch": map[string]any{},
+			},
+		}
+	}
+
 	return &Client{
 		url:              resolveEndpoint(model, cfg.ModelOptions, cfg.Tokens),
 		model:            model,
 		timeout:          timeout,
 		tokens:           cfg.Tokens,
 		generationConfig: buildGenerationConfig(model, cfg.ModelOptions),
+		tools:            tools,
 		http:             &http.Client{Timeout: timeout, CheckRedirect: httpguard.RefuseCrossHostRedirect},
 	}, nil
 }
@@ -166,6 +177,9 @@ func (c *Client) Review(prompt string) (result string, err error) {
 	payload := map[string]any{
 		"contents":         []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": prompt}}}},
 		"generationConfig": c.generationConfig,
+	}
+	if len(c.tools) > 0 {
+		payload["tools"] = c.tools
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

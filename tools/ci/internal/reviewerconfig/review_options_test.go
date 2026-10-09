@@ -105,12 +105,13 @@ func TestResolveReviewOptions_RejectsUnapprovedModel(t *testing.T) {
 
 func TestResolveReviewOptions_ParsesTunables(t *testing.T) {
 	clearReviewEnv(t)
-	t.Setenv("REVIEW_MODEL", "gpt-4o")
+	t.Setenv("REVIEW_MODEL", "gemini-3.8-flash")
 	t.Setenv("REVIEW_MAX_TOKENS", "2048")
 	t.Setenv("REVIEW_TIMEOUT_MINUTES", "7")
 	t.Setenv("REVIEW_TEMPERATURE", "0.4")
 	t.Setenv("REVIEW_TOP_P", "0.9")
 	t.Setenv("REVIEW_REASONING_EFFORT", "high")
+	t.Setenv("REVIEW_GOOGLE_SEARCH", "true")
 
 	opts, err := ResolveReviewOptions()
 	if err != nil {
@@ -131,6 +132,10 @@ func TestResolveReviewOptions_ParsesTunables(t *testing.T) {
 	if opts.ReasoningLevel != "high" {
 		t.Errorf("ReasoningLevel = %q, want %q", opts.ReasoningLevel, "high")
 	}
+	if opts.GoogleSearch == nil || !*opts.GoogleSearch {
+		t.Errorf("GoogleSearch = %v, want true", opts.GoogleSearch)
+	}
+}
 }
 
 func TestResolveReviewOptions_RejectsMalformedTunable(t *testing.T) {
@@ -146,12 +151,13 @@ func TestResolveReviewOptions_RejectsMalformedTunable(t *testing.T) {
 		{name: "non numeric top p", env: "REVIEW_TOP_P", value: "abc"},
 		{name: "not a number temperature", env: "REVIEW_TEMPERATURE", value: "NaN"},
 		{name: "infinite top p", env: "REVIEW_TOP_P", value: "Inf"},
+		{name: "non boolean google search", env: "REVIEW_GOOGLE_SEARCH", value: "invalid-bool"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			clearReviewEnv(t)
-			t.Setenv("REVIEW_MODEL", "gpt-4o")
+			t.Setenv("REVIEW_MODEL", "gemini-3.8-flash")
 			t.Setenv(tc.env, tc.value)
 
 			_, err := ResolveReviewOptions()
