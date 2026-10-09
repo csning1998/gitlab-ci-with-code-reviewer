@@ -17,6 +17,8 @@ const MinThinkingBudget = 1024
 var adaptiveThinkingModels = map[string]bool{
 	"claude-fable-5.1":  true,
 	"claude-fable-5":    true,
+	"claude-opus-5-5":   true,
+	"claude-sonnet-5-5": true,
 	"claude-opus-5":     true,
 	"claude-sonnet-5":   true,
 	"claude-opus-4-8":   true,

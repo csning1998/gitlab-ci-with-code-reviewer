@@ -16,21 +16,25 @@ const (
 
 var openAICanonicalModels = map[string]struct{}{
 	"gpt-4o":                 {},
-	"gpt-4o-mini":            {},
+	"gpt-4o-mini":            {}, // Deprecated with retirement on April 14, 2027 on Azure.
 	"gpt-4-turbo":            {},
-	"gpt-4.1":                {},
-	"gpt-4.1-mini":           {},
-	"gpt-4.1-nano":           {},
+	"gpt-4.1":                {}, // Deprecated with retirement on April 14, 2027 on Azure.
+	"gpt-4.1-mini":           {}, // Deprecated with retirement on April 14, 2027 on Azure.
+	"gpt-4.1-nano":           {}, // Deprecated with retirement on April 14, 2027 on Azure.
 	"gpt-5":                  {},
+	"gpt-5.1":                {}, // Deprecated with OpenAI shutdown on April 1, 2027 and Azure retirement on May 15, 2027.
 	"gpt-5-mini":             {},
 	"gpt-5-nano":             {},
-	"gpt-5.4":                {},
-	"gpt-5.4-mini":           {},
-	"gpt-5.4-nano":           {},
-	"gpt-5.4-pro":            {},
-	"gpt-5.6-sol":            {},
-	"gpt-5.6-terra":          {},
-	"gpt-5.6-luna":           {},
+	"gpt-5.2":                {}, // Retires on June 8, 2027 on Azure.
+	"gpt-5.3-codex":          {}, // Deprecated with OpenAI shutdown on April 1, 2027 and Azure retirement on August 24, 2027.
+	"gpt-5.4":                {}, // Retires on September 2, 2027 on Azure.
+	"gpt-5.4-mini":           {}, // Retires on September 21, 2027 on Azure.
+	"gpt-5.4-nano":           {}, // Deprecated with OpenAI shutdown on April 1, 2027 and Azure retirement on September 21, 2027.
+	"gpt-5.4-pro":            {}, // Retires on September 7, 2027 on Azure.
+	"gpt-5.5":                {}, // Retires on October 26, 2027 on Azure.
+	"gpt-5.6-sol":            {}, // Retires on January 11, 2028 on Azure.
+	"gpt-5.6-terra":          {}, // Retires on January 11, 2028 on Azure.
+	"gpt-5.6-luna":           {}, // Retires on January 11, 2028 on Azure.
 	"gpt-6-astra":            {},
 	"o1":                     {},
 	"o1-mini":                {},
@@ -38,56 +42,62 @@ var openAICanonicalModels = map[string]struct{}{
 	"o3":                     {},
 	"o3-mini":                {},
 	"o3-pro":                 {},
-	"o4-mini":                {},
-	"gpt-4o-2024-11-20":      {},
-	"gpt-4o-2024-08-06":      {},
-	"gpt-4o-2024-05-13":      {},
+	"o4-mini":                {}, // Deprecated with retirement on November 19, 2026 on Azure.
+	"gpt-4o-2024-11-20":      {}, // Legacy with retirement on April 14, 2027 on Azure.
+	"gpt-4o-2024-08-06":      {}, // Deprecated with retirement on April 14, 2027 on Azure.
+	"gpt-4o-2024-05-13":      {}, // Deprecated with retirement on December 9, 2026 on Azure.
 	"gpt-4-turbo-2024-04-09": {},
-	"gpt-5-2025-08-07":       {},
-	"gpt-5-mini-2025-08-07":  {},
-	"gpt-5-nano-2025-08-07":  {},
-	"o1-2024-12-17":          {},
+	"gpt-5-2025-08-07":       {}, // Deprecated with OpenAI shutdown on December 11, 2026 and Azure retirement on February 9, 2027.
+	"gpt-5-mini-2025-08-07":  {}, // Deprecated with OpenAI shutdown on December 11, 2026 and Azure retirement on February 9, 2027.
+	"gpt-5-nano-2025-08-07":  {}, // Deprecated with OpenAI shutdown on December 11, 2026 and Azure retirement on February 9, 2027.
+	"gpt-5-pro-2025-10-06":   {}, // Deprecated with OpenAI shutdown on December 11, 2026 and Azure retirement on April 7, 2027.
+	"o1-2024-12-17":          {}, // Deprecated with retirement on November 19, 2026 on Azure.
 	"o1-mini-2024-09-12":     {},
 	"o1-preview-2024-09-12":  {},
-	"o3-2025-04-16":          {},
-	"o3-mini-2025-01-31":     {},
+	"o3-2025-04-16":          {}, // Deprecated with Azure retirement on November 19, 2026 and OpenAI shutdown on December 11, 2026.
+	"o3-pro-2025-06-10":      {}, // Deprecated with Azure retirement on November 19, 2026 and OpenAI shutdown on December 11, 2026.
+	"o3-mini-2025-01-31":     {}, // Deprecated with retirement on November 19, 2026 on Azure.
 }
 
 // canonicalRegistry maps provider names to the set of supported canonical model identifiers.
 var canonicalRegistry = map[string]map[string]struct{}{
 	"claude": {
-		"claude-fable-5.1":           {},
-		"claude-fable-5":             {},
-		"claude-opus-5":              {},
-		"claude-sonnet-5":            {},
-		"claude-opus-4-8":            {},
-		"claude-opus-4-7":            {},
-		"claude-opus-4-6":            {},
-		"claude-sonnet-4-6":          {},
-		"claude-sonnet-4-5-20250929": {},
-		"claude-opus-4-5-20251101":   {},
-		"claude-haiku-4-5-20251001":  {},
+		"claude-fable-5.1":           {}, // Retires not sooner than September 1, 2027.
+		"claude-fable-5":             {}, // Retires not sooner than June 9, 2027.
+		"claude-opus-5-5":            {}, // Retires not sooner than September 22, 2027.
+		"claude-sonnet-5-5":          {}, // Retires not sooner than September 28, 2027.
+		"claude-opus-5":              {}, // Retires not sooner than July 24, 2027.
+		"claude-sonnet-5":            {}, // Retires not sooner than June 30, 2027.
+		"claude-opus-4-8":            {}, // Retires not sooner than May 28, 2027.
+		"claude-opus-4-7":            {}, // Retires not sooner than April 16, 2027.
+		"claude-opus-4-6":            {}, // Retires not sooner than February 5, 2027.
+		"claude-sonnet-4-6":          {}, // Retires not sooner than February 17, 2027.
+		"claude-sonnet-4-5-20250929": {}, // Deprecated with retirement on November 30, 2026.
+		"claude-opus-4-5-20251101":   {}, // Retires not sooner than November 24, 2026.
+		"claude-haiku-4-5-20251001":  {}, // Retires not sooner than October 15, 2026.
 	},
 	"gemini": {
-		"gemini-3.8-flash":       {},
-		"gemini-3.7-flash":       {},
-		"gemini-3.6-flash":       {},
-		"gemini-3.5-flash":       {},
-		"gemini-3.5-flash-lite":  {},
-		"gemini-3.1-flash-lite":  {},
+		"gemini-3.8-flash":       {}, // Active with no announced retirement date.
+		"gemini-3.7-flash":       {}, // Retires on January 28, 2027.
+		"gemini-3.6-flash":       {}, // Retires on November 19, 2026.
+		"gemini-3.5-flash":       {}, // Retires on May 19, 2027 or later.
+		"gemini-3.5-flash-lite":  {}, // Retires on July 21, 2027 or later.
+		"gemini-3.1-flash-lite":  {}, // Retires on May 7, 2027 or later.
 		"gemini-3.1-pro-preview": {},
 		"gemini-3-flash-preview": {},
-		"gemini-2.5-pro":         {},
-		"gemini-2.5-flash":       {},
-		"gemini-2.5-flash-lite":  {},
+		"gemini-2.5-pro":         {}, // Retires on October 20, 2026.
+		"gemini-2.5-flash":       {}, // Retires on October 20, 2026.
+		"gemini-2.5-flash-lite":  {}, // Retires on October 20, 2026.
 		"gemma-4-31b-it":         {},
 		"gemma-4-26b-a4b-it":     {},
 	},
 	"openai":       openAICanonicalModels,
 	"azure-openai": openAICanonicalModels,
 	"grok": {
-		"grok-4.6":              {},
-		"grok-4.5":              {},
+		"grok-4.7":              {}, // Active with no announced retirement date.
+		"grok-4.6":              {}, // Active with no announced retirement date.
+		"grok-4.5":              {}, // Active with no announced retirement date.
+		"grok-4.3":              {}, // Active with no announced retirement date.
 		"grok-4.20-multi-agent": {},
 	},
 	"local": {
@@ -105,6 +115,8 @@ var canonicalRegistry = map[string]map[string]struct{}{
 // aliasRegistry maps known provider-specific model aliases and snapshot formats to their canonical identifiers.
 var aliasRegistry = map[string]map[string]string{
 	"claude": {
+		"claude-opus-5.5":   "claude-opus-5-5",
+		"claude-sonnet-5.5": "claude-sonnet-5-5",
 		"claude-opus-4.7":   "claude-opus-4-7",
 		"claude-sonnet-4-5": "claude-sonnet-4-5-20250929",
 		"claude-opus-4-5":   "claude-opus-4-5-20251101",
@@ -129,6 +141,8 @@ var aliasRegistry = map[string]map[string]string{
 		"o4-mini-2025-04-16":      "o4-mini",
 	},
 	"grok": {
+		"grok-4.7-latest":            "grok-4.7",
+		"grok-4-7":                   "grok-4.7",
 		"grok-4.6-latest":            "grok-4.6",
 		"grok-4.20-multi-agent-0309": "grok-4.20-multi-agent",
 	},

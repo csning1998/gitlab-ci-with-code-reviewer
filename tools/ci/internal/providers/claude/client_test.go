@@ -338,6 +338,18 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 			},
 			{
+				name: "adaptive generation with claude 5-5 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-sonnet-5-5",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
 				name: "thinking suppresses sampling overrides",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-opus-4-7",

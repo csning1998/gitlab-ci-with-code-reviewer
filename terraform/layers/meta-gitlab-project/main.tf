@@ -1,10 +1,4 @@
 
-# Perform `terraform apply -target=module.local_credential_contexts.local_file.bastion_ca_cert` if greenfield
-module "local_credential_contexts" {
-  source  = "gitlab.com/csning1998-lab/contexts-local-credential/gitlab"
-  version = "0.4.0"
-}
-
 module "provisioner_gitlab_project" {
   source  = "gitlab.com/csning1998-lab/provisioner-gitlab-project/gitlab"
   version = "0.2.0"
@@ -24,11 +18,7 @@ resource "gitlab_project_cicd_catalog" "this" {
 
 module "workload_identity_federation" {
   source  = "gitlab.com/csning1998-lab/provisioner-workload-identity-federation/gitlab"
-  version = "0.3.1"
-
-  providers = {
-    vault = vault.bastion
-  }
+  version = "0.4.0"
 
   gitlab_project = {
     id   = module.provisioner_gitlab_project.project_id

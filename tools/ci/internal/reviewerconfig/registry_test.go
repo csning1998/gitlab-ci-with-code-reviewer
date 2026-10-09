@@ -18,6 +18,8 @@ type resolveProviderCase struct {
 func TestResolveProvider_Matrix(t *testing.T) {
 	tests := []resolveProviderCase{
 		// Canonical unique lookups
+		{name: "claude sonnet 5.5", model: "claude-sonnet-5-5", want: "claude"},
+		{name: "claude opus 5.5 alias", model: "claude-opus-5.5", want: "claude"},
 		{name: "claude sonnet", model: "claude-sonnet-5", want: "claude"},
 		{name: "claude dated snapshot", model: "claude-opus-4-5-20251101", want: "claude"},
 		{name: "claude alias dot notation", model: "claude-opus-4.7", want: "claude"},
@@ -103,6 +105,8 @@ func TestNormalizeModel_Matrix(t *testing.T) {
 		{name: "local canonical", provider: "local", model: "llama-3.3-70b", want: "llama-3.3-70b"},
 
 		// Alias normalization
+		{name: "claude opus 5.5 dot alias", provider: "claude", model: "claude-opus-5.5", want: "claude-opus-5-5"},
+		{name: "claude sonnet 5.5 dot alias", provider: "claude", model: "claude-sonnet-5.5", want: "claude-sonnet-5-5"},
 		{name: "claude alias dot notation", provider: "claude", model: "claude-opus-4.7", want: "claude-opus-4-7"},
 		{name: "claude alias short name", provider: "claude", model: "claude-sonnet-4-5", want: "claude-sonnet-4-5-20250929"},
 		{name: "gemini alias preview", provider: "gemini", model: "gemini-3-flash", want: "gemini-3-flash-preview"},

@@ -17,8 +17,9 @@ include:
     inputs:
       reviewer_image: "registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:edge"
       review_models:
-        - "claude-sonnet-5"
-        - "gemini-3.7-flash"
+        - "claude-sonnet-5.5"
+        - "claude-opus-5.5"
+        - "gemini-3.8-flash"
         - "azure-gpt-5.4-mini"
       enable_sonarqube: true
       sonar_scanner_tags: ["sonarqube-network"]
@@ -107,47 +108,3 @@ publish-catalog:
   release:
     tag_name: "$CI_COMMIT_TAG"
     description: "CI template release $CI_COMMIT_TAG"
-
-# Will be purged after fully implemented WIF.
-# test:adhoc-wif-token-exchange:
-#   stage: test
-#   image: badouralix/curl-jq:latest
-#   id_tokens:
-#     GITLAB_OIDC_TOKEN:
-#       aud: "https://gitlab.com"
-#   rules:
-#     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-#     - if: '$CI_PIPELINE_SOURCE == "push"'
-#   script:
-#     - |
-#       VAULT_ADDR="https://172.16.0.1:8200"
-#       CURL_TLS_ARGS=""
-#       if [ -n "${BASTION_VAULT_CA_B64}" ]; then
-#         echo "${BASTION_VAULT_CA_B64}" | base64 -d > /tmp/vault-ca.pem
-#         CURL_TLS_ARGS="--cacert /tmp/vault-ca.pem"
-#         echo "Using strict TLS verification with BASTION_VAULT_CA_B64."
-#       else
-#         echo "Warning: BASTION_VAULT_CA_B64 is not set in CI/CD variables; falling back to -k for adhoc test."
-#         CURL_TLS_ARGS="-k"
-#       fi
-#       echo "1. Exchanging GitLab SaaS OIDC JWT for temporary Vault Token..."
-#       LOGIN_RESP=$(curl ${CURL_TLS_ARGS} --silent --show-error --fail \
-#         --request POST \
-#         --data "{\"jwt\": \"${GITLAB_OIDC_TOKEN}\", \"role\": \"ci-code-reviewer\"}" \
-#         "${VAULT_ADDR}/v1/auth/gitlab-saas-ci-job-jwt-provider/login")
-#       CLIENT_TOKEN=$(echo "${LOGIN_RESP}" | jq -r '.auth.client_token // empty')
-#       if [ -z "${CLIENT_TOKEN}" ]; then
-#         echo "Error: Vault login did not yield a valid client_token."
-#         exit 1
-#       fi
-#       echo "Successfully obtained Vault token with TTL: $(echo "${LOGIN_RESP}" | jq -r '.auth.lease_duration')s"
-#       echo "2. Reading CI test credential using exchanged Vault Token..."
-#       SECRET_RESP=$(curl ${CURL_TLS_ARGS} --silent --show-error --fail \
-#         --header "X-Vault-Token: ${CLIENT_TOKEN}" \
-#         "${VAULT_ADDR}/v1/secret/data/parent-group-governance/ci/test-credential")
-#       API_KEY=$(echo "${SECRET_RESP}" | jq -r '.data.data.api_key // empty')
-#       if [ -z "${API_KEY}" ]; then
-#         echo "Error: Failed to retrieve secret field api_key."
-#         exit 1
-#       fi
-#       echo "Secret retrieval verified successfully (field present, length: ${#API_KEY})."
