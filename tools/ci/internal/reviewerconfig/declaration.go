@@ -184,6 +184,9 @@ func mergeModelOptions(base, entry ModelOptions) ModelOptions {
 	if entry.GoogleSearch != nil {
 		merged.GoogleSearch = entry.GoogleSearch
 	}
+	if entry.WebSearch != nil {
+		merged.WebSearch = entry.WebSearch
+	}
 
 	return merged
 }

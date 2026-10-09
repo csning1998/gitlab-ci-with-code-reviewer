@@ -136,6 +136,19 @@ func TestResolveReviewOptions_ParsesTunables(t *testing.T) {
 		t.Errorf("GoogleSearch = %v, want true", opts.GoogleSearch)
 	}
 }
+
+func TestResolveReviewOptions_ParsesWebSearch(t *testing.T) {
+	clearReviewEnv(t)
+	t.Setenv("REVIEW_MODEL", "claude-sonnet-5.5")
+	t.Setenv("REVIEW_WEB_SEARCH", "true")
+
+	opts, err := ResolveReviewOptions()
+	if err != nil {
+		t.Fatalf("ResolveReviewOptions() returned an unexpected error: %v", err)
+	}
+	if opts.WebSearch == nil || !*opts.WebSearch {
+		t.Errorf("WebSearch = %v, want true", opts.WebSearch)
+	}
 }
 
 func TestResolveReviewOptions_RejectsMalformedTunable(t *testing.T) {
@@ -152,6 +165,7 @@ func TestResolveReviewOptions_RejectsMalformedTunable(t *testing.T) {
 		{name: "not a number temperature", env: "REVIEW_TEMPERATURE", value: "NaN"},
 		{name: "infinite top p", env: "REVIEW_TOP_P", value: "Inf"},
 		{name: "non boolean google search", env: "REVIEW_GOOGLE_SEARCH", value: "invalid-bool"},
+		{name: "non boolean web search", env: "REVIEW_WEB_SEARCH", value: "invalid-bool"},
 	}
 
 	for _, tc := range tests {

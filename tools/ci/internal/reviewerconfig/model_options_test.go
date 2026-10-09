@@ -183,6 +183,31 @@ func TestValidate_GoogleSearchProviderRestriction(t *testing.T) {
 	}
 }
 
+func TestValidate_WebSearchProviderRestriction(t *testing.T) {
+	t.Parallel()
+
+	validClaude := ModelOptions{
+		Provider:  "claude",
+		Model:     "claude-sonnet-5.5",
+		WebSearch: testutil.Ptr(true),
+	}
+	if err := Validate(validClaude); err != nil {
+		t.Errorf("Validate() for claude with WebSearch error = %v, want nil", err)
+	}
+
+	invalidProviders := []string{"gemini", "openai", "azure-openai", "grok", "local"}
+	for _, p := range invalidProviders {
+		opts := ModelOptions{
+			Provider:  p,
+			Model:     "some-model",
+			WebSearch: testutil.Ptr(true),
+		}
+		if err := Validate(opts); err == nil {
+			t.Errorf("Validate() for provider %q with WebSearch expected error, got nil", p)
+		}
+	}
+}
+
 func TestValidate_PromptAndPromptFileMutualExclusion(t *testing.T) {
 	opts := ModelOptions{
 		Provider:   "claude",
@@ -319,6 +344,8 @@ func TestNormalizeAndValidateModel_ValidAliasesNormalized(t *testing.T) {
 		alias    string
 		want     string
 	}{
+		{"claude", "claude-opus-5.5", "claude-opus-5-5"},
+		{"claude", "claude-sonnet-5.5", "claude-sonnet-5-5"},
 		{"claude", "claude-opus-4.7", "claude-opus-4-7"},
 		{"claude", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929"},
 		{"claude", "claude-opus-4-5", "claude-opus-4-5-20251101"},
@@ -353,6 +380,8 @@ func TestNormalizeAndValidateModel_ApprovedModelsAccepted(t *testing.T) {
 		"claude": {
 			"claude-fable-5.1",
 			"claude-fable-5",
+			"claude-opus-5-5",
+			"claude-sonnet-5-5",
 			"claude-opus-5",
 			"claude-sonnet-5",
 			"claude-opus-4-8",

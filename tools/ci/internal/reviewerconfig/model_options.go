@@ -71,6 +71,7 @@ type ModelOptions struct {
 	SafetySettings   []SafetySetting `json:"safety_settings,omitempty" yaml:"safety_settings,omitempty"`
 	MediaResolution  string          `json:"media_resolution,omitempty" yaml:"media_resolution,omitempty" jsonschema:"enum=MEDIA_RESOLUTION_LOW,enum=MEDIA_RESOLUTION_MEDIUM,enum=MEDIA_RESOLUTION_HIGH"`
 	GoogleSearch     *bool           `json:"google_search,omitempty" yaml:"google_search,omitempty" jsonschema:"description=Enable Grounding with Google Search (Gemini only)"`
+	WebSearch        *bool           `json:"web_search,omitempty" yaml:"web_search,omitempty" jsonschema:"description=Enable Grounding with Web Search (Claude only)"`
 
 	// Optional review prompt customization fields
 	Prompt     string `json:"prompt,omitempty" yaml:"prompt,omitempty" jsonschema:"description=Custom review prompt instructions"`
@@ -334,6 +335,14 @@ func ResolveModelOptions(provider string, slot string) (ModelOptions, error) {
 		}
 	}
 
+	// Resolve web search
+	webSearchStr := lookupSlotEnv(prefix, "WEB_SEARCH", isSecondary)
+	if webSearchStr != "" {
+		if b, err := strconv.ParseBool(webSearchStr); err == nil {
+			opts.WebSearch = &b
+		}
+	}
+
 	normalizedModel, err := NormalizeModel(provider, opts.Model)
 	if err != nil {
 		return ModelOptions{}, err
@@ -475,6 +484,10 @@ func Validate(opts ModelOptions) error {
 
 	if opts.GoogleSearch != nil && *opts.GoogleSearch && opts.Provider != "gemini" {
 		return fmt.Errorf("google_search is not supported by %s", opts.Provider)
+	}
+
+	if opts.WebSearch != nil && *opts.WebSearch && opts.Provider != "claude" {
+		return fmt.Errorf("web_search is not supported by %s", opts.Provider)
 	}
 
 	switch opts.Provider {

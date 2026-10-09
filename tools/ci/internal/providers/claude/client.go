@@ -182,6 +182,13 @@ func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 	if serviceTier := strings.TrimSpace(c.modelOptions.ServiceTier); serviceTier != "" {
 		params.ServiceTier = sdk.MessageNewParamsServiceTier(serviceTier)
 	}
+	if c.modelOptions.WebSearch != nil && *c.modelOptions.WebSearch {
+		params.Tools = []sdk.ToolUnionParam{
+			{
+				OfWebSearchTool20260209: &sdk.WebSearchTool20260209Param{},
+			},
+		}
+	}
 
 	if c.thinking.active {
 		return params

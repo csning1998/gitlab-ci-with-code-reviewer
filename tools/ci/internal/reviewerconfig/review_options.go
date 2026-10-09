@@ -92,6 +92,13 @@ func applyReviewTunables(opts *ModelOptions) error {
 		}
 		opts.GoogleSearch = &b
 	}
+	if v := lookupReviewEnv("WEB_SEARCH"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return newInvalidTunableError("WEB_SEARCH", v, "a boolean (true or false)")
+		}
+		opts.WebSearch = &b
+	}
 	return nil
 }
 
