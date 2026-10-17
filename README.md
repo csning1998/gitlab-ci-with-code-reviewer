@@ -125,7 +125,7 @@ The review engine operates as a decoupled, state-agnostic consumer:
 #### Provisioning Options
 
 1. **Modular IaC Provisioning (`provisioner-code-reviewer`)**:
-    - Repositories managed via Terraform (including `gitlab-ci-with-code-reviewer` self-consumption and downstream consumer projects) instantiate the `provisioner-code-reviewer` module within their respective `meta-gitlab-project` layer:
+    - Repositories managed via Terraform (including `gitlab-ci-with-code-reviewer` self-consumption and downstream consumer projects) instantiate the `provisioner-code-reviewer` module within their respective `administration-gitlab-project` layer:
 
     ```hcl
     module "code_reviewer" {
