@@ -45,3 +45,4 @@ obj/
 ## Fixture build output
 fixtures/c-canary/bin/
 note.md
+stdout.txt
