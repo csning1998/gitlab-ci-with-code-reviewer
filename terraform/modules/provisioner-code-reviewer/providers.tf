@@ -4,11 +4,11 @@ terraform {
   required_providers {
     gitlab = {
       source  = "gitlabhq/gitlab"
-      version = "19.2.0"
+      version = ">= 19.2.0"
     }
     vault = {
       source  = "hashicorp/vault"
-      version = "5.13.0"
+      version = ">= 5.13.0"
     }
   }
 }
