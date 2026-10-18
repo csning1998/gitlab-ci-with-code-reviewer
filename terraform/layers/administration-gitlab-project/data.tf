@@ -33,9 +33,9 @@ ephemeral "vault_kv_secret_v2" "state_backend" {
   name     = "gitlab-ci-with-code-reviewer/terraform/state-backend"
 }
 
-# Anthropic admin API key MUST be stored in Bastion Vault at parent-group-governance/ai-provider-console/anthropic.
+# parent-group-governance/ai-provider-console/anthropic MUST hold the Anthropic Admin API key and an org:admin OAuth token.
 # The ephemeral block retrieves the credential in memory for provider authentication.
-ephemeral "vault_kv_secret_v2" "anthropic_admin_key" {
+ephemeral "vault_kv_secret_v2" "anthropic_console" {
   provider = vault.bastion
   mount    = "secret"
   name     = "parent-group-governance/ai-provider-console/anthropic"
