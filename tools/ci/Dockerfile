@@ -21,13 +21,13 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/review ./cmd/revie
 
 FROM alpine:3.24
 # ca-certificates serves TLS validation, Node.js and npm serve commitlint, and Git serves the
-# commitlint tree traversal subcommands (git merge-base). The bundled native tsc is removed
+# commitlint tree traversal subcommands (git merge-base). The image MUST NOT hold a native tsc,
 # because its prebuilt Go stdlib reports HIGH CVEs (CVE-2026-33818 and seven siblings).
 RUN apk upgrade --no-cache \
     && apk add --no-cache ca-certificates nodejs npm git \
     && npm install -g --no-save @commitlint/cli@21.2.1 @commitlint/config-conventional@21.2.0 \
-    && test -d /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript \
-    && rm -rf /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript
+    && rm -rf /usr/local/lib/node_modules/@commitlint/cli/node_modules/@typescript \
+    && test -z "$(find /usr/local/lib/node_modules -type d -name '@typescript' -print -quit)"
 
 ENV NODE_PATH=/usr/local/lib/node_modules
 COPY --from=build /out/review /usr/local/bin/review
