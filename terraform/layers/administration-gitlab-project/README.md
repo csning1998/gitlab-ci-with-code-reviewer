@@ -23,7 +23,7 @@ The operator writes the Admin API key once, and writes a fresh OAuth token immed
 
     ```bash
     (
-        eval "$(vault-proxy-env parent-group-governance)"
+        eval "$(vault-proxy-env administrator)"
         printf 'Admin API key: ' && read -rs anthropic_key && echo
         printf '%s' "$anthropic_key" | vault kv put -mount=secret parent-group-governance/ai-provider-console/anthropic \
             anthropic_admin_api_key=-
@@ -35,7 +35,7 @@ The operator writes the Admin API key once, and writes a fresh OAuth token immed
     ```bash
     ant auth login --profile issuer-gitlab-saas --scope "org:admin"
     (
-        eval "$(vault-proxy-env parent-group-governance)"
+        eval "$(vault-proxy-env administrator)"
         ant auth print-credentials --profile issuer-gitlab-saas --access-token | tr -d '\n' | \
             vault kv patch -mount=secret -method=rw parent-group-governance/ai-provider-console/anthropic \
                 anthropic_oauth_access_token=-
