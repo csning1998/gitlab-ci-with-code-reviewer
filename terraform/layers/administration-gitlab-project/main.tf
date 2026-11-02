@@ -6,7 +6,7 @@ module "provisioner_gitlab_project" {
   name         = var.gitlab_project_name
   description  = "GitLab CI pipeline with AI-powered code review using Claude and Gemini."
   visibility   = "public"
-  namespace_id = data.terraform_remote_state.group_foundation.outputs.group_id
+  namespace_id = tonumber(local.gitlab_group_top_level.group_id)
 
   only_allow_merge_if_pipeline_succeeds = false
 }
@@ -18,7 +18,7 @@ resource "gitlab_project_cicd_catalog" "this" {
 
 module "workload_identity_federation" {
   source  = "gitlab.com/csning1998-lab/provisioner-workload-identity-federation/gitlab"
-  version = "0.4.0"
+  version = "0.5.0"
 
   gitlab_project = {
     id   = module.provisioner_gitlab_project.project_id
@@ -27,22 +27,22 @@ module "workload_identity_federation" {
   }
 
   anthropic_federation = {
-    issuer_id       = data.terraform_remote_state.group_federation_anthropic.outputs.issuers.gitlab_saas.id
-    organization_id = data.terraform_remote_state.group_federation_anthropic.outputs.organization.id
+    issuer_id       = local.ai_provider["anthropic"].issuer_id
+    organization_id = local.ai_provider["anthropic"].organization_id
   }
 
   google_federation = {
-    project_id     = data.terraform_remote_state.group_federation_gcp.outputs.project.id
-    project_number = data.terraform_remote_state.group_federation_gcp.outputs.project.number
-    pool_id        = data.terraform_remote_state.group_federation_gcp.outputs.pool.id
-    provider_id    = data.terraform_remote_state.group_federation_gcp.outputs.provider.id
+    project_id     = local.ai_provider["google-cloud"].project_id
+    project_number = local.ai_provider["google-cloud"].project_number
+    pool_id        = local.ai_provider["google-cloud"].pool_id
+    provider_id    = local.ai_provider["google-cloud"].provider_id
   }
 
   azure_federation = {
-    tenant_id            = data.terraform_remote_state.group_federation_azure.outputs.tenant.id
-    subscription_id      = data.terraform_remote_state.group_federation_azure.outputs.subscription.id
-    cognitive_account_id = data.terraform_remote_state.group_federation_azure.outputs.openai.id
-    openai_endpoint      = data.terraform_remote_state.group_federation_azure.outputs.openai.endpoint
+    tenant_id            = local.ai_provider["azure"].tenant_id
+    subscription_id      = local.ai_provider["azure"].subscription_id
+    cognitive_account_id = local.ai_provider["azure"].cognitive_account_id
+    openai_endpoint      = local.ai_provider["azure"].openai_endpoint
     subjects = [
       "project_path:${module.provisioner_gitlab_project.full_path}:ref_type:branch:ref:main",
       "project_path:${module.provisioner_gitlab_project.full_path}:ref_type:branch:ref:refactor/integration-gcp-azure",
