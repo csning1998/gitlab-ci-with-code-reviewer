@@ -13,7 +13,7 @@ Managing Anthropic WIF resources requires two credentials read from Bastion Vaul
 | `anthropic_admin_api_key`      | Persistent Admin API key (`sk-ant-admin...`) | Until revoked  | `admin_api_key`   | `anthropic_workspace`                 |
 | `anthropic_oauth_access_token` | Temporary `org:admin` OAuth token            | Within minutes | `auth_token`      | Service accounts and federation rules |
 
-The Anthropic Terraform provider initializes two independent HTTP clients without fallback. The provider sends the credential of the workspace endpoints in the `x-api-key` header, which does not accept an OAuth token. Conversely, the federation and service account endpoints require the OAuth token via the `Authorization: Bearer` header and reject Admin API keys. Each field therefore MUST supply its designated credential type. The upstream credential architecture is documented in `parent-group-governance/terraform/layers/group-federation-anthropic/README.md` Section 1 Item B.
+The Anthropic Terraform provider initializes two independent HTTP clients without fallback. The provider sends the credential of the workspace endpoints in the `x-api-key` header, which does not accept an OAuth token. Conversely, the federation and service account endpoints require the OAuth token via the `Authorization: Bearer` header and reject Admin API keys. Each field therefore MUST supply its designated credential type. The upstream credential architecture is documented in `parent-group-governance/terraform/layers/group-ai-provider-anthropic/README.md` Section 1 Item B.
 
 ### Provisioning Bastion Vault Credentials
 

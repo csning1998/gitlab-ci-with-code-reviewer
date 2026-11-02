@@ -59,7 +59,7 @@ The associated cost requires operators to copy and populate `terraform.tfvars` m
 
 The current constraint blocks Anthropic, Google Cloud Platform, and Microsoft Azure when the three providers share one Terraform state and any one provider credential is absent.
 
-The chosen path assigns each provider a separate organization trust layer. The layer name MUST be `group-federation-anthropic`, `group-federation-gcp`, or `group-federation-azure`.
+The chosen path assigns each provider a separate organization trust layer. The layer name MUST be `group-ai-provider-anthropic`, `group-ai-provider-google-cloud`, or `group-ai-provider-azure`.
 
 The associated cost requires a separate state file and a separate apply for each provider.
 
