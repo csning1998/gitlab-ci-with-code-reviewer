@@ -5,7 +5,6 @@ package gitlabapi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,7 +106,41 @@ func VerifyScope(apiBaseURL, token, requiredScope string) (err error) {
 	return nil
 }
 
-// VerifyTagAccess validates that token can read the repository tags of projectID.
-func VerifyTagAccess(apiBaseURL, projectID, token string) error {
-	return errors.New("not implemented")
+// VerifyTagAccess validates that token can read the repository tags of projectID without writing.
+// A tag read accepts both a legacy api-scoped token and a fine-grained Repository Tag token,
+// whereas /personal_access_tokens/self rejects a fine-grained token lacking that permission.
+func VerifyTagAccess(apiBaseURL, projectID, token string) (err error) {
+	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
+	if err != nil {
+		return fmt.Errorf("failed to construct tag read endpoint: %w", err)
+	}
+	endpoint.RawQuery = url.Values{"per_page": {"1"}}.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to construct tag read request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to reach GitLab API at %q: %w", endpoint.String(), err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return fmt.Errorf("GitLab API returned status 401 because the token is invalid, expired, or revoked")
+	case http.StatusForbidden:
+		return fmt.Errorf("GitLab API returned status 403 because the token cannot read the repository tags of project %q (requires the api scope or Repository Tag Create and Read)", projectID)
+	default:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
+		return fmt.Errorf("GitLab API returned status %d reading the repository tags: %s", resp.StatusCode, body)
+	}
 }
