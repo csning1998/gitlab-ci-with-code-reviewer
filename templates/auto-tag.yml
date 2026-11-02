@@ -15,9 +15,8 @@ spec:
         modules this job tags. See tools/ci/internal/versiontag for the file's schema; a module
         with an empty name and dir "." reproduces single, whole-repository tagging.
 ---
-# Calculates and creates Semantic Version tags from Conventional Commit headers on squash merges.
-# Remote tag creation executes via the GitLab REST API to ensure tag pipeline execution
-# (gitlab-org/gitlab#569187). Requires TAG_PUSH_TOKEN with the "api" scope.
+# Creates Semantic Version tags from Conventional Commit headers through the GitLab REST API (gitlab-org/gitlab#569187).
+# TAG_PUSH_TOKEN requires the legacy "api" scope or the fine-grained Repository Tag Create and Read permissions.
 auto-tag:
   stage: '$[[ inputs.stage ]]'
   image: '$[[ inputs.reviewer_image ]]'
@@ -30,11 +29,11 @@ auto-tag:
       auto-tag --sha "$CI_COMMIT_SHA" --config "$[[ inputs.config_path ]]" \
         --api-url "$CI_API_V4_URL" --project-id "$CI_PROJECT_ID"
 
-# Validates TAG_PUSH_TOKEN api scope in MR pipelines to detect credential misconfigurations prior to merge.
+# Reads the repository tags with TAG_PUSH_TOKEN in MR pipelines to detect credential misconfigurations prior to merge.
 auto-tag:verify-token:
   stage: '$[[ inputs.stage ]]'
   image: '$[[ inputs.reviewer_image ]]'
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
-    - verify-tag-token --api-url "$CI_API_V4_URL"
+    - verify-tag-token --api-url "$CI_API_V4_URL" --project-id "$CI_PROJECT_ID"
