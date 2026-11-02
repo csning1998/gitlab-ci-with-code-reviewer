@@ -396,7 +396,8 @@ Release management enforces strict Semantic Versioning (SemVer) aligning contain
         - `fix` or `perf`: Patch version bump (`X.Y.Z`).
         - Breaking changes (`!`): Major version bump (`X.0.0`).
         - Other commit types (`chore`, `docs`, `refactor`, `adhoc`, `test`): Suppress release generation.
-    - Pushes the resulting SemVer tag using a dedicated project access token (`TAG_PUSH_TOKEN` with `write_repository` scope).
+    - Creates the resulting SemVer tag through the GitLab REST API with `TAG_PUSH_TOKEN`. The token requires the legacy `api` scope or the fine-grained Repository Tag Create and Read permissions.
+    - The `auto-tag:verify-token` job reads the repository tags with `TAG_PUSH_TOKEN` in MR pipelines. The read detects an invalid token or a missing permission before merge.
 2. **Tag Pipeline and Catalog Publication**:
     - The tag pipeline triggers `build:reviewer-image` to produce `reviewer:<tag>`.
     - The `publish-catalog` job publishes all components in `templates/` to the GitLab CI/CD Catalog using `release-cli`.
