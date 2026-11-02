@@ -111,7 +111,7 @@ The review binary communicates with GitLab REST APIs to read merge request diffs
 The review engine operates as a decoupled, state-agnostic consumer:
 
 - **Key Name**: The environment MUST provide `REVIEW_MR_REVIEWER` (or backwards-compatible aliases `CLAUDE_MR_REVIEWER` / `GEMINI_MR_REVIEWER`).
-- **Required Privileges**: The token MUST carry the **`api`** and **`read_api`** scopes and MUST possess at least the **`Developer`** role on the repository. (The `Reporter` role lacks permissions to resolve or update MR discussion threads).
+- **Required Privileges**: A legacy token MUST carry the **`api`** and **`read_api`** scopes. A fine-grained token MUST grant Merge Request Create, Read, and Update and Work Item Create. The token owner MUST possess at least the **`Developer`** role on the repository. (The `Reporter` role lacks permissions to resolve or update MR discussion threads).
 - **Token Type Agnostic**: The engine accepts Project Access Tokens (PrAT), Group Access Tokens (GrAT), or Personal Access Tokens (PAT).
 
 ##### GitLab Token Type Availability Matrix
@@ -150,16 +150,17 @@ The review engine operates as a decoupled, state-agnostic consumer:
 
 ### Step B. CI/CD Environment Variables Summary
 
-| Variable                       | Required                   | Type      | Purpose                                                           |
-| ------------------------------ | -------------------------- | --------- | ----------------------------------------------------------------- |
-| `REVIEW_MR_REVIEWER`           | Yes                        | Sensitive | Project access token for reading diffs and publishing discussions |
-| `ANTHROPIC_FEDERATION_RULE_ID` | Only for Claude Native WIF | Standard  | Anthropic federation rule (`fdrl_...`)                            |
-| `ANTHROPIC_ORGANIZATION_ID`    | Only for Claude Native WIF | Standard  | Anthropic organization UUID                                       |
-| `ANTHROPIC_SERVICE_ACCOUNT_ID` | Only for Claude Native WIF | Standard  | Anthropic service account (`svac_...`)                            |
-| `ANTHROPIC_WORKSPACE_ID`       | Only for Claude Native WIF | Standard  | Anthropic workspace (`wrkspc_...`)                                |
-| `GEMINI_API_KEY`               | Only for Gemini Static Key | Sensitive | Google AI Studio API key                                          |
-| `CLAUDE_API_KEY`               | Only for Claude Static Key | Sensitive | Anthropic Console API key (when not using WIF)                    |
-| `MAX_TOTAL_DIFF`               | No                         | Number    | Diff truncation threshold in characters (Default: `300000`)       |
+| Variable                       | Required                   | Type      | Purpose                                                     |
+| ------------------------------ | -------------------------- | --------- | ----------------------------------------------------------- |
+| `REVIEW_MR_REVIEWER`           | Yes                        | Sensitive | Access token for reading diffs and publishing discussions   |
+| `TAG_PUSH_TOKEN`               | Only for `auto-tag`        | Sensitive | Access token for reading and creating repository tags       |
+| `ANTHROPIC_FEDERATION_RULE_ID` | Only for Claude Native WIF | Standard  | Anthropic federation rule (`fdrl_...`)                      |
+| `ANTHROPIC_ORGANIZATION_ID`    | Only for Claude Native WIF | Standard  | Anthropic organization UUID                                 |
+| `ANTHROPIC_SERVICE_ACCOUNT_ID` | Only for Claude Native WIF | Standard  | Anthropic service account (`svac_...`)                      |
+| `ANTHROPIC_WORKSPACE_ID`       | Only for Claude Native WIF | Standard  | Anthropic workspace (`wrkspc_...`)                          |
+| `GEMINI_API_KEY`               | Only for Gemini Static Key | Sensitive | Google AI Studio API key                                    |
+| `CLAUDE_API_KEY`               | Only for Claude Static Key | Sensitive | Anthropic Console API key (when not using WIF)              |
+| `MAX_TOTAL_DIFF`               | No                         | Number    | Diff truncation threshold in characters (Default: `300000`) |
 
 ### Step C. Runner Setup and Network Topology
 
@@ -397,7 +398,7 @@ Release management enforces strict Semantic Versioning (SemVer) aligning contain
         - Breaking changes (`!`): Major version bump (`X.0.0`).
         - Other commit types (`chore`, `docs`, `refactor`, `adhoc`, `test`): Suppress release generation.
     - Creates the resulting SemVer tag through the GitLab REST API with `TAG_PUSH_TOKEN`. The token requires the legacy `api` scope or the fine-grained Repository Tag Create and Read permissions.
-    - The `auto-tag:verify-token` job reads the repository tags with `TAG_PUSH_TOKEN` in MR pipelines. The read detects an invalid token or a missing permission before merge.
+    - The `auto-tag:verify-token` job reads the repository tags with `TAG_PUSH_TOKEN` in MR pipelines. The read detects an invalid token before merge. The read detects a missing Repository Tag Read permission on a private project alone, and no read detects a missing Repository Tag Create permission.
 2. **Tag Pipeline and Catalog Publication**:
     - The tag pipeline triggers `build:reviewer-image` to produce `reviewer:<tag>`.
     - The `publish-catalog` job publishes all components in `templates/` to the GitLab CI/CD Catalog using `release-cli`.
