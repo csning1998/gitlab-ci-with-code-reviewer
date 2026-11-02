@@ -4,12 +4,10 @@
 package gitlabapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -53,54 +51,6 @@ func CreateTag(apiBaseURL, projectID, tagName, ref, token string) (err error) {
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 		return fmt.Errorf("GitLab API returned status %d creating tag %q: %s", resp.StatusCode, tagName, body)
-	}
-
-	return nil
-}
-
-// tokenSelf defines the subset of fields parsed from GET /personal_access_tokens/self.
-type tokenSelf struct {
-	Scopes  []string `json:"scopes"`
-	Active  bool     `json:"active"`
-	Revoked bool     `json:"revoked"`
-}
-
-// VerifyScope validates an active, unrevoked personal access token possessing
-// requiredScope via GET /personal_access_tokens/self. The check executes no write operations.
-func VerifyScope(apiBaseURL, token, requiredScope string) (err error) {
-	endpoint := fmt.Sprintf("%s/personal_access_tokens/self", strings.TrimRight(apiBaseURL, "/"))
-
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("failed to construct token introspection request: %w", err)
-	}
-	req.Header.Set("PRIVATE-TOKEN", token)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to reach GitLab API at %q: %w", endpoint, err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
-		return fmt.Errorf("GitLab API returned status %d introspecting the token: %s", resp.StatusCode, body)
-	}
-
-	var info tokenSelf
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBodyBytes)).Decode(&info); err != nil {
-		return fmt.Errorf("failed to parse token introspection response: %w", err)
-	}
-
-	if info.Revoked || !info.Active {
-		return fmt.Errorf("token is revoked or inactive")
-	}
-	if !slices.Contains(info.Scopes, requiredScope) {
-		return fmt.Errorf("token scopes %v do not include the required %q scope", info.Scopes, requiredScope)
 	}
 
 	return nil
