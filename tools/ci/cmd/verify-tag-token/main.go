@@ -1,6 +1,6 @@
-// Command verify-tag-token validates that TAG_PUSH_TOKEN possesses required auto-tag scopes.
-// Read-only scope validation executes during MR pipelines prior to merge; tag creation defers
-// until post-merge execution to align with squash-merge commit SHA reassignments.
+// Command verify-tag-token validates that TAG_PUSH_TOKEN can read the repository tags of the project.
+// The read-only check runs in MR pipelines before merge. Tag creation waits until after merge
+// because a squash merge assigns a new commit SHA.
 package main
 
 import (
@@ -13,10 +13,8 @@ import (
 )
 
 // executeVerifyTagToken validates input parameters and delegates scope verification to gitlabapi.VerifyScope.
-// Decouples validation logic from CLI flag parsing and process termination to facilitate unit testing.
 //
-// Empty tokens exit zero. Protected CI/CD variables are withheld on unprotected source branch pipelines;
-// treating missing credentials as skipped checks prevents false-positive pipeline failures.
+// An empty token exits zero because unprotected source branch pipelines withhold protected variables.
 func executeVerifyTagToken(apiBaseURL, requiredScope, token string, stdout, stderr io.Writer) int {
 	if apiBaseURL == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --api-url is required.")

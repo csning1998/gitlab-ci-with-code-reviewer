@@ -230,109 +230,106 @@ func TestCreateTag_FollowsRedirect(t *testing.T) {
 	}
 }
 
-func TestVerifyScope_Success(t *testing.T) {
-	var gotPath, gotToken string
+func TestVerifyTagAccess_Success(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+	var gotQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
 		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
 		gotToken = r.Header.Get("PRIVATE-TOKEN")
-		_, _ = io.WriteString(w, `{"scopes":["api","read_api"],"active":true,"revoked":false}`)
+		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer server.Close()
 
-	if err := VerifyScope(server.URL, "secret-token", "api"); err != nil {
-		t.Fatalf("VerifyScope(...) returned an unexpected error: %v", err)
+	if err := VerifyTagAccess(server.URL, "123", "secret-token"); err != nil {
+		t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 	}
-	if gotPath != "/personal_access_tokens/self" {
-		t.Errorf("request path = %q, want %q", gotPath, "/personal_access_tokens/self")
+	if gotMethod != http.MethodGet {
+		t.Errorf("request method = %q, want %q", gotMethod, http.MethodGet)
+	}
+	if gotPath != "/projects/123/repository/tags" {
+		t.Errorf("request path = %q, want %q", gotPath, "/projects/123/repository/tags")
+	}
+	if got := gotQuery.Get("per_page"); got != "1" {
+		t.Errorf("per_page = %q, want %q", got, "1")
 	}
 	if gotToken != "secret-token" {
 		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
 	}
 }
 
-func TestVerifyScope_MissingScope(t *testing.T) {
+func TestVerifyTagAccess_ProjectIDEscaped(t *testing.T) {
+	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"scopes":["write_repository"],"active":true,"revoked":false}`)
+		gotPath = r.URL.EscapedPath()
+		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer server.Close()
 
-	err := VerifyScope(server.URL, "unused", "api")
-	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly for a token missing the required scope")
+	if err := VerifyTagAccess(server.URL, "group/subgroup/project", "unused"); err != nil {
+		t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "do not include the required") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the missing scope", err.Error())
-	}
-}
-
-func TestVerifyScope_Revoked(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"scopes":["api"],"active":true,"revoked":true}`)
-	}))
-	defer server.Close()
-
-	err := VerifyScope(server.URL, "unused", "api")
-	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly for a revoked token")
-	}
-	if !strings.Contains(err.Error(), "revoked or inactive") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the revoked token", err.Error())
+	if gotPath != "/projects/group%2Fsubgroup%2Fproject/repository/tags" {
+		t.Errorf("request path = %q, want the project ID path-escaped", gotPath)
 	}
 }
 
-func TestVerifyScope_Inactive(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"scopes":["api"],"active":false,"revoked":false}`)
-	}))
-	defer server.Close()
-
-	err := VerifyScope(server.URL, "unused", "api")
-	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly for an inactive token")
-	}
-	if !strings.Contains(err.Error(), "revoked or inactive") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the inactive token", err.Error())
-	}
-}
-
-func TestVerifyScope_ErrorStatus(t *testing.T) {
+func TestVerifyTagAccess_Unauthorized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"message":"401 Unauthorized"}`)
 	}))
 	defer server.Close()
 
-	err := VerifyScope(server.URL, "unused", "api")
+	err := VerifyTagAccess(server.URL, "123", "unused")
 	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly on a 401 response")
+		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 401 response")
 	}
-	if !strings.Contains(err.Error(), "status 401") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the status code", err.Error())
+	if !strings.Contains(err.Error(), "status 401") || !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to report status 401 as an invalid or revoked token", err.Error())
 	}
 }
 
-func TestVerifyScope_MalformedJSON(t *testing.T) {
+func TestVerifyTagAccess_Forbidden(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `not json`)
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"message":"403 Forbidden"}`)
 	}))
 	defer server.Close()
 
-	err := VerifyScope(server.URL, "unused", "api")
+	err := VerifyTagAccess(server.URL, "123", "unused")
 	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly on a malformed response body")
+		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 403 response")
 	}
-	if !strings.Contains(err.Error(), "failed to parse token introspection response") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the parse failure", err.Error())
+	if !strings.Contains(err.Error(), "status 403") || !strings.Contains(err.Error(), "Repository Tag") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to report status 403 with the required permissions", err.Error())
 	}
 }
 
-func TestVerifyScope_UnreachableServer(t *testing.T) {
-	err := VerifyScope("http://127.0.0.1:0", "unused", "api")
+func TestVerifyTagAccess_ErrorStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"404 Project Not Found"}`)
+	}))
+	defer server.Close()
+
+	err := VerifyTagAccess(server.URL, "123", "unused")
 	if err == nil {
-		t.Fatal("VerifyScope(...) against an unreachable server succeeded unexpectedly")
+		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 404 response")
+	}
+	if !strings.Contains(err.Error(), "status 404") || !strings.Contains(err.Error(), "Project Not Found") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to mention the status code and response body", err.Error())
+	}
+}
+
+func TestVerifyTagAccess_UnreachableServer(t *testing.T) {
+	err := VerifyTagAccess("http://127.0.0.1:0", "123", "unused")
+	if err == nil {
+		t.Fatal("VerifyTagAccess(...) against an unreachable server succeeded unexpectedly")
 	}
 	if !strings.Contains(err.Error(), "failed to reach GitLab API") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the unreachable API", err.Error())
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to mention the unreachable API", err.Error())
 	}
 }
 
@@ -388,11 +385,11 @@ func TestCreateTag_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	}
 }
 
-func TestVerifyScope_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
+func TestVerifyTagAccess_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
 
-	_ = VerifyScope(redirector.URL, "secret-token", "api")
+	_ = VerifyTagAccess(redirector.URL, "1", "secret-token")
 
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
@@ -509,41 +506,39 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 	}
 }
 
-func TestVerifyScope_ScopeListBoundaries(t *testing.T) {
+// Only 200 proves tag read access. A 201 or 204 from an intermediary MUST NOT pass as a read.
+func TestVerifyTagAccess_StatusBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
-		body    string
+		status  int
 		wantErr bool
 	}{
-		{name: "scope present", body: `{"scopes":["api"],"active":true,"revoked":false}`},
-		{name: "scope among many", body: `{"scopes":["read_api","api","read_user"],"active":true}`},
-		{name: "scope case differs", body: `{"scopes":["API"],"active":true}`, wantErr: true},
-		{name: "scope with padding", body: `{"scopes":[" api"],"active":true}`, wantErr: true},
-		{name: "empty scopes", body: `{"scopes":[],"active":true}`, wantErr: true},
-		{name: "null scopes", body: `{"scopes":null,"active":true}`, wantErr: true},
-		{name: "missing scopes", body: `{"active":true}`, wantErr: true},
-		{name: "inactive", body: `{"scopes":["api"],"active":false}`, wantErr: true},
-		{name: "missing active", body: `{"scopes":["api"]}`, wantErr: true},
-		{name: "revoked and active", body: `{"scopes":["api"],"active":true,"revoked":true}`, wantErr: true},
-		{name: "scopes as string", body: `{"scopes":"api","active":true}`, wantErr: true},
-		{name: "trailing garbage after object", body: `{"scopes":["api"],"active":true} garbage`},
-		{name: "empty body", body: ``, wantErr: true},
-		{name: "array body", body: `[]`, wantErr: true},
+		{name: "ok", status: http.StatusOK},
+		{name: "created", status: http.StatusCreated, wantErr: true},
+		{name: "no content", status: http.StatusNoContent, wantErr: true},
+		{name: "unauthorized", status: http.StatusUnauthorized, wantErr: true},
+		{name: "forbidden", status: http.StatusForbidden, wantErr: true},
+		{name: "not found", status: http.StatusNotFound, wantErr: true},
+		{name: "too many requests", status: http.StatusTooManyRequests, wantErr: true},
+		{name: "internal server error", status: http.StatusInternalServerError, wantErr: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = fmt.Fprint(w, tc.body)
+				w.WriteHeader(tc.status)
 			}))
 			t.Cleanup(server.Close)
 
-			err := VerifyScope(server.URL, "token", "api")
+			err := VerifyTagAccess(server.URL, "1", "token")
 			if tc.wantErr && err == nil {
-				t.Error("VerifyScope succeeded unexpectedly")
+				t.Error("VerifyTagAccess succeeded unexpectedly")
 			}
 			if !tc.wantErr && err != nil {
-				t.Errorf("VerifyScope returned an unexpected error: %v", err)
+				t.Errorf("VerifyTagAccess returned an unexpected error: %v", err)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), fmt.Sprintf("status %d", tc.status)) {
+				t.Errorf("VerifyTagAccess error = %q, want it to report status %d", err.Error(), tc.status)
 			}
 		})
 	}

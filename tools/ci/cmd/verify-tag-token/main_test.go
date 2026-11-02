@@ -12,7 +12,7 @@ import (
 
 func TestExecuteVerifyTagToken_MissingAPIURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken("", "api", "token", &stdout, &stderr)
+	code := executeVerifyTagToken("", "123", "token", &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -21,9 +21,20 @@ func TestExecuteVerifyTagToken_MissingAPIURL(t *testing.T) {
 	}
 }
 
+func TestExecuteVerifyTagToken_MissingProjectID(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := executeVerifyTagToken("https://example.invalid/api/v4", "", "token", &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "--project-id is required") {
+		t.Errorf("executeVerifyTagToken(...) stderr = %q, want it to mention the missing --project-id", stderr.String())
+	}
+}
+
 func TestExecuteVerifyTagToken_MissingToken_SkipsWithoutFailing(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken("https://example.invalid/api/v4", "api", "", &stdout, &stderr)
+	code := executeVerifyTagToken("https://example.invalid/api/v4", "123", "", &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 0 (a missing token skips rather than fails)", code)
 	}
@@ -33,31 +44,37 @@ func TestExecuteVerifyTagToken_MissingToken_SkipsWithoutFailing(t *testing.T) {
 }
 
 func TestExecuteVerifyTagToken_Success(t *testing.T) {
+	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"scopes":["api"],"active":true,"revoked":false}`))
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`[]`))
 	}))
 	defer server.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, "api", "token", &stdout, &stderr)
+	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeVerifyTagToken(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
+	if gotPath != "/projects/123/repository/tags" {
+		t.Errorf("request path = %q, want %q", gotPath, "/projects/123/repository/tags")
+	}
 }
 
-func TestExecuteVerifyTagToken_InsufficientScope(t *testing.T) {
+func TestExecuteVerifyTagToken_NoTagReadAccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"scopes":["write_repository"],"active":true,"revoked":false}`))
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"403 Forbidden"}`))
 	}))
 	defer server.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, "api", "token", &stdout, &stderr)
+	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "do not include the required") {
-		t.Errorf("executeVerifyTagToken(...) stderr = %q, want it to mention the missing scope", stderr.String())
+	if !strings.Contains(stderr.String(), "status 403") {
+		t.Errorf("executeVerifyTagToken(...) stderr = %q, want it to report status 403", stderr.String())
 	}
 }
 
@@ -67,13 +84,14 @@ func TestMainSubprocess(t *testing.T) {
 		os.Args = []string{
 			"verify-tag-token",
 			"--api-url=" + os.Getenv("TEST_API_URL"),
+			"--project-id=123",
 		}
 		main()
 		return
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"scopes":["api"],"active":true,"revoked":false}`))
+		_, _ = w.Write([]byte(`[]`))
 	}))
 	defer server.Close()
 

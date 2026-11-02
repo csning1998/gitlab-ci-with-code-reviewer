@@ -1,10 +1,11 @@
 // Package gitlabapi provides functions to create Git tags via the GitLab REST API.
 // Tags created via in-job Git pushes do not trigger tag pipelines
-// (gitlab-org/gitlab#569187); API-based creation bypasses this limitation.
+// (gitlab-org/gitlab#569187). API-based creation bypasses this limitation.
 package gitlabapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,4 +105,9 @@ func VerifyScope(apiBaseURL, token, requiredScope string) (err error) {
 	}
 
 	return nil
+}
+
+// VerifyTagAccess validates that token can read the repository tags of projectID.
+func VerifyTagAccess(apiBaseURL, projectID, token string) error {
+	return errors.New("not implemented")
 }
