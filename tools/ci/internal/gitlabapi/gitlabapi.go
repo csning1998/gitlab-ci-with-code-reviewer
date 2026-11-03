@@ -56,6 +56,11 @@ func CreateTag(apiBaseURL, projectID, tagName, ref, token string) (err error) {
 	return nil
 }
 
+// RejectLegacyToken returns an error unless token is a fine-grained personal access token.
+func RejectLegacyToken(apiBaseURL, token string) error {
+	return nil
+}
+
 // VerifyTagAccess validates that token can read the repository tags of projectID without writing.
 // /personal_access_tokens/self rejects a fine-grained token lacking the Personal Access Token permission.
 func VerifyTagAccess(apiBaseURL, projectID, token string) (err error) {

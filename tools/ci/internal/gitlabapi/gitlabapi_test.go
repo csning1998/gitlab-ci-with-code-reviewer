@@ -509,6 +509,173 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 	}
 }
 
+const insufficientGranularScopeBody = `{"error":"insufficient_granular_scope","error_description":"Access denied: This operation requires a fine-grained personal access token with the following user permissions: [Personal Access Token: Read]."}`
+
+func TestRejectLegacyToken_FineGrainedTokenWithoutSelfReadPasses(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotToken = r.Header.Get("PRIVATE-TOKEN")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, insufficientGranularScopeBody)
+	}))
+	defer server.Close()
+
+	if err := RejectLegacyToken(server.URL, "secret-token"); err != nil {
+		t.Fatalf("RejectLegacyToken(...) returned an unexpected error: %v", err)
+	}
+	if gotMethod != http.MethodGet {
+		t.Errorf("request method = %q, want %q", gotMethod, http.MethodGet)
+	}
+	if gotPath != "/personal_access_tokens/self" {
+		t.Errorf("request path = %q, want %q", gotPath, "/personal_access_tokens/self")
+	}
+	if gotToken != "secret-token" {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	}
+}
+
+func TestRejectLegacyToken_FineGrainedTokenWithSelfReadPasses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"active":true,"scopes":[],"granular_scopes":[{"access":"selected_memberships","permissions":["read_repository_tag"]}]}`)
+	}))
+	defer server.Close()
+
+	if err := RejectLegacyToken(server.URL, "token"); err != nil {
+		t.Fatalf("RejectLegacyToken(...) returned an unexpected error: %v", err)
+	}
+}
+
+// Any token which answers the self endpoint without granular scopes is a legacy token, whatever its scopes.
+func TestRejectLegacyToken_LegacyTokenRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "api", body: `{"active":true,"scopes":["api"]}`},
+		{name: "read_api", body: `{"active":true,"scopes":["read_api"]}`},
+		{name: "read_repository", body: `{"active":true,"scopes":["read_repository"]}`},
+		{name: "empty granular scopes", body: `{"active":true,"scopes":["api"],"granular_scopes":[]}`},
+		{name: "null granular scopes", body: `{"active":true,"scopes":["api"],"granular_scopes":null}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(server.Close)
+
+			err := RejectLegacyToken(server.URL, "token")
+			if err == nil {
+				t.Fatal("RejectLegacyToken(...) accepted a legacy token")
+			}
+			if !strings.Contains(err.Error(), "legacy scopes") || !strings.Contains(err.Error(), "prohibited") {
+				t.Errorf("RejectLegacyToken(...) error = %q, want it to state that legacy scopes are prohibited", err.Error())
+			}
+		})
+	}
+}
+
+// A 403 without the granular scope error, such as insufficient_scope from a legacy token, MUST fail closed.
+func TestRejectLegacyToken_ForbiddenWithoutGranularScopeErrorRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "insufficient scope", body: `{"error":"insufficient_scope","error_description":"The request requires higher privileges than provided by the access token."}`},
+		{name: "plain forbidden", body: `{"message":"403 Forbidden"}`},
+		{name: "empty body", body: ``},
+		{name: "malformed body", body: `insufficient_granular_scope`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(server.Close)
+
+			err := RejectLegacyToken(server.URL, "token")
+			if err == nil {
+				t.Fatal("RejectLegacyToken(...) accepted a 403 response without the granular scope error")
+			}
+			if !strings.Contains(err.Error(), "status 403") {
+				t.Errorf("RejectLegacyToken(...) error = %q, want it to report status 403", err.Error())
+			}
+		})
+	}
+}
+
+func TestRejectLegacyToken_MalformedSelfBodyRejected(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `not json`)
+	}))
+	defer server.Close()
+
+	if err := RejectLegacyToken(server.URL, "token"); err == nil {
+		t.Fatal("RejectLegacyToken(...) accepted an unparsable self response")
+	}
+}
+
+func TestRejectLegacyToken_Unauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"message":"401 Unauthorized"}`)
+	}))
+	defer server.Close()
+
+	err := RejectLegacyToken(server.URL, "token")
+	if err == nil {
+		t.Fatal("RejectLegacyToken(...) succeeded unexpectedly on a 401 response")
+	}
+	if !strings.Contains(err.Error(), "status 401") || !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("RejectLegacyToken(...) error = %q, want it to report status 401 as an invalid or revoked token", err.Error())
+	}
+}
+
+func TestRejectLegacyToken_ErrorStatusRejected(t *testing.T) {
+	for _, status := range []int{http.StatusCreated, http.StatusNoContent, http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError} {
+		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			t.Cleanup(server.Close)
+
+			err := RejectLegacyToken(server.URL, "token")
+			if err == nil {
+				t.Fatal("RejectLegacyToken(...) succeeded unexpectedly")
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("status %d", status)) {
+				t.Errorf("RejectLegacyToken(...) error = %q, want it to report status %d", err.Error(), status)
+			}
+		})
+	}
+}
+
+func TestRejectLegacyToken_UnreachableServer(t *testing.T) {
+	err := RejectLegacyToken("http://127.0.0.1:0", "token")
+	if err == nil {
+		t.Fatal("RejectLegacyToken(...) against an unreachable server succeeded unexpectedly")
+	}
+	if !strings.Contains(err.Error(), "failed to reach GitLab API") {
+		t.Errorf("RejectLegacyToken(...) error = %q, want it to mention the unreachable API", err.Error())
+	}
+}
+
+func TestRejectLegacyToken_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
+	var leaked atomic.Value
+	redirector := newCrossHostRedirector(t, &leaked)
+
+	_ = RejectLegacyToken(redirector.URL, "secret-token")
+
+	if got, _ := leaked.Load().(string); got != "" {
+		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
+	}
+}
+
 // Only 200 proves tag read access. A 201 or 204 from an intermediary MUST NOT pass as a read.
 func TestVerifyTagAccess_StatusBoundaries(t *testing.T) {
 	tests := []struct {
