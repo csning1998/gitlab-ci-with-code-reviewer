@@ -3,7 +3,12 @@ package testutil
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 
+	"ci-tools/internal/gitlabtoken"
 	"ci-tools/internal/tokensource"
 )
 
@@ -16,6 +21,23 @@ const (
 // InsufficientGranularScopeBody is the 403 body which GitLab.com returns to a fine-grained token
 // lacking Personal Access Token Read on /personal_access_tokens/self.
 const InsufficientGranularScopeBody = `{"error":"insufficient_granular_scope","error_description":"Access denied: This operation requires a fine-grained personal access token with the following user permissions: [Personal Access Token: Read]."}`
+
+// NewStubToken returns raw as a FineGrainedToken through gitlabtoken.New against a stub self
+// endpoint, since no other constructor exists.
+func NewStubToken(t testing.TB, raw string) gitlabtoken.FineGrainedToken {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, InsufficientGranularScopeBody)
+	}))
+	defer server.Close()
+
+	token, err := gitlabtoken.New(context.Background(), server.URL, raw)
+	if err != nil {
+		t.Fatalf("gitlabtoken.New(...) against the stub self endpoint failed: %v", err)
+	}
+	return token
+}
 
 // Ptr returns a pointer to the value passed in.
 func Ptr[T any](v T) *T {
