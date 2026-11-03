@@ -346,8 +346,8 @@ func TestCreateTag_ZeroTokenRejectedWithoutRequest(t *testing.T) {
 	if err == nil {
 		t.Fatal("CreateTag(...) accepted the zero FineGrainedToken")
 	}
-	if !strings.Contains(err.Error(), "empty") {
-		t.Errorf("CreateTag(...) error = %q, want it to report the empty token", err.Error())
+	if !errors.Is(err, gitlabtoken.ErrEmptyToken) {
+		t.Errorf("CreateTag(...) error = %v, want it to wrap gitlabtoken.ErrEmptyToken", err)
 	}
 	if got := requests.Load(); got != 0 {
 		t.Errorf("server received %d requests, want 0", got)
@@ -362,11 +362,40 @@ func TestVerifyTagAccess_ZeroTokenRejectedWithoutRequest(t *testing.T) {
 	if err == nil {
 		t.Fatal("VerifyTagAccess(...) accepted the zero FineGrainedToken")
 	}
-	if !strings.Contains(err.Error(), "empty") {
-		t.Errorf("VerifyTagAccess(...) error = %q, want it to report the empty token", err.Error())
+	if !errors.Is(err, gitlabtoken.ErrEmptyToken) {
+		t.Errorf("VerifyTagAccess(...) error = %v, want it to wrap gitlabtoken.ErrEmptyToken", err)
 	}
 	if got := requests.Load(); got != 0 {
 		t.Errorf("server received %d requests, want 0", got)
+	}
+}
+
+// Draining an unparsed response body lets the next request reuse the TCP connection.
+func TestCreateTag_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
+	server, connections := testutil.NewConnectionCountingServer(t, http.StatusCreated, `{"name":"1.4.4"}`)
+	token := testutil.NewStubToken(t, testutil.GitLabToken)
+
+	for range 2 {
+		if err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", token); err != nil {
+			t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
+		}
+	}
+	if got := connections.Load(); got != 1 {
+		t.Errorf("server accepted %d connections, want 1 reused connection", got)
+	}
+}
+
+func TestVerifyTagAccess_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
+	server, connections := testutil.NewConnectionCountingServer(t, http.StatusOK, `[{"name":"1.4.4"}]`)
+	token := testutil.NewStubToken(t, testutil.GitLabToken)
+
+	for range 2 {
+		if err := VerifyTagAccess(context.Background(), server.URL, "123", token); err != nil {
+			t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
+		}
+	}
+	if got := connections.Load(); got != 1 {
+		t.Errorf("server accepted %d connections, want 1 reused connection", got)
 	}
 }
 

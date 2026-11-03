@@ -85,8 +85,8 @@ func TestNew_EmptyTokenRejectedWithoutRequest(t *testing.T) {
 	if err == nil {
 		t.Fatal("New(...) accepted an empty token")
 	}
-	if !strings.Contains(err.Error(), "empty") {
-		t.Errorf("New(...) error = %q, want it to report the empty token", err.Error())
+	if !errors.Is(err, gitlabtoken.ErrEmptyToken) {
+		t.Errorf("New(...) error = %v, want it to wrap ErrEmptyToken", err)
 	}
 	if token.Value() != "" {
 		t.Errorf("New(...).Value() = %q, want empty on error", token.Value())
@@ -222,6 +222,30 @@ func TestNew_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	}
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
+	}
+}
+
+func TestFineGrainedToken_IsZero(t *testing.T) {
+	var zero gitlabtoken.FineGrainedToken
+	if !zero.IsZero() {
+		t.Error("zero FineGrainedToken.IsZero() = false, want true")
+	}
+	if token := testutil.NewStubToken(t, testutil.GitLabToken); token.IsZero() {
+		t.Error("accepted FineGrainedToken.IsZero() = true, want false")
+	}
+}
+
+// Draining an unparsed response body lets the next request reuse the TCP connection.
+func TestNew_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
+	server, connections := testutil.NewConnectionCountingServer(t, http.StatusUnauthorized, `{"message":"401 Unauthorized"}`)
+
+	for range 2 {
+		if _, err := gitlabtoken.New(context.Background(), server.URL, testutil.GitLabToken); err == nil {
+			t.Fatal("New(...) succeeded unexpectedly on a 401 response")
+		}
+	}
+	if got := connections.Load(); got != 1 {
+		t.Errorf("server accepted %d connections, want 1 reused connection", got)
 	}
 }
 

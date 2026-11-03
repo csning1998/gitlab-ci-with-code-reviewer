@@ -5,7 +5,6 @@ package gitlabapi
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,15 +24,12 @@ const maxResponseBodyBytes = 4096
 
 var httpClient = &http.Client{Timeout: requestTimeout, CheckRedirect: httpguard.RefuseCrossHostRedirect}
 
-// errEmptyToken rejects the zero FineGrainedToken, which another package can write without gitlabtoken.New.
-var errEmptyToken = errors.New("the GitLab token is empty")
-
 // CreateTag creates a Git tag at the specified target reference in a GitLab project.
 //
 // Authenticates against apiBaseURL using the PRIVATE-TOKEN header.
 func CreateTag(ctx context.Context, apiBaseURL, projectID, tagName, ref string, token gitlabtoken.FineGrainedToken) (err error) {
-	if token.Value() == "" {
-		return errEmptyToken
+	if token.IsZero() {
+		return gitlabtoken.ErrEmptyToken
 	}
 	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
 	if err != nil {
@@ -67,8 +63,8 @@ func CreateTag(ctx context.Context, apiBaseURL, projectID, tagName, ref string, 
 
 // VerifyTagAccess validates that token can read the repository tags of projectID without writing.
 func VerifyTagAccess(ctx context.Context, apiBaseURL, projectID string, token gitlabtoken.FineGrainedToken) (err error) {
-	if token.Value() == "" {
-		return errEmptyToken
+	if token.IsZero() {
+		return gitlabtoken.ErrEmptyToken
 	}
 	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
 	if err != nil {

@@ -129,7 +129,7 @@ func executeAutoTag(ctx context.Context, repoPath, configPath, sha, apiBaseURL, 
 		}
 		newTag := prefix + nextVersion
 
-		if fineGrainedToken.Value() == "" {
+		if fineGrainedToken.IsZero() {
 			fineGrainedToken, err = gitlabtoken.New(ctx, apiBaseURL, password)
 			if err != nil {
 				_, _ = fmt.Fprintf(stderr, "Error: failed to confirm that %s is a fine-grained personal access token: %v\n", ciconfig.TagPushTokenEnvName, err)

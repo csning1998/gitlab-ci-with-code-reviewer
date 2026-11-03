@@ -29,6 +29,9 @@ var httpClient = &http.Client{Timeout: requestTimeout, CheckRedirect: httpguard.
 // redactedToken replaces the raw value whenever a FineGrainedToken is formatted.
 const redactedToken = "[REDACTED]"
 
+// ErrEmptyToken reports an empty raw token or the zero FineGrainedToken.
+var ErrEmptyToken = errors.New("the GitLab token is empty")
+
 // FineGrainedToken is a GitLab token which passed New.
 //
 // The unexported field prevents other packages from constructing a token without the check.
@@ -39,6 +42,11 @@ type FineGrainedToken struct {
 // Value returns the raw token for the PRIVATE-TOKEN header.
 func (t FineGrainedToken) Value() string {
 	return t.value
+}
+
+// IsZero reports whether t is the zero FineGrainedToken, which no call to New returns.
+func (t FineGrainedToken) IsZero() bool {
+	return t.value == ""
 }
 
 // String redacts the raw value for the %v, %+v, %s, and %q verbs.
@@ -58,7 +66,7 @@ func (t FineGrainedToken) GoString() string {
 // for a legacy token.
 func New(ctx context.Context, apiBaseURL, raw string) (FineGrainedToken, error) {
 	if raw == "" {
-		return FineGrainedToken{}, errors.New("the GitLab token is empty")
+		return FineGrainedToken{}, ErrEmptyToken
 	}
 	if err := rejectLegacyToken(ctx, apiBaseURL, raw); err != nil {
 		return FineGrainedToken{}, err
