@@ -16,7 +16,8 @@ spec:
         with an empty name and dir "." reproduces single, whole-repository tagging.
 ---
 # Creates Semantic Version tags from Conventional Commit headers through the GitLab REST API (gitlab-org/gitlab#569187).
-# TAG_PUSH_TOKEN carries fine-grained permissions limited to Repository Tag Create and Read, and a token carrying legacy scopes is prohibited.
+# TAG_PUSH_TOKEN carries fine-grained permissions limited to Repository Tag Create and Read,
+# and a token carrying legacy scopes is prohibited.
 auto-tag:
   stage: '$[[ inputs.stage ]]'
   image: '$[[ inputs.reviewer_image ]]'
