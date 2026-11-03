@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 
+	"ci-tools/internal/config"
 	"ci-tools/internal/gitlabapi"
 )
 
@@ -25,12 +26,12 @@ func executeVerifyTagToken(apiBaseURL, projectID, token string, stdout, stderr i
 		return 1
 	}
 	if token == "" {
-		_, _ = fmt.Fprintln(stdout, "Warning: TAG_PUSH_TOKEN is unavailable in the current pipeline context. Tag access verification is skipped.")
+		_, _ = fmt.Fprintf(stdout, "Warning: %s is unavailable in the current pipeline context. Tag access verification is skipped.\n", config.TagPushTokenEnvName)
 		return 0
 	}
 
 	if err := gitlabapi.RejectLegacyToken(apiBaseURL, token); err != nil {
-		_, _ = fmt.Fprintln(stderr, "Error: failed to confirm that TAG_PUSH_TOKEN is a fine-grained personal access token:", err)
+		_, _ = fmt.Fprintf(stderr, "Error: failed to confirm that %s is a fine-grained personal access token: %v\n", config.TagPushTokenEnvName, err)
 		return 1
 	}
 
@@ -47,5 +48,5 @@ func main() {
 	projectID := flag.String("project-id", "", "numeric ID or URL-encoded path of the project, e.g. $CI_PROJECT_ID")
 	flag.Parse()
 
-	os.Exit(executeVerifyTagToken(*apiBaseURL, *projectID, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeVerifyTagToken(*apiBaseURL, *projectID, os.Getenv(config.TagPushTokenEnvName), os.Stdout, os.Stderr))
 }

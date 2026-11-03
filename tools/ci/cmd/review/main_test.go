@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/testutil"
 )
 
 // executeReviewSubprocess re-executes the test binary as the review command.
@@ -30,8 +33,8 @@ func executeReviewSubprocessInDir(t *testing.T, dir string, extraEnv ...string) 
 		"CI_API_V4_URL=https://gitlab.example.com/api/v4",
 		"CI_PROJECT_ID=1",
 		"CI_MERGE_REQUEST_IID=2",
-		"CLAUDE_MR_REVIEWER=",
-		"GEMINI_MR_REVIEWER=",
+		config.ClaudeReviewTokenEnvName + "=",
+		config.GeminiReviewTokenEnvName + "=",
 		"CLAUDE_API_KEY=",
 		"GEMINI_API_KEY=",
 		"OPENAI_API_KEY=",
@@ -63,7 +66,7 @@ func executeReviewSubprocessInDir(t *testing.T, dir string, extraEnv ...string) 
 		"GCP_WORKLOAD_IDENTITY_PROVIDER=",
 		"GCP_SERVICE_ACCOUNT=",
 		"GCP_ID_TOKEN=",
-		"REVIEW_MR_REVIEWER=mock-gitlab-token",
+		config.ReviewTokenEnvName + "=" + testutil.GitLabToken,
 		"REVIEW_API_KEY=mock-provider-key",
 		"REVIEW_MODEL=claude-sonnet-5",
 	}
@@ -99,9 +102,9 @@ func TestReview_EnvironmentValidation_TableDriven(t *testing.T) {
 	}{
 		{
 			name:     "missing gitlab token exits nonzero",
-			env:      []string{"REVIEW_MR_REVIEWER="},
+			env:      []string{config.ReviewTokenEnvName + "="},
 			wantCode: 1,
-			wantWord: "REVIEW_MR_REVIEWER",
+			wantWord: config.ReviewTokenEnvName,
 		},
 		{
 			name:     "missing provider key exits nonzero",
@@ -609,7 +612,7 @@ func TestReview_CredentialWhitespaceBoundaries(t *testing.T) {
 	}{
 		{name: "whitespace only neutral key", env: []string{"REVIEW_API_KEY=   ", "CLAUDE_API_KEY="}},
 		{name: "tab only provider key", env: []string{"REVIEW_API_KEY=", "CLAUDE_API_KEY=\t"}},
-		{name: "whitespace only gitlab token", env: []string{"REVIEW_MR_REVIEWER=  "}},
+		{name: "whitespace only gitlab token", env: []string{config.ReviewTokenEnvName + "=  "}},
 	}
 
 	for _, tc := range tests {

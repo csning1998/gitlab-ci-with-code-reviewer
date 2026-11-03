@@ -12,7 +12,7 @@ func clearRequiredEnv(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
 		"CI_API_V4_URL", "CI_PROJECT_ID", "CI_MERGE_REQUEST_IID",
-		"CLAUDE_MR_REVIEWER", "GEMINI_MR_REVIEWER",
+		ClaudeReviewTokenEnvName, GeminiReviewTokenEnvName,
 		"GEMINI_MODEL", "GEMINI_API_KEY", "CLAUDE_MODEL", "CLAUDE_API_KEY",
 		"CLAUDE_MAX_TOKENS", "CLAUDE_TIMEOUT_MINUTES",
 	} {
@@ -25,8 +25,8 @@ func clearRequiredEnv(t *testing.T) {
 
 func TestLoadEnvFile_AllFieldsPopulated(t *testing.T) {
 	clearRequiredEnv(t)
-	t.Setenv("CLAUDE_MR_REVIEWER", "claude-token")
-	t.Setenv("GEMINI_MR_REVIEWER", "gemini-token")
+	t.Setenv(ClaudeReviewTokenEnvName, claudeTokenValue)
+	t.Setenv(GeminiReviewTokenEnvName, geminiTokenValue)
 	t.Setenv("GEMINI_MODEL", "gemini-custom")
 	t.Setenv("GEMINI_API_KEY", "gkey")
 	t.Setenv("CLAUDE_MODEL", "claude-custom")
@@ -38,7 +38,7 @@ func TestLoadEnvFile_AllFieldsPopulated(t *testing.T) {
 	if cfg.APIURL != "https://gitlab.example.com/api/v4" || cfg.ProjectID != "1" || cfg.MRIID != "2" {
 		t.Errorf("LoadEnvFile() = %+v, want the required CI fields populated verbatim", cfg)
 	}
-	if cfg.ClaudeToken != "claude-token" || cfg.GeminiToken != "gemini-token" {
+	if cfg.ClaudeToken != claudeTokenValue || cfg.GeminiToken != geminiTokenValue {
 		t.Errorf("LoadEnvFile() = %+v, want both provider tokens populated", cfg)
 	}
 	if cfg.GeminiModel != "gemini-custom" || cfg.ClaudeModel != "claude-custom" {
@@ -74,21 +74,21 @@ func TestLoadEnvFile_DefaultsForOptionalFields(t *testing.T) {
 
 func TestLoadEnvFile_GitLabTokenPrefersClaudeOverGemini(t *testing.T) {
 	clearRequiredEnv(t)
-	t.Setenv("CLAUDE_MR_REVIEWER", "claude-token")
-	t.Setenv("GEMINI_MR_REVIEWER", "gemini-token")
+	t.Setenv(ClaudeReviewTokenEnvName, claudeTokenValue)
+	t.Setenv(GeminiReviewTokenEnvName, geminiTokenValue)
 
 	cfg := LoadEnvFile()
-	if cfg.GitLabToken != "claude-token" {
+	if cfg.GitLabToken != claudeTokenValue {
 		t.Errorf("LoadEnvFile().GitLabToken = %q, want it to prefer the Claude token when both are set", cfg.GitLabToken)
 	}
 }
 
 func TestLoadEnvFile_GitLabTokenFallsBackToGemini(t *testing.T) {
 	clearRequiredEnv(t)
-	t.Setenv("GEMINI_MR_REVIEWER", "gemini-token")
+	t.Setenv(GeminiReviewTokenEnvName, geminiTokenValue)
 
 	cfg := LoadEnvFile()
-	if cfg.GitLabToken != "gemini-token" {
+	if cfg.GitLabToken != geminiTokenValue {
 		t.Errorf("LoadEnvFile().GitLabToken = %q, want it to fall back to the Gemini token", cfg.GitLabToken)
 	}
 }
@@ -105,7 +105,7 @@ func TestLoadEnvFile_WhitespaceOnlyRequiredVar_TreatedAsMissing(t *testing.T) {
 	// requireEnvVar trims before checking emptiness, so a value of pure whitespace must be
 	// treated identically to an unset variable rather than accepted verbatim.
 	clearRequiredEnv(t)
-	t.Setenv("CLAUDE_MR_REVIEWER", "   ")
+	t.Setenv(ClaudeReviewTokenEnvName, "   ")
 	cfg := LoadEnvFile()
 	if cfg.ClaudeToken != "" {
 		t.Errorf("LoadEnvFile().ClaudeToken = %q, want empty for a whitespace-only value", cfg.ClaudeToken)
@@ -114,9 +114,9 @@ func TestLoadEnvFile_WhitespaceOnlyRequiredVar_TreatedAsMissing(t *testing.T) {
 
 func TestLoadEnvFile_WhitespacePaddedValue_Trimmed(t *testing.T) {
 	clearRequiredEnv(t)
-	t.Setenv("CLAUDE_MR_REVIEWER", "  padded-token  ")
+	t.Setenv(ClaudeReviewTokenEnvName, "  "+claudeTokenValue+"  ")
 	cfg := LoadEnvFile()
-	if cfg.ClaudeToken != "padded-token" {
+	if cfg.ClaudeToken != claudeTokenValue {
 		t.Errorf("LoadEnvFile().ClaudeToken = %q, want the value trimmed of surrounding whitespace", cfg.ClaudeToken)
 	}
 }
@@ -213,7 +213,7 @@ func TestLoadEnvFile_AppliesDotEnvWhenProcessEnvEmpty(t *testing.T) {
 	t.Setenv("CI_API_V4_URL", "")
 	t.Setenv("CI_PROJECT_ID", "")
 	t.Setenv("CI_MERGE_REQUEST_IID", "")
-	t.Setenv("CLAUDE_MR_REVIEWER", "")
+	t.Setenv(ClaudeReviewTokenEnvName, "")
 
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -222,7 +222,7 @@ func TestLoadEnvFile_AppliesDotEnvWhenProcessEnvEmpty(t *testing.T) {
 		"export CI_API_V4_URL=https://from-file.example/api/v4\n" +
 		"CI_PROJECT_ID=\"42\"\n" +
 		"CI_MERGE_REQUEST_IID='7'\n" +
-		"CLAUDE_MR_REVIEWER=file-token\n"
+		ClaudeReviewTokenEnvName + "=" + fileTokenValue + "\n"
 	if err := os.WriteFile(".env", []byte(content), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -234,23 +234,23 @@ func TestLoadEnvFile_AppliesDotEnvWhenProcessEnvEmpty(t *testing.T) {
 	if cfg.ProjectID != "42" || cfg.MRIID != "7" {
 		t.Errorf("ProjectID/MRIID = %q/%q, want 42/7 from .env", cfg.ProjectID, cfg.MRIID)
 	}
-	if cfg.ClaudeToken != "file-token" {
-		t.Errorf("ClaudeToken = %q, want file-token from .env", cfg.ClaudeToken)
+	if cfg.ClaudeToken != fileTokenValue {
+		t.Errorf("ClaudeToken = %q, want %q from .env", cfg.ClaudeToken, fileTokenValue)
 	}
 }
 
 func TestLoadEnvFile_ProcessEnvOverridesDotEnv(t *testing.T) {
 	clearRequiredEnv(t)
-	t.Setenv("CLAUDE_MR_REVIEWER", "process-token")
+	t.Setenv(ClaudeReviewTokenEnvName, processTokenValue)
 
 	dir := t.TempDir()
 	t.Chdir(dir)
-	if err := os.WriteFile(".env", []byte("CLAUDE_MR_REVIEWER=file-token\n"), 0o600); err != nil {
+	if err := os.WriteFile(".env", []byte(ClaudeReviewTokenEnvName+"="+fileTokenValue+"\n"), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
 
 	cfg := LoadEnvFile()
-	if cfg.ClaudeToken != "process-token" {
+	if cfg.ClaudeToken != processTokenValue {
 		t.Errorf("ClaudeToken = %q, want process environment to override .env", cfg.ClaudeToken)
 	}
 }

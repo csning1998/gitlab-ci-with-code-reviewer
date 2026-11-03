@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"ci-tools/internal/testutil"
 )
 
 func TestCreateTag_Success(t *testing.T) {
@@ -25,7 +27,7 @@ func TestCreateTag_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "1.4.4", "abc123", "secret-token"); err != nil {
+	if err := CreateTag(server.URL, "123", "1.4.4", "abc123", testutil.SecretGitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 
@@ -41,8 +43,8 @@ func TestCreateTag_Success(t *testing.T) {
 	if got := gotQuery.Get("ref"); got != "abc123" {
 		t.Errorf("ref = %q, want %q", got, "abc123")
 	}
-	if gotToken != "secret-token" {
-		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	if gotToken != testutil.SecretGitLabToken {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, testutil.SecretGitLabToken)
 	}
 }
 
@@ -55,7 +57,7 @@ func TestCreateTag_ProjectIDEscaped(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "group/project", "1.4.4", "abc123", "unused"); err != nil {
+	if err := CreateTag(server.URL, "group/project", "1.4.4", "abc123", testutil.GitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 
@@ -71,7 +73,7 @@ func TestCreateTag_ErrorStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(server.URL, "123", "1.4.4", "abc123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("CreateTag(...) succeeded unexpectedly; expected an error")
 	}
@@ -81,7 +83,7 @@ func TestCreateTag_ErrorStatus(t *testing.T) {
 }
 
 func TestCreateTag_UnreachableServer(t *testing.T) {
-	err := CreateTag("http://127.0.0.1:0", "123", "1.4.4", "abc123", "unused")
+	err := CreateTag("http://127.0.0.1:0", "123", "1.4.4", "abc123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("CreateTag(...) against an unreachable server succeeded unexpectedly; expected an error")
 	}
@@ -91,7 +93,7 @@ func TestCreateTag_UnreachableServer(t *testing.T) {
 }
 
 func TestCreateTag_InvalidAPIBaseURL(t *testing.T) {
-	err := CreateTag(fmt.Sprintf("http://%s", string([]byte{0x7f})), "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(fmt.Sprintf("http://%s", string([]byte{0x7f})), "123", "1.4.4", "abc123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("CreateTag(...) with a malformed API base URL succeeded unexpectedly; expected an error")
 	}
@@ -105,7 +107,7 @@ func TestCreateTag_NestedNamespaceProjectIDEscaped(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "group/subgroup/project", "1.4.4", "abc123", "unused"); err != nil {
+	if err := CreateTag(server.URL, "group/subgroup/project", "1.4.4", "abc123", testutil.GitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotPath != "/projects/group%2Fsubgroup%2Fproject/repository/tags" {
@@ -123,7 +125,7 @@ func TestCreateTag_TagNameWithSlashRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "release/1.0.0", "abc123", "unused"); err != nil {
+	if err := CreateTag(server.URL, "123", "release/1.0.0", "abc123", testutil.GitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotTagName != "release/1.0.0" {
@@ -141,7 +143,7 @@ func TestCreateTag_RefWithPlusCharacterRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "1.4.4", "feature+branch", "unused"); err != nil {
+	if err := CreateTag(server.URL, "123", "1.4.4", "feature+branch", testutil.GitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotRef != "feature+branch" {
@@ -157,7 +159,7 @@ func TestCreateTag_TagNameWithUnicodeRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "版本-1.0.0", "abc123", "unused"); err != nil {
+	if err := CreateTag(server.URL, "123", "版本-1.0.0", "abc123", testutil.GitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotTagName != "版本-1.0.0" {
@@ -188,7 +190,7 @@ func TestCreateTag_RequiresExactly201_Rejects200(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(server.URL, "123", "1.4.4", "abc123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("CreateTag(...) succeeded unexpectedly on a 200 OK response; want only 201 Created accepted")
 	}
@@ -203,7 +205,7 @@ func TestCreateTag_ErrorStatusWithEmptyBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(server.URL, "123", "1.4.4", "abc123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("CreateTag(...) succeeded unexpectedly against a 500 response; want an error")
 	}
@@ -225,7 +227,7 @@ func TestCreateTag_FollowsRedirect(t *testing.T) {
 	}))
 	defer redirector.Close()
 
-	if err := CreateTag(redirector.URL, "123", "1.4.4", "abc123", "unused"); err != nil {
+	if err := CreateTag(redirector.URL, "123", "1.4.4", "abc123", testutil.GitLabToken); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error following a redirect: %v", err)
 	}
 }
@@ -242,7 +244,7 @@ func TestVerifyTagAccess_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := VerifyTagAccess(server.URL, "123", "secret-token"); err != nil {
+	if err := VerifyTagAccess(server.URL, "123", testutil.SecretGitLabToken); err != nil {
 		t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 	}
 	if gotMethod != http.MethodGet {
@@ -254,8 +256,8 @@ func TestVerifyTagAccess_Success(t *testing.T) {
 	if got := gotQuery.Get("per_page"); got != "1" {
 		t.Errorf("per_page = %q, want %q", got, "1")
 	}
-	if gotToken != "secret-token" {
-		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	if gotToken != testutil.SecretGitLabToken {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, testutil.SecretGitLabToken)
 	}
 }
 
@@ -267,7 +269,7 @@ func TestVerifyTagAccess_ProjectIDEscaped(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := VerifyTagAccess(server.URL, "group/subgroup/project", "unused"); err != nil {
+	if err := VerifyTagAccess(server.URL, "group/subgroup/project", testutil.GitLabToken); err != nil {
 		t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 	}
 	if gotPath != "/projects/group%2Fsubgroup%2Fproject/repository/tags" {
@@ -282,7 +284,7 @@ func TestVerifyTagAccess_Unauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := VerifyTagAccess(server.URL, "123", "unused")
+	err := VerifyTagAccess(server.URL, "123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 401 response")
 	}
@@ -298,7 +300,7 @@ func TestVerifyTagAccess_Forbidden(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := VerifyTagAccess(server.URL, "123", "unused")
+	err := VerifyTagAccess(server.URL, "123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 403 response")
 	}
@@ -317,7 +319,7 @@ func TestVerifyTagAccess_ErrorStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := VerifyTagAccess(server.URL, "123", "unused")
+	err := VerifyTagAccess(server.URL, "123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 404 response")
 	}
@@ -327,7 +329,7 @@ func TestVerifyTagAccess_ErrorStatus(t *testing.T) {
 }
 
 func TestVerifyTagAccess_UnreachableServer(t *testing.T) {
-	err := VerifyTagAccess("http://127.0.0.1:0", "123", "unused")
+	err := VerifyTagAccess("http://127.0.0.1:0", "123", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("VerifyTagAccess(...) against an unreachable server succeeded unexpectedly")
 	}
@@ -381,7 +383,7 @@ func TestCreateTag_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
 
-	_ = CreateTag(redirector.URL, "1", "1.0.0", "abc", "secret-token")
+	_ = CreateTag(redirector.URL, "1", "1.0.0", "abc", testutil.SecretGitLabToken)
 
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
@@ -392,7 +394,7 @@ func TestVerifyTagAccess_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
 
-	_ = VerifyTagAccess(redirector.URL, "1", "secret-token")
+	_ = VerifyTagAccess(redirector.URL, "1", testutil.SecretGitLabToken)
 
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
@@ -407,7 +409,7 @@ func TestCreateTag_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.
 	}))
 	t.Cleanup(server.Close)
 
-	_ = CreateTag(server.URL+"/api/v4/", "1", "1.0.0", "abc", "token")
+	_ = CreateTag(server.URL+"/api/v4/", "1", "1.0.0", "abc", testutil.GitLabToken)
 
 	if path, _ := gotPath.Load().(string); strings.Contains(path, "//") {
 		t.Errorf("request path %q contains an empty segment", path)
@@ -437,7 +439,7 @@ func TestCreateTag_ConflictingWriterReceivesError(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			results[i] = CreateTag(server.URL, "1", "1.0.0", "abc", "token")
+			results[i] = CreateTag(server.URL, "1", "1.0.0", "abc", testutil.GitLabToken)
 		}(i)
 	}
 	close(start)
@@ -480,7 +482,7 @@ func TestCreateTag_ParameterEscapingBoundaries(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			if err := CreateTag(server.URL, "1", tc.tag, tc.ref, "token"); err != nil {
+			if err := CreateTag(server.URL, "1", tc.tag, tc.ref, testutil.GitLabToken); err != nil {
 				t.Fatalf("CreateTag returned an unexpected error: %v", err)
 			}
 			if got, _ := gotTag.Load().(string); got != tc.tag {
@@ -500,7 +502,7 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	err := CreateTag(server.URL, "1", "1.0.0", "abc", "token")
+	err := CreateTag(server.URL, "1", "1.0.0", "abc", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("CreateTag succeeded unexpectedly")
 	}
@@ -509,8 +511,6 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 	}
 }
 
-const insufficientGranularScopeBody = `{"error":"insufficient_granular_scope","error_description":"Access denied: This operation requires a fine-grained personal access token with the following user permissions: [Personal Access Token: Read]."}`
-
 func TestRejectLegacyToken_FineGrainedTokenWithoutSelfReadPasses(t *testing.T) {
 	var gotMethod, gotPath, gotToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -518,11 +518,11 @@ func TestRejectLegacyToken_FineGrainedTokenWithoutSelfReadPasses(t *testing.T) {
 		gotPath = r.URL.Path
 		gotToken = r.Header.Get("PRIVATE-TOKEN")
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = io.WriteString(w, insufficientGranularScopeBody)
+		_, _ = io.WriteString(w, testutil.InsufficientGranularScopeBody)
 	}))
 	defer server.Close()
 
-	if err := RejectLegacyToken(server.URL, "secret-token"); err != nil {
+	if err := RejectLegacyToken(server.URL, testutil.SecretGitLabToken); err != nil {
 		t.Fatalf("RejectLegacyToken(...) returned an unexpected error: %v", err)
 	}
 	if gotMethod != http.MethodGet {
@@ -531,8 +531,8 @@ func TestRejectLegacyToken_FineGrainedTokenWithoutSelfReadPasses(t *testing.T) {
 	if gotPath != "/personal_access_tokens/self" {
 		t.Errorf("request path = %q, want %q", gotPath, "/personal_access_tokens/self")
 	}
-	if gotToken != "secret-token" {
-		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	if gotToken != testutil.SecretGitLabToken {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, testutil.SecretGitLabToken)
 	}
 }
 
@@ -542,7 +542,7 @@ func TestRejectLegacyToken_FineGrainedTokenWithSelfReadPasses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := RejectLegacyToken(server.URL, "token"); err != nil {
+	if err := RejectLegacyToken(server.URL, testutil.GitLabToken); err != nil {
 		t.Fatalf("RejectLegacyToken(...) returned an unexpected error: %v", err)
 	}
 }
@@ -567,7 +567,7 @@ func TestRejectLegacyToken_LegacyTokenRejected(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			err := RejectLegacyToken(server.URL, "token")
+			err := RejectLegacyToken(server.URL, testutil.GitLabToken)
 			if err == nil {
 				t.Fatal("RejectLegacyToken(...) accepted a legacy token")
 			}
@@ -598,7 +598,7 @@ func TestRejectLegacyToken_ForbiddenWithoutGranularScopeErrorRejected(t *testing
 			}))
 			t.Cleanup(server.Close)
 
-			err := RejectLegacyToken(server.URL, "token")
+			err := RejectLegacyToken(server.URL, testutil.GitLabToken)
 			if err == nil {
 				t.Fatal("RejectLegacyToken(...) accepted a 403 response without the granular scope error")
 			}
@@ -615,7 +615,7 @@ func TestRejectLegacyToken_MalformedSelfBodyRejected(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := RejectLegacyToken(server.URL, "token"); err == nil {
+	if err := RejectLegacyToken(server.URL, testutil.GitLabToken); err == nil {
 		t.Fatal("RejectLegacyToken(...) accepted an unparsable self response")
 	}
 }
@@ -627,7 +627,7 @@ func TestRejectLegacyToken_Unauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := RejectLegacyToken(server.URL, "token")
+	err := RejectLegacyToken(server.URL, testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("RejectLegacyToken(...) succeeded unexpectedly on a 401 response")
 	}
@@ -644,7 +644,7 @@ func TestRejectLegacyToken_ErrorStatusRejected(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			err := RejectLegacyToken(server.URL, "token")
+			err := RejectLegacyToken(server.URL, testutil.GitLabToken)
 			if err == nil {
 				t.Fatal("RejectLegacyToken(...) succeeded unexpectedly")
 			}
@@ -656,7 +656,7 @@ func TestRejectLegacyToken_ErrorStatusRejected(t *testing.T) {
 }
 
 func TestRejectLegacyToken_UnreachableServer(t *testing.T) {
-	err := RejectLegacyToken("http://127.0.0.1:0", "token")
+	err := RejectLegacyToken("http://127.0.0.1:0", testutil.GitLabToken)
 	if err == nil {
 		t.Fatal("RejectLegacyToken(...) against an unreachable server succeeded unexpectedly")
 	}
@@ -669,7 +669,7 @@ func TestRejectLegacyToken_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
 
-	_ = RejectLegacyToken(redirector.URL, "secret-token")
+	_ = RejectLegacyToken(redirector.URL, testutil.SecretGitLabToken)
 
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
@@ -700,7 +700,7 @@ func TestVerifyTagAccess_StatusBoundaries(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			err := VerifyTagAccess(server.URL, "1", "token")
+			err := VerifyTagAccess(server.URL, "1", testutil.GitLabToken)
 			if tc.wantErr && err == nil {
 				t.Error("VerifyTagAccess succeeded unexpectedly")
 			}

@@ -41,8 +41,8 @@ func LoadEnvFile() Config {
 
 // loadFromProcessEnv reads configuration exclusively from the process environment.
 func loadFromProcessEnv() Config {
-	claudeToken := lookupEnv("CLAUDE_MR_REVIEWER", "")
-	geminiToken := lookupEnv("GEMINI_MR_REVIEWER", "")
+	claudeToken := lookupEnv(ClaudeReviewTokenEnvName, "")
+	geminiToken := lookupEnv(GeminiReviewTokenEnvName, "")
 	gitlabToken := claudeToken
 	if gitlabToken == "" {
 		gitlabToken = geminiToken

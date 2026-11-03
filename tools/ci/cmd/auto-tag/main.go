@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	ciconfig "ci-tools/internal/config"
 	"ci-tools/internal/gitlabapi"
 	"ci-tools/internal/gittag"
 	"ci-tools/internal/semver"
@@ -50,7 +51,7 @@ func executeAutoTag(repoPath, configPath, sha, apiBaseURL, projectID, password s
 		return 1
 	}
 	if password == "" {
-		_, _ = fmt.Fprintln(stderr, "Error: TAG_PUSH_TOKEN must be set in the environment.")
+		_, _ = fmt.Fprintf(stderr, "Error: %s must be set in the environment.\n", ciconfig.TagPushTokenEnvName)
 		return 1
 	}
 
@@ -146,5 +147,5 @@ func main() {
 	projectID := flag.String("project-id", "", "GitLab project ID owning the tags")
 	flag.Parse()
 
-	os.Exit(executeAutoTag(*repo, *config, *sha, *apiBaseURL, *projectID, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeAutoTag(*repo, *config, *sha, *apiBaseURL, *projectID, os.Getenv(ciconfig.TagPushTokenEnvName), os.Stdout, os.Stderr))
 }

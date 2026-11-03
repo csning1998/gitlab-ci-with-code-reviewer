@@ -9,11 +9,24 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/testutil"
+)
+
+const (
+	testProjectID           = "123"
+	unreachableAPIURL       = "https://example.invalid/api/v4"
+	selfPath                = "/personal_access_tokens/self"
+	tagsPath                = "/projects/" + testProjectID + "/repository/tags"
+	legacyTokenSelf         = `{"active":true,"scopes":["api"]}`
+	subprocessEnvName       = "BE_VERIFY_TAG_TOKEN"
+	subprocessAPIURLEnvName = "TEST_API_URL"
 )
 
 func TestExecuteVerifyTagToken_MissingAPIURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken("", "123", "token", &stdout, &stderr)
+	code := executeVerifyTagToken("", testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -24,7 +37,7 @@ func TestExecuteVerifyTagToken_MissingAPIURL(t *testing.T) {
 
 func TestExecuteVerifyTagToken_MissingProjectID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken("https://example.invalid/api/v4", "", "token", &stdout, &stderr)
+	code := executeVerifyTagToken(unreachableAPIURL, "", testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -35,7 +48,7 @@ func TestExecuteVerifyTagToken_MissingProjectID(t *testing.T) {
 
 func TestExecuteVerifyTagToken_MissingToken_SkipsWithoutFailing(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken("https://example.invalid/api/v4", "123", "", &stdout, &stderr)
+	code := executeVerifyTagToken(unreachableAPIURL, testProjectID, "", &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 0 (a missing token skips rather than fails)", code)
 	}
@@ -43,12 +56,6 @@ func TestExecuteVerifyTagToken_MissingToken_SkipsWithoutFailing(t *testing.T) {
 		t.Errorf("executeVerifyTagToken(...) stdout = %q, want a notice explaining the skip", stdout.String())
 	}
 }
-
-const (
-	selfPath                      = "/personal_access_tokens/self"
-	tagsPath                      = "/projects/123/repository/tags"
-	insufficientGranularScopeBody = `{"error":"insufficient_granular_scope","error_description":"Access denied: This operation requires a fine-grained personal access token with the following user permissions: [Personal Access Token: Read]."}`
-)
 
 // newGitLabStub answers the self endpoint with selfStatus and selfBody, answers the tag read with tagStatus,
 // and records the request paths in order.
@@ -80,10 +87,10 @@ func newGitLabStub(t *testing.T, selfStatus int, selfBody string, tagStatus int)
 }
 
 func TestExecuteVerifyTagToken_Success(t *testing.T) {
-	server, paths := newGitLabStub(t, http.StatusForbidden, insufficientGranularScopeBody, http.StatusOK)
+	server, paths := newGitLabStub(t, http.StatusForbidden, testutil.InsufficientGranularScopeBody, http.StatusOK)
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
+	code := executeVerifyTagToken(server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeVerifyTagToken(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -93,10 +100,10 @@ func TestExecuteVerifyTagToken_Success(t *testing.T) {
 }
 
 func TestExecuteVerifyTagToken_LegacyTokenRejectedBeforeTagRead(t *testing.T) {
-	server, paths := newGitLabStub(t, http.StatusOK, `{"active":true,"scopes":["api"]}`, http.StatusOK)
+	server, paths := newGitLabStub(t, http.StatusOK, legacyTokenSelf, http.StatusOK)
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
+	code := executeVerifyTagToken(server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -111,10 +118,10 @@ func TestExecuteVerifyTagToken_LegacyTokenRejectedBeforeTagRead(t *testing.T) {
 }
 
 func TestExecuteVerifyTagToken_NoTagReadAccess(t *testing.T) {
-	server, _ := newGitLabStub(t, http.StatusForbidden, insufficientGranularScopeBody, http.StatusForbidden)
+	server, _ := newGitLabStub(t, http.StatusForbidden, testutil.InsufficientGranularScopeBody, http.StatusForbidden)
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
+	code := executeVerifyTagToken(server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -125,23 +132,23 @@ func TestExecuteVerifyTagToken_NoTagReadAccess(t *testing.T) {
 
 // TestMainSubprocess executes main in a child process to prevent os.Exit from terminating the test runner.
 func TestMainSubprocess(t *testing.T) {
-	if os.Getenv("BE_VERIFY_TAG_TOKEN") == "1" {
+	if os.Getenv(subprocessEnvName) == "1" {
 		os.Args = []string{
 			"verify-tag-token",
-			"--api-url=" + os.Getenv("TEST_API_URL"),
-			"--project-id=123",
+			"--api-url=" + os.Getenv(subprocessAPIURLEnvName),
+			"--project-id=" + testProjectID,
 		}
 		main()
 		return
 	}
 
-	server, _ := newGitLabStub(t, http.StatusForbidden, insufficientGranularScopeBody, http.StatusOK)
+	server, _ := newGitLabStub(t, http.StatusForbidden, testutil.InsufficientGranularScopeBody, http.StatusOK)
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess")
 	cmd.Env = append(os.Environ(),
-		"BE_VERIFY_TAG_TOKEN=1",
-		"TAG_PUSH_TOKEN=token",
-		"TEST_API_URL="+server.URL,
+		subprocessEnvName+"=1",
+		config.TagPushTokenEnvName+"="+testutil.GitLabToken,
+		subprocessAPIURLEnvName+"="+server.URL,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

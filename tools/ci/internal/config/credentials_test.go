@@ -4,23 +4,30 @@ import (
 	"testing"
 )
 
+// Token values which identify the variable a resolver read.
+const (
+	reviewTokenValue  = "review-token"
+	claudeTokenValue  = "claude-token"
+	geminiTokenValue  = "gemini-token"
+	fileTokenValue    = "file-token"
+	processTokenValue = "process-token"
+)
+
 // clearCredentialEnv unsets every variable the GitLab credential resolvers read.
 func clearCredentialEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{
-		"REVIEW_MR_REVIEWER", "CLAUDE_MR_REVIEWER", "GEMINI_MR_REVIEWER",
-	} {
+	for _, name := range gitLabTokenEnvNames {
 		t.Setenv(name, "")
 	}
 }
 
 func TestResolveGitLabToken_PrefersNeutralVariable(t *testing.T) {
 	clearCredentialEnv(t)
-	t.Setenv("REVIEW_MR_REVIEWER", "review-token")
-	t.Setenv("CLAUDE_MR_REVIEWER", "claude-token")
+	t.Setenv(ReviewTokenEnvName, reviewTokenValue)
+	t.Setenv(ClaudeReviewTokenEnvName, claudeTokenValue)
 
-	if got := ResolveGitLabToken(); got != "review-token" {
-		t.Errorf("ResolveGitLabToken() = %q, want %q", got, "review-token")
+	if got := ResolveGitLabToken(); got != reviewTokenValue {
+		t.Errorf("ResolveGitLabToken() = %q, want %q", got, reviewTokenValue)
 	}
 }
 
@@ -32,18 +39,18 @@ func TestResolveGitLabToken_FallsBackToProviderVariables(t *testing.T) {
 	}{
 		{
 			name: "claude fallback",
-			env:  map[string]string{"CLAUDE_MR_REVIEWER": "claude-token"},
-			want: "claude-token",
+			env:  map[string]string{ClaudeReviewTokenEnvName: claudeTokenValue},
+			want: claudeTokenValue,
 		},
 		{
 			name: "gemini fallback",
-			env:  map[string]string{"GEMINI_MR_REVIEWER": "gemini-token"},
-			want: "gemini-token",
+			env:  map[string]string{GeminiReviewTokenEnvName: geminiTokenValue},
+			want: geminiTokenValue,
 		},
 		{
 			name: "claude precedes gemini",
-			env:  map[string]string{"CLAUDE_MR_REVIEWER": "claude-token", "GEMINI_MR_REVIEWER": "gemini-token"},
-			want: "claude-token",
+			env:  map[string]string{ClaudeReviewTokenEnvName: claudeTokenValue, GeminiReviewTokenEnvName: geminiTokenValue},
+			want: claudeTokenValue,
 		},
 		{
 			name: "none configured",

@@ -87,7 +87,7 @@ func main() {
 
 	gitLabToken := config.ResolveGitLabToken()
 	if gitLabToken == "" {
-		fmt.Fprintln(os.Stderr, "Error: Required environment variable 'REVIEW_MR_REVIEWER' is missing.")
+		fmt.Fprintf(os.Stderr, "Error: Required environment variable '%s' is missing.\n", config.ReviewTokenEnvName)
 		os.Exit(1)
 	}
 

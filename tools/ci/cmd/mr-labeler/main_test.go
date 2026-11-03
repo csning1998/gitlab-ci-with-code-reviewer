@@ -8,7 +8,13 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/testutil"
 )
+
+// fallbackToken identifies the Gemini variable when the Claude variable is empty.
+const fallbackToken = "gemini-only-token"
 
 func executeMRLabelerSubprocess(t *testing.T, extraEnv ...string) (exitCode int, stdout, stderr string) {
 	t.Helper()
@@ -18,7 +24,7 @@ func executeMRLabelerSubprocess(t *testing.T, extraEnv ...string) (exitCode int,
 		"CI_API_V4_URL=https://gitlab.example.com/api/v4",
 		"CI_PROJECT_ID=1",
 		"CI_MERGE_REQUEST_IID=2",
-		"CLAUDE_MR_REVIEWER=mock-gitlab-token",
+		config.ClaudeReviewTokenEnvName + "=" + testutil.GitLabToken,
 	}
 	cmd.Env = append(os.Environ(), append(baseEnv, extraEnv...)...)
 	var outBuf, errBuf bytes.Buffer
@@ -44,11 +50,11 @@ func TestMRLabelerSubprocessHelper(t *testing.T) {
 }
 
 func TestMRLabeler_MissingTokens_ExitsNonzero(t *testing.T) {
-	code, _, stderr := executeMRLabelerSubprocess(t, "CLAUDE_MR_REVIEWER=", "GEMINI_MR_REVIEWER=")
+	code, _, stderr := executeMRLabelerSubprocess(t, config.ClaudeReviewTokenEnvName+"=", config.GeminiReviewTokenEnvName+"=")
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr, "need CLAUDE_MR_REVIEWER or GEMINI_MR_REVIEWER") {
+	if !strings.Contains(stderr, "need "+config.ClaudeReviewTokenEnvName+" or "+config.GeminiReviewTokenEnvName) {
 		t.Errorf("stderr = %q, want mention of required tokens", stderr)
 	}
 }
@@ -95,7 +101,7 @@ func TestMRLabeler_ExecuteLabelingFails_ExitsNonzero(t *testing.T) {
 
 func TestMRLabeler_FallbackToGeminiToken_Succeeds(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("PRIVATE-TOKEN") != "gemini-only-token" {
+		if r.Header.Get("PRIVATE-TOKEN") != fallbackToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -114,8 +120,8 @@ func TestMRLabeler_FallbackToGeminiToken_Succeeds(t *testing.T) {
 
 	code, _, stderr := executeMRLabelerSubprocess(t,
 		"CI_API_V4_URL="+server.URL,
-		"CLAUDE_MR_REVIEWER=",
-		"GEMINI_MR_REVIEWER=gemini-only-token",
+		config.ClaudeReviewTokenEnvName+"=",
+		config.GeminiReviewTokenEnvName+"="+fallbackToken,
 	)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)

@@ -12,7 +12,7 @@ import (
 func main() {
 	cfg := config.LoadEnvFile()
 	if cfg.GitLabToken == "" {
-		fmt.Fprintln(os.Stderr, "Error: need CLAUDE_MR_REVIEWER or GEMINI_MR_REVIEWER to read the MR description.")
+		fmt.Fprintf(os.Stderr, "Error: need %s or %s to read the MR description.\n", config.ClaudeReviewTokenEnvName, config.GeminiReviewTokenEnvName)
 		os.Exit(1)
 	}
 
