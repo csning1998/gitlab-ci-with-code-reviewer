@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -43,30 +44,74 @@ func TestExecuteVerifyTagToken_MissingToken_SkipsWithoutFailing(t *testing.T) {
 	}
 }
 
-func TestExecuteVerifyTagToken_Success(t *testing.T) {
-	var gotPath string
+const (
+	selfPath                      = "/personal_access_tokens/self"
+	tagsPath                      = "/projects/123/repository/tags"
+	insufficientGranularScopeBody = `{"error":"insufficient_granular_scope","error_description":"Access denied: This operation requires a fine-grained personal access token with the following user permissions: [Personal Access Token: Read]."}`
+)
+
+// newGitLabStub answers the self endpoint with selfStatus and selfBody, answers the tag read with tagStatus,
+// and records the request paths in order.
+func newGitLabStub(t *testing.T, selfStatus int, selfBody string, tagStatus int) (*httptest.Server, *[]string) {
+	t.Helper()
+	var mu sync.Mutex
+	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		_, _ = w.Write([]byte(`[]`))
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		switch r.URL.Path {
+		case selfPath:
+			w.WriteHeader(selfStatus)
+			_, _ = w.Write([]byte(selfBody))
+		case tagsPath:
+			w.WriteHeader(tagStatus)
+			if tagStatus == http.StatusOK {
+				_, _ = w.Write([]byte(`[]`))
+			} else {
+				_, _ = w.Write([]byte(`{"message":"403 Forbidden"}`))
+			}
+		default:
+			http.NotFound(w, r)
+		}
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server, &paths
+}
+
+func TestExecuteVerifyTagToken_Success(t *testing.T) {
+	server, paths := newGitLabStub(t, http.StatusForbidden, insufficientGranularScopeBody, http.StatusOK)
 
 	var stdout, stderr bytes.Buffer
 	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeVerifyTagToken(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
-	if gotPath != "/projects/123/repository/tags" {
-		t.Errorf("request path = %q, want %q", gotPath, "/projects/123/repository/tags")
+	if got, want := strings.Join(*paths, ","), selfPath+","+tagsPath; got != want {
+		t.Errorf("request paths = %q, want %q (the legacy token check precedes the tag read)", got, want)
+	}
+}
+
+func TestExecuteVerifyTagToken_LegacyTokenRejectedBeforeTagRead(t *testing.T) {
+	server, paths := newGitLabStub(t, http.StatusOK, `{"active":true,"scopes":["api"]}`, http.StatusOK)
+
+	var stdout, stderr bytes.Buffer
+	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "legacy scopes") {
+		t.Errorf("executeVerifyTagToken(...) stderr = %q, want it to report the prohibited legacy scopes", stderr.String())
+	}
+	for _, p := range *paths {
+		if p == tagsPath {
+			t.Errorf("request paths = %q, want no tag read after a legacy token", *paths)
+		}
 	}
 }
 
 func TestExecuteVerifyTagToken_NoTagReadAccess(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"message":"403 Forbidden"}`))
-	}))
-	defer server.Close()
+	server, _ := newGitLabStub(t, http.StatusForbidden, insufficientGranularScopeBody, http.StatusForbidden)
 
 	var stdout, stderr bytes.Buffer
 	code := executeVerifyTagToken(server.URL, "123", "token", &stdout, &stderr)
@@ -90,15 +135,12 @@ func TestMainSubprocess(t *testing.T) {
 		return
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
+	server, _ := newGitLabStub(t, http.StatusForbidden, insufficientGranularScopeBody, http.StatusOK)
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess")
 	cmd.Env = append(os.Environ(),
 		"BE_VERIFY_TAG_TOKEN=1",
-		"TAG_PUSH_TOKEN=unused",
+		"TAG_PUSH_TOKEN=token",
 		"TEST_API_URL="+server.URL,
 	)
 	var stderr bytes.Buffer

@@ -1,4 +1,4 @@
-// Command verify-tag-token validates that TAG_PUSH_TOKEN can read the repository tags of the project.
+// Command verify-tag-token rejects a legacy TAG_PUSH_TOKEN and validates that the token can read the repository tags of the project.
 // The read-only check runs in MR pipelines before merge. Tag creation waits until after merge
 // because a squash merge assigns a new commit SHA.
 package main
@@ -12,7 +12,7 @@ import (
 	"ci-tools/internal/gitlabapi"
 )
 
-// executeVerifyTagToken validates the inputs and delegates the tag read to gitlabapi.VerifyTagAccess.
+// executeVerifyTagToken validates the inputs, rejects a legacy token, and delegates the tag read to gitlabapi.VerifyTagAccess.
 //
 // An empty token exits zero because unprotected source branch pipelines withhold protected variables.
 func executeVerifyTagToken(apiBaseURL, projectID, token string, stdout, stderr io.Writer) int {
@@ -27,6 +27,11 @@ func executeVerifyTagToken(apiBaseURL, projectID, token string, stdout, stderr i
 	if token == "" {
 		_, _ = fmt.Fprintln(stdout, "Warning: TAG_PUSH_TOKEN is unavailable in the current pipeline context. Tag access verification is skipped.")
 		return 0
+	}
+
+	if err := gitlabapi.RejectLegacyToken(apiBaseURL, token); err != nil {
+		_, _ = fmt.Fprintln(stderr, "Error: failed to confirm that TAG_PUSH_TOKEN is a fine-grained personal access token:", err)
+		return 1
 	}
 
 	if err := gitlabapi.VerifyTagAccess(apiBaseURL, projectID, token); err != nil {
