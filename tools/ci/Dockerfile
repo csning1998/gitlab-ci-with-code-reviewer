@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for CI reviewer binaries and commitlint execution environment.
 
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 ARG CI_JOB_TOKEN
 RUN apk add --no-cache git
 ENV GOPRIVATE=gitlab.com/csning1998-lab/*
