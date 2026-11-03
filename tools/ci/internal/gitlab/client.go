@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ci-tools/internal/gitlabtoken"
 	"ci-tools/internal/httpguard"
 )
 
@@ -34,11 +35,11 @@ type MRChanges struct {
 // Client provides scoped access to GitLab API endpoints for a target merge request.
 type Client struct {
 	mrURL string
-	token string
+	token gitlabtoken.FineGrainedToken
 	http  *http.Client
 }
 
-func New(apiURL, projectID, mrIID, token string) *Client {
+func New(apiURL, projectID, mrIID string, token gitlabtoken.FineGrainedToken) *Client {
 	return &Client{
 		mrURL: fmt.Sprintf("%s/projects/%s/merge_requests/%s", strings.TrimRight(apiURL, "/"), projectID, mrIID),
 		token: token,
@@ -48,6 +49,9 @@ func New(apiURL, projectID, mrIID, token string) *Client {
 
 // send executes HTTP operations and serves as the single point of conversion for HTTP error status codes into Go errors.
 func (c *Client) executeHTTPRequest(method, url string, payload any) (status int, header http.Header, data []byte, err error) {
+	if c.token.IsZero() {
+		return 0, nil, nil, gitlabtoken.ErrEmptyToken
+	}
 	var reader io.Reader
 	if payload != nil {
 		body, err := json.Marshal(payload)
@@ -60,7 +64,7 @@ func (c *Client) executeHTTPRequest(method, url string, payload any) (status int
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
+	req.Header.Set("PRIVATE-TOKEN", c.token.Value())
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

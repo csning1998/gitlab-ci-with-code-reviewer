@@ -9,6 +9,7 @@ import (
 
 	"ci-tools/internal/conventional"
 	"ci-tools/internal/gitlab"
+	"ci-tools/internal/gitlabtoken"
 )
 
 // commitTypeToLabel maps Conventional Commit types to corresponding group labels.
@@ -91,7 +92,7 @@ func New(gl *gitlab.Client) *Labeler {
 }
 
 // ExecuteLabeling is the shared entrypoint for the mr-labeler binary.
-func ExecuteLabeling(apiURL, projectID, mriid, token string) error {
+func ExecuteLabeling(apiURL, projectID, mriid string, token gitlabtoken.FineGrainedToken) error {
 	return New(gitlab.New(apiURL, projectID, mriid, token)).Execute()
 }
 

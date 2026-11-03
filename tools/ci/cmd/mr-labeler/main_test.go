@@ -59,8 +59,23 @@ func TestMRLabeler_MissingTokens_ExitsNonzero(t *testing.T) {
 	}
 }
 
+func TestMRLabeler_LegacyTokenRejectedBeforeMRRequest(t *testing.T) {
+	server, mrRequests := testutil.NewLegacyTokenServer(t)
+
+	code, _, stderr := executeMRLabelerSubprocess(t, "CI_API_V4_URL="+server.URL)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "legacy scopes") {
+		t.Errorf("stderr = %q, want it to report the prohibited legacy scopes", stderr)
+	}
+	if got := mrRequests.Load(); got != 0 {
+		t.Errorf("server received %d merge request API calls, want 0", got)
+	}
+}
+
 func TestMRLabeler_ExecuteLabelingSucceeds(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/diffs") {
 			_, _ = w.Write([]byte(`[{"new_path":"main.go","diff":"@@ -0,0 +1,1 @@\n+package main\n"}]`))
@@ -75,7 +90,7 @@ func TestMRLabeler_ExecuteLabelingSucceeds(t *testing.T) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"title":"feat: test","description":"","labels":[]}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRLabelerSubprocess(t, "CI_API_V4_URL="+server.URL)
@@ -85,9 +100,9 @@ func TestMRLabeler_ExecuteLabelingSucceeds(t *testing.T) {
 }
 
 func TestMRLabeler_ExecuteLabelingFails_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRLabelerSubprocess(t, "CI_API_V4_URL="+server.URL)
@@ -100,7 +115,7 @@ func TestMRLabeler_ExecuteLabelingFails_ExitsNonzero(t *testing.T) {
 }
 
 func TestMRLabeler_FallbackToGeminiToken_Succeeds(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("PRIVATE-TOKEN") != fallbackToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -115,7 +130,7 @@ func TestMRLabeler_FallbackToGeminiToken_Succeeds(t *testing.T) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"title":"feat: test","labels":[]}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRLabelerSubprocess(t,

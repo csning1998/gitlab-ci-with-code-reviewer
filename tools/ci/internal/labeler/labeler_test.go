@@ -9,6 +9,7 @@ import (
 
 	"ci-tools/internal/gitlab"
 	"ci-tools/internal/semver"
+	"ci-tools/internal/testutil"
 )
 
 func TestResolveCommitTypeLabel_KnownTypes(t *testing.T) {
@@ -227,7 +228,7 @@ func TestLabeler_Execute_AppliesMatchedLabels(t *testing.T) {
 		`{"title":"feat!: add thing","description":"","diff_refs":{}}`,
 		`[{"new_path":"terraform/main.tf","old_path":"terraform/main.tf","diff":""}]`,
 	)
-	l := New(gitlab.New(server.URL, "1", "2", "token"))
+	l := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)))
 
 	if err := l.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -245,7 +246,7 @@ func TestLabeler_Execute_NoLabelsMatched_SkipsAPICall(t *testing.T) {
 		`{"title":"wip: unfinished","description":"","diff_refs":{}}`,
 		`[{"new_path":"README.md","old_path":"README.md","diff":""}]`,
 	)
-	l := New(gitlab.New(server.URL, "1", "2", "token"))
+	l := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)))
 
 	if err := l.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -260,7 +261,7 @@ func TestLabeler_Execute_FetchMRFails(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)
-	l := New(gitlab.New(server.URL, "1", "2", "token"))
+	l := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)))
 
 	err := l.Execute()
 	if err == nil {

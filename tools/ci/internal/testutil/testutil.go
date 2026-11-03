@@ -20,6 +20,12 @@ const (
 	SecretGitLabToken = "secret-token"
 )
 
+// SelfPath is the GitLab endpoint which reports the type and scopes of the calling token.
+const SelfPath = "/personal_access_tokens/self"
+
+// LegacyTokenSelfBody is the 200 body which /personal_access_tokens/self returns to a legacy token.
+const LegacyTokenSelfBody = `{"active":true,"scopes":["api"]}`
+
 // InsufficientGranularScopeBody is the 403 body which GitLab.com returns to a fine-grained token
 // lacking Personal Access Token Read on /personal_access_tokens/self.
 const InsufficientGranularScopeBody = `{"error":"insufficient_granular_scope","error_description":"Access denied: This operation requires a fine-grained personal access token with the following user permissions: [Personal Access Token: Read]."}`
@@ -39,6 +45,36 @@ func NewStubToken(t testing.TB, raw string) gitlabtoken.FineGrainedToken {
 		t.Fatalf("gitlabtoken.New(...) against the stub self endpoint failed: %v", err)
 	}
 	return token
+}
+
+// HandleFineGrainedSelf answers /personal_access_tokens/self as GitLab.com answers a fine-grained
+// token lacking Personal Access Token Read, and passes every other request to next.
+func HandleFineGrainedSelf(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == SelfPath {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, InsufficientGranularScopeBody)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// NewLegacyTokenServer answers /personal_access_tokens/self as GitLab answers a legacy token, and
+// counts every other request, which a command MUST NOT send after the rejection.
+func NewLegacyTokenServer(t testing.TB) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var otherRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == SelfPath {
+			_, _ = io.WriteString(w, LegacyTokenSelfBody)
+			return
+		}
+		otherRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	return server, &otherRequests
 }
 
 // NewConnectionCountingServer answers every request with status and body, and counts the TCP

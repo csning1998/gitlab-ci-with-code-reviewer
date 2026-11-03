@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"ci-tools/internal/config"
 	"ci-tools/internal/gitlab"
+	"ci-tools/internal/gitlabtoken"
 	"ci-tools/internal/providers"
 	"ci-tools/internal/review"
 	"ci-tools/internal/reviewerconfig"
@@ -85,8 +87,8 @@ func resolveOptions() (reviewerconfig.ModelOptions, error) {
 func main() {
 	cfg := config.LoadEnvFile()
 
-	gitLabToken := config.ResolveGitLabToken()
-	if gitLabToken == "" {
+	rawGitLabToken := config.ResolveGitLabToken()
+	if rawGitLabToken == "" {
 		fmt.Fprintf(os.Stderr, "Error: Required environment variable '%s' is missing.\n", config.ReviewTokenEnvName)
 		os.Exit(1)
 	}
@@ -117,6 +119,13 @@ func main() {
 	llm, err := providers.New(opts, tokens)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
+
+	// The token check runs after the local configuration checks, which report a configuration error without a network call.
+	gitLabToken, err := gitlabtoken.New(context.Background(), cfg.APIURL, rawGitLabToken)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to confirm that %s carries a fine-grained personal access token: %v\n", config.ReviewTokenEnvName, err)
 		os.Exit(1)
 	}
 

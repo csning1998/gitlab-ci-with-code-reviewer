@@ -172,10 +172,25 @@ func TestReview_EmptyChanges_SucceedsWithoutLLMCall(t *testing.T) {
 	}
 }
 
+func TestReview_LegacyTokenRejectedBeforeMRRequest(t *testing.T) {
+	server, mrRequests := testutil.NewLegacyTokenServer(t)
+
+	code, _, stderr := executeReviewSubprocess(t, "CI_API_V4_URL="+server.URL)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "legacy scopes") {
+		t.Errorf("stderr = %q, want it to report the prohibited legacy scopes", stderr)
+	}
+	if got := mrRequests.Load(); got != 0 {
+		t.Errorf("server received %d merge request API calls, want 0", got)
+	}
+}
+
 func TestReview_GitLabError_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeReviewSubprocess(t, "CI_API_V4_URL="+server.URL)
@@ -339,14 +354,14 @@ func TestReview_ClaudeWorkloadIdentityFederation_ReplacesStaticKey(t *testing.T)
 
 func newEmptyChangesGitLabServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/diffs") {
 			_, _ = w.Write([]byte(`[]`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"title":"feat: test","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 	return server
 }
@@ -368,14 +383,14 @@ func newReviewFixtureServers(t *testing.T) (gitlabURL, llmURL string, llmBody fu
 	}))
 	t.Cleanup(llm.Close)
 
-	gitlab := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gitlab := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/diffs") {
 			_, _ = w.Write([]byte(`[{"new_path":"a.go","old_path":"a.go","diff":"@@ -0,0 +1 @@\n+x\n"}]`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"title":"feat: t","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`))
-	}))
+	})))
 	t.Cleanup(gitlab.Close)
 
 	return gitlab.URL, llm.URL, func() string {

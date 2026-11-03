@@ -59,20 +59,35 @@ func TestMRGate_MissingTokens_ExitsNonzero(t *testing.T) {
 	}
 }
 
+func TestMRGate_LegacyTokenRejectedBeforeMRRequest(t *testing.T) {
+	server, mrRequests := testutil.NewLegacyTokenServer(t)
+
+	code, _, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "legacy scopes") {
+		t.Errorf("stderr = %q, want it to report the prohibited legacy scopes", stderr)
+	}
+	if got := mrRequests.Load(); got != 0 {
+		t.Errorf("server received %d merge request API calls, want 0", got)
+	}
+}
+
 func TestMRGate_InvalidRuneLimit_ExitsNonzero(t *testing.T) {
 	code, _, stderr := executeMRGateSubprocess(t, "MAX_DESCRIPTION_CHARS=invalid-number")
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr, "Error:") {
-		t.Errorf("stderr = %q, want mention of Error", stderr)
+	if !strings.Contains(stderr, "MAX_DESCRIPTION_CHARS") {
+		t.Errorf("stderr = %q, want the invalid MAX_DESCRIPTION_CHARS named", stderr)
 	}
 }
 
 func TestMRGate_FetchDescriptionFails_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL)
@@ -85,10 +100,10 @@ func TestMRGate_FetchDescriptionFails_ExitsNonzero(t *testing.T) {
 }
 
 func TestMRGate_DescriptionExceedsLimit_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"description":"` + strings.Repeat("x", 100) + `"}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL, "MAX_DESCRIPTION_CHARS=50")
@@ -101,10 +116,10 @@ func TestMRGate_DescriptionExceedsLimit_ExitsNonzero(t *testing.T) {
 }
 
 func TestMRGate_DescriptionWithinLimit_Succeeds(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"description":"short valid description"}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, stdout, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL, "MAX_DESCRIPTION_CHARS=500")
@@ -117,14 +132,14 @@ func TestMRGate_DescriptionWithinLimit_Succeeds(t *testing.T) {
 }
 
 func TestMRGate_FallbackToGeminiToken_Succeeds(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("PRIVATE-TOKEN") != fallbackToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"description":"valid"}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, stdout, stderr := executeMRGateSubprocess(t,
