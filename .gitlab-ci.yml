@@ -40,8 +40,6 @@ include:
     inputs:
       checkov_skip: "CKV_GIT_1,CKV_GLB_1,CKV_GLB_3,CKV_GLB_4,CKV_TF_1"
   - local: templates/auto-tag.yml
-    rules:
-      - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     inputs:
       reviewer_image: "$CI_REGISTRY_IMAGE/reviewer:edge"
       stage: release

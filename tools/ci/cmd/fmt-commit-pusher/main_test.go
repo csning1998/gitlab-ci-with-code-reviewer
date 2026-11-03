@@ -11,6 +11,19 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/fmtpush"
+	"ci-tools/internal/testutil"
+)
+
+const (
+	unreachableRemoteURL    = "https://example.invalid/repo.git"
+	subprocessEnvName       = "BE_FMT_COMMIT_PUSHER"
+	missingArgsEnvName      = "BE_FMT_COMMIT_PUSHER_MISSING_ARGS"
+	branchFromEnvEnvName    = "BE_FMT_COMMIT_PUSHER_BRANCH_ENV"
+	subprocessRepoEnvName   = "TEST_REPO_DIR"
+	subprocessRemoteEnvName = "TEST_REMOTE_URL"
 )
 
 // newRepoWithCommit initializes a repository containing a single tracked file and checks out
@@ -65,11 +78,11 @@ func TestRun_MissingArguments(t *testing.T) {
 		password  string
 		wantErr   string
 	}{
-		{"missing message", "", "feature", "https://example.invalid/repo.git", "gitlab-ci-token", "token", "--message, --branch, --remote-url, and --username are required"},
-		{"missing branch", "style: fmt", "", "https://example.invalid/repo.git", "gitlab-ci-token", "token", "--message, --branch, --remote-url, and --username are required"},
-		{"missing remote-url", "style: fmt", "feature", "", "gitlab-ci-token", "token", "--message, --branch, --remote-url, and --username are required"},
-		{"missing username", "style: fmt", "feature", "https://example.invalid/repo.git", "", "token", "--message, --branch, --remote-url, and --username are required"},
-		{"missing password", "style: fmt", "feature", "https://example.invalid/repo.git", "gitlab-ci-token", "", "CI_JOB_TOKEN must be set"},
+		{"missing message", "", "feature", unreachableRemoteURL, fmtpush.JobTokenUsername, testutil.GitLabToken, "--message, --branch, --remote-url, and --username are required"},
+		{"missing branch", "style: fmt", "", unreachableRemoteURL, fmtpush.JobTokenUsername, testutil.GitLabToken, "--message, --branch, --remote-url, and --username are required"},
+		{"missing remote-url", "style: fmt", "feature", "", fmtpush.JobTokenUsername, testutil.GitLabToken, "--message, --branch, --remote-url, and --username are required"},
+		{"missing username", "style: fmt", "feature", unreachableRemoteURL, "", testutil.GitLabToken, "--message, --branch, --remote-url, and --username are required"},
+		{"missing password", "style: fmt", "feature", unreachableRemoteURL, fmtpush.JobTokenUsername, "", config.JobTokenEnvName + " must be set"},
 	}
 
 	for _, c := range cases {
@@ -93,7 +106,7 @@ func TestRun_NoChanges_SkipsPush(t *testing.T) {
 	unreachableRemote := filepath.Join(t.TempDir(), "does-not-exist.git")
 
 	var stdout, stderr bytes.Buffer
-	code := executeFormatCommitPush(repoDir, "style: fmt", "feature-branch", unreachableRemote, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: fmt", "feature-branch", unreachableRemote, fmtpush.JobTokenUsername, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -104,7 +117,7 @@ func TestRun_NoChanges_SkipsPush(t *testing.T) {
 
 func TestRun_RepoOpenFails(t *testing.T) {
 	var stderr bytes.Buffer
-	code := executeFormatCommitPush(t.TempDir(), "style: fmt", "feature-branch", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeFormatCommitPush(t.TempDir(), "style: fmt", "feature-branch", unreachableRemoteURL, fmtpush.JobTokenUsername, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 	}
@@ -120,7 +133,7 @@ func TestRun_BareRepository_HasChangesFails(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := executeFormatCommitPush(bareDir, "style: fmt", "feature-branch", "https://example.invalid/repo.git", "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeFormatCommitPush(bareDir, "style: fmt", "feature-branch", unreachableRemoteURL, fmtpush.JobTokenUsername, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 	}
@@ -139,7 +152,7 @@ func TestRun_PushFails_WithChangesPresent(t *testing.T) {
 	unreachableRemote := filepath.Join(t.TempDir(), "does-not-exist.git")
 
 	var stderr bytes.Buffer
-	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", unreachableRemote, "gitlab-ci-token", "unused", io.Discard, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", unreachableRemote, fmtpush.JobTokenUsername, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeFormatCommitPush(...) code = %d, want 1", code)
 	}
@@ -158,7 +171,7 @@ func TestRun_UntrackedFileOnly_CommitsAndPushes(t *testing.T) {
 	// DetectWorktreeModifications evaluates to true for untracked files when tracked files remain unchanged.
 	// This executes the untracked file handling path through executeFormatCommitPush().
 	var stdout, stderr bytes.Buffer
-	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, fmtpush.JobTokenUsername, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -192,7 +205,7 @@ func TestRun_Success_ReportsPushedMessage(t *testing.T) {
 	remoteDir := newBareRemote(t)
 
 	var stdout, stderr bytes.Buffer
-	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, fmtpush.JobTokenUsername, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -210,7 +223,7 @@ func TestRun_Success(t *testing.T) {
 	remoteDir := newBareRemote(t)
 
 	var stdout, stderr bytes.Buffer
-	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, "gitlab-ci-token", "unused", &stdout, &stderr)
+	code := executeFormatCommitPush(repoDir, "style: gofmt", "feature-branch", remoteDir, fmtpush.JobTokenUsername, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeFormatCommitPush(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -235,13 +248,13 @@ func TestRun_Success(t *testing.T) {
 // TestMainSubprocess executes main() within a child process. Re-executing the compiled test
 // binary prevents os.Exit inside main() from terminating the parent test runner.
 func TestMainSubprocess(t *testing.T) {
-	if os.Getenv("BE_FMT_COMMIT_PUSHER") == "1" {
+	if os.Getenv(subprocessEnvName) == "1" {
 		os.Args = []string{
 			"fmt-commit-pusher",
-			"--repo=" + os.Getenv("TEST_REPO_DIR"),
+			"--repo=" + os.Getenv(subprocessRepoEnvName),
 			"--message=style: gofmt",
 			"--branch=feature-branch",
-			"--remote-url=" + os.Getenv("TEST_REMOTE_URL"),
+			"--remote-url=" + os.Getenv(subprocessRemoteEnvName),
 		}
 		main()
 		return
@@ -255,10 +268,10 @@ func TestMainSubprocess(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess")
 	cmd.Env = append(os.Environ(),
-		"BE_FMT_COMMIT_PUSHER=1",
-		"CI_JOB_TOKEN=unused",
-		"TEST_REPO_DIR="+repoDir,
-		"TEST_REMOTE_URL="+remoteDir,
+		subprocessEnvName+"=1",
+		config.JobTokenEnvName+"="+testutil.GitLabToken,
+		subprocessRepoEnvName+"="+repoDir,
+		subprocessRemoteEnvName+"="+remoteDir,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -279,12 +292,12 @@ func TestMainSubprocess(t *testing.T) {
 // TestMainSubprocess_MissingArguments verifies that main() forwards non-zero exit codes from
 // executeFormatCommitPush() to os.Exit. Direct calls to executeFormatCommitPush() in unit tests cannot validate this process exit behavior.
 func TestMainSubprocess_MissingArguments(t *testing.T) {
-	if os.Getenv("BE_FMT_COMMIT_PUSHER_MISSING_ARGS") == "1" {
+	if os.Getenv(missingArgsEnvName) == "1" {
 		os.Args = []string{
 			"fmt-commit-pusher",
-			"--repo=" + os.Getenv("TEST_REPO_DIR"),
+			"--repo=" + os.Getenv(subprocessRepoEnvName),
 			"--branch=feature-branch",
-			"--remote-url=https://example.invalid/repo.git",
+			"--remote-url=" + unreachableRemoteURL,
 		}
 		main()
 		return
@@ -294,9 +307,9 @@ func TestMainSubprocess_MissingArguments(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess_MissingArguments")
 	cmd.Env = append(os.Environ(),
-		"BE_FMT_COMMIT_PUSHER_MISSING_ARGS=1",
-		"CI_JOB_TOKEN=unused",
-		"TEST_REPO_DIR="+repoDir,
+		missingArgsEnvName+"=1",
+		config.JobTokenEnvName+"="+testutil.GitLabToken,
+		subprocessRepoEnvName+"="+repoDir,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -320,12 +333,12 @@ func TestMainSubprocess_MissingArguments(t *testing.T) {
 // TestMainSubprocess_BranchFromEnvVar verifies that flag parsing falls back to the
 // CI_MERGE_REQUEST_SOURCE_BRANCH_NAME environment variable when --branch is omitted.
 func TestMainSubprocess_BranchFromEnvVar(t *testing.T) {
-	if os.Getenv("BE_FMT_COMMIT_PUSHER_BRANCH_ENV") == "1" {
+	if os.Getenv(branchFromEnvEnvName) == "1" {
 		os.Args = []string{
 			"fmt-commit-pusher",
-			"--repo=" + os.Getenv("TEST_REPO_DIR"),
+			"--repo=" + os.Getenv(subprocessRepoEnvName),
 			"--message=style: gofmt",
-			"--remote-url=" + os.Getenv("TEST_REMOTE_URL"),
+			"--remote-url=" + os.Getenv(subprocessRemoteEnvName),
 		}
 		main()
 		return
@@ -339,11 +352,11 @@ func TestMainSubprocess_BranchFromEnvVar(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainSubprocess_BranchFromEnvVar")
 	cmd.Env = append(os.Environ(),
-		"BE_FMT_COMMIT_PUSHER_BRANCH_ENV=1",
-		"CI_JOB_TOKEN=unused",
+		branchFromEnvEnvName+"=1",
+		config.JobTokenEnvName+"="+testutil.GitLabToken,
 		"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME=release/from-env",
-		"TEST_REPO_DIR="+repoDir,
-		"TEST_REMOTE_URL="+remoteDir,
+		subprocessRepoEnvName+"="+repoDir,
+		subprocessRemoteEnvName+"="+remoteDir,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

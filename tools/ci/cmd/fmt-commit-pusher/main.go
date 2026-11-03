@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"ci-tools/internal/config"
 	"ci-tools/internal/fmtpush"
 )
 
@@ -18,7 +19,7 @@ func executeFormatCommitPush(repoPath, message, branch, remoteURL, username, pas
 		return 1
 	}
 	if password == "" {
-		_, _ = fmt.Fprintln(stderr, "Error: CI_JOB_TOKEN must be set in the environment.")
+		_, _ = fmt.Fprintf(stderr, "Error: %s must be set in the environment.\n", config.JobTokenEnvName)
 		return 1
 	}
 
@@ -46,8 +47,8 @@ func main() {
 	message := flag.String("message", "", "commit message for the formatting change")
 	branch := flag.String("branch", os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "branch to push the commit to")
 	remoteURL := flag.String("remote-url", "", "URL of the remote to which the commit is pushed")
-	username := flag.String("username", "gitlab-ci-token", "HTTP basic auth username for the push")
+	username := flag.String("username", fmtpush.JobTokenUsername, "HTTP basic auth username for the push")
 	flag.Parse()
 
-	os.Exit(executeFormatCommitPush(*repo, *message, *branch, *remoteURL, *username, os.Getenv("CI_JOB_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeFormatCommitPush(*repo, *message, *branch, *remoteURL, *username, os.Getenv(config.JobTokenEnvName), os.Stdout, os.Stderr))
 }

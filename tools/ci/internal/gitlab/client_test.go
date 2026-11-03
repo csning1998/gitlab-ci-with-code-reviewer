@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,10 +10,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"ci-tools/internal/gitlabtoken"
+	"ci-tools/internal/testutil"
 )
 
 func TestNew_BuildsMRURL(t *testing.T) {
-	c := New("https://gitlab.example.com/api/v4", "42", "7", "token")
+	c := New("https://gitlab.example.com/api/v4", "42", "7", testutil.NewStubToken(t, testutil.GitLabToken))
 	if c.mrURL != "https://gitlab.example.com/api/v4/projects/42/merge_requests/7" {
 		t.Errorf("mrURL = %q, want the projects/.../merge_requests/... path composed from the inputs", c.mrURL)
 	}
@@ -23,14 +27,14 @@ func TestFetchMRDescription_Success(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("request method = %q, want GET", r.Method)
 		}
-		if got := r.Header.Get("PRIVATE-TOKEN"); got != "secret" {
-			t.Errorf("PRIVATE-TOKEN header = %q, want %q", got, "secret")
+		if got := r.Header.Get("PRIVATE-TOKEN"); got != testutil.SecretGitLabToken {
+			t.Errorf("PRIVATE-TOKEN header = %q, want %q", got, testutil.SecretGitLabToken)
 		}
 		_, _ = w.Write([]byte(`{"title":"t","description":"a long description"}`))
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "secret")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.SecretGitLabToken))
 	desc, err := c.FetchMRDescription()
 	if err != nil {
 		t.Fatalf("FetchMRDescription() returned an unexpected error: %v", err)
@@ -47,7 +51,7 @@ func TestFetchMRDescription_HTTPErrorStatus(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "bad-token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMRDescription(); err == nil {
 		t.Error("FetchMRDescription() succeeded unexpectedly against a 401 response; want an error")
 	}
@@ -59,14 +63,14 @@ func TestFetchMRDescription_MalformedJSON(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMRDescription(); err == nil {
 		t.Error("FetchMRDescription() succeeded unexpectedly on malformed JSON; want an error")
 	}
 }
 
 func TestFetchMRDescription_UnreachableServer(t *testing.T) {
-	c := New("http://127.0.0.1:1", "1", "2", "token")
+	c := New("http://127.0.0.1:1", "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMRDescription(); err == nil {
 		t.Error("FetchMRDescription() succeeded unexpectedly against an unreachable host; want an error")
 	}
@@ -85,7 +89,7 @@ func TestFetchMR_Success_UsesDiffsEndpoint(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	mr, err := c.FetchMR()
 	if err != nil {
 		t.Fatalf("FetchMR() returned an unexpected error: %v", err)
@@ -116,7 +120,7 @@ func TestFetchMR_DetailFetchFails_DiffsNeverRequested(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMR(); err == nil {
 		t.Error("FetchMR() succeeded unexpectedly despite a detail-fetch failure; want an error")
 	}
@@ -135,7 +139,7 @@ func TestFetchMR_DiffsFetchFails(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMR(); err == nil {
 		t.Error("FetchMR() succeeded unexpectedly despite a diffs-fetch failure; want an error")
 	}
@@ -151,7 +155,7 @@ func TestFetchMR_NoChanges_EmptyArray(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	mr, err := c.FetchMR()
 	if err != nil {
 		t.Fatalf("FetchMR() returned an unexpected error: %v", err)
@@ -174,7 +178,7 @@ func TestFetchMR_PaginationWarning_DoesNotFail(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	mr, err := c.FetchMR()
 	if err != nil {
 		t.Fatalf("FetchMR() returned an unexpected error: %v", err)
@@ -194,7 +198,7 @@ func TestFetchMR_DiffsMalformedJSON(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMR(); err == nil {
 		t.Error("FetchMR() succeeded unexpectedly on malformed diffs JSON; want an error")
 	}
@@ -214,7 +218,7 @@ func TestPostDiscussion_SendsBodyAndPosition(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	status, err := c.PostDiscussion("body text", map[string]any{"new_line": float64(5)})
 	if err != nil {
 		t.Fatalf("PostDiscussion(...) returned an unexpected error: %v", err)
@@ -233,7 +237,7 @@ func TestPostDiscussion_NilPosition(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.PostDiscussion("body", nil); err != nil {
 		t.Fatalf("PostDiscussion(...) returned an unexpected error: %v", err)
 	}
@@ -246,7 +250,7 @@ func TestPostDiscussion_ErrorStatusPropagated(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	status, err := c.PostDiscussion("body", map[string]any{})
 	if err == nil {
 		t.Fatal("PostDiscussion(...) succeeded unexpectedly against a 422 response; want an error")
@@ -268,7 +272,7 @@ func TestPostNote_Success(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	status, err := c.PostNote("note body")
 	if err != nil {
 		t.Fatalf("PostNote(...) returned an unexpected error: %v", err)
@@ -289,7 +293,7 @@ func TestAddLabels_JoinsWithComma(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.AddLabels([]string{"type::fix", "breaking-change"}); err != nil {
 		t.Fatalf("AddLabels(...) returned an unexpected error: %v", err)
 	}
@@ -306,7 +310,7 @@ func TestAddLabels_EmptySlice(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.AddLabels(nil); err != nil {
 		t.Fatalf("AddLabels(nil) returned an unexpected error: %v", err)
 	}
@@ -317,14 +321,14 @@ func TestAddLabels_EmptySlice(t *testing.T) {
 
 func TestExecuteHTTPRequest_RequestHeaderCarriesToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("PRIVATE-TOKEN"); got != "ci-job-token" {
-			t.Errorf("PRIVATE-TOKEN header = %q, want %q", got, "ci-job-token")
+		if got := r.Header.Get("PRIVATE-TOKEN"); got != testutil.SecretGitLabToken {
+			t.Errorf("PRIVATE-TOKEN header = %q, want %q", got, testutil.SecretGitLabToken)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "ci-job-token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.SecretGitLabToken))
 	if _, err := c.PostNote("x"); err != nil {
 		t.Fatalf("PostNote(...) returned an unexpected error: %v", err)
 	}
@@ -339,7 +343,7 @@ func TestExecuteHTTPRequest_GETRequestOmitsContentTypeHeader(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	if _, err := c.FetchMRDescription(); err != nil {
 		t.Fatalf("FetchMRDescription() returned an unexpected error: %v", err)
 	}
@@ -352,7 +356,7 @@ func TestExecuteHTTPRequest_ErrorStatusIncludesResponseBodyVerbatim(t *testing.T
 	}))
 	t.Cleanup(server.Close)
 
-	c := New(server.URL, "1", "2", "token")
+	c := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	_, err := c.FetchMRDescription()
 	if err == nil {
 		t.Fatal("FetchMRDescription() succeeded unexpectedly against a 403 response; want an error")
@@ -381,7 +385,7 @@ func TestExecuteHTTPRequest_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	}))
 	t.Cleanup(redirector.Close)
 
-	client := New(redirector.URL, "1", "2", "secret-token")
+	client := New(redirector.URL, "1", "2", testutil.NewStubToken(t, testutil.SecretGitLabToken))
 	_, _ = client.FetchMRDescription()
 
 	if got, _ := leaked.Load().(string); got != "" {
@@ -397,7 +401,7 @@ func TestNew_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := New(server.URL+"/api/v4/", "1", "2", "token")
+	client := New(server.URL+"/api/v4/", "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	_, _ = client.FetchMRDescription()
 
 	path, _ := gotPath.Load().(string)
@@ -412,7 +416,7 @@ func TestClient_ConcurrentCallsShareOneClientSafely(t *testing.T) {
 	var served atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		served.Add(1)
-		if r.Header.Get("PRIVATE-TOKEN") != "token" {
+		if r.Header.Get("PRIVATE-TOKEN") != testutil.GitLabToken {
 			http.Error(w, "missing token", http.StatusUnauthorized)
 			return
 		}
@@ -421,7 +425,7 @@ func TestClient_ConcurrentCallsShareOneClientSafely(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := New(server.URL, "1", "2", "token")
+	client := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken))
 	start := make(chan struct{})
 	errs := make([]error, callers)
 
@@ -486,7 +490,7 @@ func assertExecuteHTTPRequestStatusCase(t *testing.T, tc executeHTTPStatusCase) 
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := New(server.URL, "1", "2", "token").PostNote("body")
+	_, err := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)).PostNote("body")
 	if tc.wantErr && err == nil {
 		t.Errorf("status %d succeeded unexpectedly", tc.status)
 	}
@@ -501,12 +505,31 @@ func TestExecuteHTTPRequest_ErrorDoesNotEchoToken(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := New(server.URL, "1", "2", "secret-token-value").PostNote("body")
+	_, err := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.SecretGitLabToken)).PostNote("body")
 	if err == nil {
 		t.Fatal("PostNote succeeded unexpectedly")
 	}
-	if strings.Contains(err.Error(), "secret-token-value") {
+	if strings.Contains(err.Error(), testutil.SecretGitLabToken) {
 		t.Errorf("error %q discloses the token", err)
+	}
+}
+
+// Another package can write the zero FineGrainedToken without gitlabtoken.New. The zero token MUST
+// fail before any request.
+func TestExecuteHTTPRequest_ZeroTokenRejectedWithoutRequest(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := New(server.URL, "1", "2", gitlabtoken.FineGrainedToken{}).PostNote("body")
+	if !errors.Is(err, gitlabtoken.ErrEmptyToken) {
+		t.Errorf("PostNote(...) error = %v, want it to wrap gitlabtoken.ErrEmptyToken", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("server received %d requests, want 0", got)
 	}
 }
 
@@ -550,7 +573,7 @@ func assertFetchMRDiffsCase(t *testing.T, tc fetchMRDiffsCase) {
 	}))
 	t.Cleanup(server.Close)
 
-	mr, err := New(server.URL, "1", "2", "token").FetchMR()
+	mr, err := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)).FetchMR()
 	if tc.wantErr {
 		if err == nil {
 			t.Fatalf("FetchMR succeeded unexpectedly with %+v", mr)
@@ -599,7 +622,7 @@ func assertFetchMRDetailCase(t *testing.T, tc fetchMRDetailCase) {
 	}))
 	t.Cleanup(server.Close)
 
-	mr, err := New(server.URL, "1", "2", "token").FetchMR()
+	mr, err := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)).FetchMR()
 	if tc.wantErr {
 		if err == nil {
 			t.Fatalf("FetchMR succeeded unexpectedly with %+v", mr)
@@ -645,7 +668,7 @@ func assertAddLabelsCase(t *testing.T, tc addLabelsCase) {
 	}))
 	t.Cleanup(server.Close)
 
-	if _, err := New(server.URL, "1", "2", "token").AddLabels(tc.labels); err != nil {
+	if _, err := New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)).AddLabels(tc.labels); err != nil {
 		t.Fatalf("AddLabels returned an unexpected error: %v", err)
 	}
 	if value, _ := got.Load().(string); value != tc.want {

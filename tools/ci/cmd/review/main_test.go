@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/testutil"
 )
 
 // executeReviewSubprocess re-executes the test binary as the review command.
@@ -30,8 +33,8 @@ func executeReviewSubprocessInDir(t *testing.T, dir string, extraEnv ...string) 
 		"CI_API_V4_URL=https://gitlab.example.com/api/v4",
 		"CI_PROJECT_ID=1",
 		"CI_MERGE_REQUEST_IID=2",
-		"CLAUDE_MR_REVIEWER=",
-		"GEMINI_MR_REVIEWER=",
+		config.ClaudeReviewTokenEnvName + "=",
+		config.GeminiReviewTokenEnvName + "=",
 		"CLAUDE_API_KEY=",
 		"GEMINI_API_KEY=",
 		"OPENAI_API_KEY=",
@@ -63,7 +66,7 @@ func executeReviewSubprocessInDir(t *testing.T, dir string, extraEnv ...string) 
 		"GCP_WORKLOAD_IDENTITY_PROVIDER=",
 		"GCP_SERVICE_ACCOUNT=",
 		"GCP_ID_TOKEN=",
-		"REVIEW_MR_REVIEWER=mock-gitlab-token",
+		config.ReviewTokenEnvName + "=" + testutil.GitLabToken,
 		"REVIEW_API_KEY=mock-provider-key",
 		"REVIEW_MODEL=claude-sonnet-5",
 	}
@@ -99,9 +102,9 @@ func TestReview_EnvironmentValidation_TableDriven(t *testing.T) {
 	}{
 		{
 			name:     "missing gitlab token exits nonzero",
-			env:      []string{"REVIEW_MR_REVIEWER="},
+			env:      []string{config.ReviewTokenEnvName + "="},
 			wantCode: 1,
-			wantWord: "REVIEW_MR_REVIEWER",
+			wantWord: config.ReviewTokenEnvName,
 		},
 		{
 			name:     "missing provider key exits nonzero",
@@ -169,10 +172,25 @@ func TestReview_EmptyChanges_SucceedsWithoutLLMCall(t *testing.T) {
 	}
 }
 
+func TestReview_LegacyTokenRejectedBeforeMRRequest(t *testing.T) {
+	server, mrRequests := testutil.NewLegacyTokenServer(t)
+
+	code, _, stderr := executeReviewSubprocess(t, "CI_API_V4_URL="+server.URL)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "legacy scopes") {
+		t.Errorf("stderr = %q, want it to report the prohibited legacy scopes", stderr)
+	}
+	if got := mrRequests.Load(); got != 0 {
+		t.Errorf("server received %d merge request API calls, want 0", got)
+	}
+}
+
 func TestReview_GitLabError_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeReviewSubprocess(t, "CI_API_V4_URL="+server.URL)
@@ -336,14 +354,14 @@ func TestReview_ClaudeWorkloadIdentityFederation_ReplacesStaticKey(t *testing.T)
 
 func newEmptyChangesGitLabServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/diffs") {
 			_, _ = w.Write([]byte(`[]`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"title":"feat: test","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 	return server
 }
@@ -365,14 +383,14 @@ func newReviewFixtureServers(t *testing.T) (gitlabURL, llmURL string, llmBody fu
 	}))
 	t.Cleanup(llm.Close)
 
-	gitlab := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gitlab := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/diffs") {
 			_, _ = w.Write([]byte(`[{"new_path":"a.go","old_path":"a.go","diff":"@@ -0,0 +1 @@\n+x\n"}]`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"title":"feat: t","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`))
-	}))
+	})))
 	t.Cleanup(gitlab.Close)
 
 	return gitlab.URL, llm.URL, func() string {
@@ -609,7 +627,7 @@ func TestReview_CredentialWhitespaceBoundaries(t *testing.T) {
 	}{
 		{name: "whitespace only neutral key", env: []string{"REVIEW_API_KEY=   ", "CLAUDE_API_KEY="}},
 		{name: "tab only provider key", env: []string{"REVIEW_API_KEY=", "CLAUDE_API_KEY=\t"}},
-		{name: "whitespace only gitlab token", env: []string{"REVIEW_MR_REVIEWER=  "}},
+		{name: "whitespace only gitlab token", env: []string{config.ReviewTokenEnvName + "=  "}},
 	}
 
 	for _, tc := range tests {

@@ -1,5 +1,8 @@
 # GitLab CI with Code Reviewer
 
+> [!CAUTION]
+> **CRITICAL**: Any GitLab token carrying legacy scopes, including `api` and `read_api`, is prohibited in this repository.
+
 ## Section 1. Overview and Architecture
 
 `gitlab-ci-with-code-reviewer` provides automated, multi-model LLM code reviews directly within GitLab Merge Requests (MRs). The architecture is published as a modular GitLab CI/CD Catalog component, operating through a single consolidated Go CLI binary (`tools/ci/cmd/review`) installed in a hardened container image.
@@ -111,16 +114,8 @@ The review binary communicates with GitLab REST APIs to read merge request diffs
 The review engine operates as a decoupled, state-agnostic consumer:
 
 - **Key Name**: The environment MUST provide `REVIEW_MR_REVIEWER` (or backwards-compatible aliases `CLAUDE_MR_REVIEWER` / `GEMINI_MR_REVIEWER`).
-- **Required Privileges**: The token MUST carry the **`api`** and **`read_api`** scopes and MUST possess at least the **`Developer`** role on the repository. (The `Reporter` role lacks permissions to resolve or update MR discussion threads).
-- **Token Type Agnostic**: The engine accepts Project Access Tokens (PrAT), Group Access Tokens (GrAT), or Personal Access Tokens (PAT).
-
-##### GitLab Token Type Availability Matrix
-
-| Token Type                      | GitLab SaaS (Free Tier) | GitLab SaaS (Paid: Premium / Ultimate) | GitLab Self-Managed / Dedicated (Free & Paid) | Scope and Recommended Usage                                                                                                                            |
-| :------------------------------ | :---------------------- | :------------------------------------- | :-------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Personal Access Token (PAT)** | Supported               | Supported                              | Supported                                     | Required for dedicated review bot user accounts on GitLab.com Free tier. Consumes a billable seat on paid plans if the user account is a human member. |
-| **Project Access Token (PrAT)** | Not Supported           | Supported                              | Supported (All Tiers)                         | Scoped exclusively to a single repository. Generates a project bot that does not consume a billable user seat.                                         |
-| **Group Access Token (GrAT)**   | Not Supported           | Supported                              | Supported (All Tiers)                         | Shared across all repositories within a group namespace. Generates a group bot that does not consume a billable user seat.                             |
+- **Token Type**: The token MUST carry fine-grained permissions limited to the set below.
+- **Required Privileges**: The token MUST grant Merge Request Create, Read, and Update and Work Item Create. The token owner MUST possess at least the **`Developer`** role on the repository. (The `Reporter` role lacks permissions to resolve or update MR discussion threads).
 
 #### Provisioning Options
 
@@ -143,23 +138,35 @@ The review engine operates as a decoupled, state-agnostic consumer:
     - This pattern guarantees idempotent registration of masked, un-protected project variables directly from HashiCorp Vault, eliminating leaky abstractions across parent governance groups.
 
 2. **Manual Configuration for External or Standalone Projects**:
-    - For standalone repositories outside the Terraform governance hierarchy, developers generate an access token directly within GitLab UI (**Settings > Access Tokens**).
+    - For standalone repositories outside the Terraform governance hierarchy, developers create a token with the fine-grained permissions above.
     - Register the generated token in **Settings > CI/CD > Variables**:
         - **Key**: `REVIEW_MR_REVIEWER`
         - **Flags**: Enable **Mask variable**; disable **Protect variable** to permit runs on feature branches.
 
 ### Step B. CI/CD Environment Variables Summary
 
-| Variable                       | Required                   | Type      | Purpose                                                           |
-| ------------------------------ | -------------------------- | --------- | ----------------------------------------------------------------- |
-| `REVIEW_MR_REVIEWER`           | Yes                        | Sensitive | Project access token for reading diffs and publishing discussions |
-| `ANTHROPIC_FEDERATION_RULE_ID` | Only for Claude Native WIF | Standard  | Anthropic federation rule (`fdrl_...`)                            |
-| `ANTHROPIC_ORGANIZATION_ID`    | Only for Claude Native WIF | Standard  | Anthropic organization UUID                                       |
-| `ANTHROPIC_SERVICE_ACCOUNT_ID` | Only for Claude Native WIF | Standard  | Anthropic service account (`svac_...`)                            |
-| `ANTHROPIC_WORKSPACE_ID`       | Only for Claude Native WIF | Standard  | Anthropic workspace (`wrkspc_...`)                                |
-| `GEMINI_API_KEY`               | Only for Gemini Static Key | Sensitive | Google AI Studio API key                                          |
-| `CLAUDE_API_KEY`               | Only for Claude Static Key | Sensitive | Anthropic Console API key (when not using WIF)                    |
-| `MAX_TOTAL_DIFF`               | No                         | Number    | Diff truncation threshold in characters (Default: `300000`)       |
+| Variable                       | Required                   | Type      | Purpose                                                     |
+| ------------------------------ | -------------------------- | --------- | ----------------------------------------------------------- |
+| `REVIEW_MR_REVIEWER`           | Yes                        | Sensitive | Fine-grained token for reading diffs and posting comments   |
+| `TAG_PUSH_TOKEN`               | Only for `auto-tag`        | Sensitive | Fine-grained token for reading and creating repository tags |
+| `ANTHROPIC_FEDERATION_RULE_ID` | Only for Claude Native WIF | Standard  | Anthropic federation rule (`fdrl_...`)                      |
+| `ANTHROPIC_ORGANIZATION_ID`    | Only for Claude Native WIF | Standard  | Anthropic organization UUID                                 |
+| `ANTHROPIC_SERVICE_ACCOUNT_ID` | Only for Claude Native WIF | Standard  | Anthropic service account (`svac_...`)                      |
+| `ANTHROPIC_WORKSPACE_ID`       | Only for Claude Native WIF | Standard  | Anthropic workspace (`wrkspc_...`)                          |
+| `GEMINI_API_KEY`               | Only for Gemini Static Key | Sensitive | Google AI Studio API key                                    |
+| `CLAUDE_API_KEY`               | Only for Claude Static Key | Sensitive | Anthropic Console API key (when not using WIF)              |
+| `MAX_TOTAL_DIFF`               | No                         | Number    | Diff truncation threshold in characters (Default: `300000`) |
+
+#### Fine-Grained Token Enforcement
+
+1. Every command which calls the GitLab REST API (`review`, `mr-gate`, `mr-labeler`, `verify-tag-token`, and `auto-tag`) MUST obtain the token through `gitlabtoken.New` before the first GitLab request. `review` and `mr-gate` run the check after the local configuration checks, and `auto-tag` runs the check before the first tag creation.
+2. The GitLab API clients in `internal/gitlab` and `internal/gitlabapi` accept a `gitlabtoken.FineGrainedToken` alone. A raw token string therefore fails to compile at every call site, since the type has no exported constructor other than `gitlabtoken.New`.
+3. `gitlabtoken.New` reads `/personal_access_tokens/self` with the token and classifies the response:
+    - HTTP 403 with the error `insufficient_granular_scope` identifies a fine-grained token lacking Personal Access Token Read, and the token passes.
+    - HTTP 200 with a non-empty `granular_scopes` identifies a fine-grained token holding Personal Access Token Read, and the token passes.
+    - Every other response, including HTTP 200 without `granular_scopes`, fails the job.
+4. The check fails closed. A change of the `insufficient_granular_scope` error code on GitLab fails every job until the check follows the change, and each job spends one additional request.
+5. The check covers the GitLab personal access tokens in `REVIEW_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_MR_REVIEWER`, and `TAG_PUSH_TOKEN`. `CI_JOB_TOKEN`, which `fmt-commit-pusher` uses for Git pushes, carries no scopes and stays outside the check. The Terraform provider tokens which the `administration-gitlab-project` layer reads from Bastion Vault stay outside the check, and the fine-grained token matrix of `parent-group-governance` governs those tokens.
 
 ### Step C. Runner Setup and Network Topology
 
@@ -396,7 +403,8 @@ Release management enforces strict Semantic Versioning (SemVer) aligning contain
         - `fix` or `perf`: Patch version bump (`X.Y.Z`).
         - Breaking changes (`!`): Major version bump (`X.0.0`).
         - Other commit types (`chore`, `docs`, `refactor`, `adhoc`, `test`): Suppress release generation.
-    - Pushes the resulting SemVer tag using a dedicated project access token (`TAG_PUSH_TOKEN` with `write_repository` scope).
+    - Creates the resulting SemVer tag through the GitLab REST API with `TAG_PUSH_TOKEN`. The token MUST carry fine-grained permissions limited to Repository Tag Create and Read.
+    - The `auto-tag:verify-token` job rejects a legacy `TAG_PUSH_TOKEN` and then reads the repository tags with the token in MR pipelines. The read detects an invalid token before merge. The read detects a missing Repository Tag Read permission on a private project alone, and no read detects a missing Repository Tag Create permission.
 2. **Tag Pipeline and Catalog Publication**:
     - The tag pipeline triggers `build:reviewer-image` to produce `reviewer:<tag>`.
     - The `publish-catalog` job publishes all components in `templates/` to the GitLab CI/CD Catalog using `release-cli`.

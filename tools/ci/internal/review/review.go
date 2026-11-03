@@ -10,6 +10,7 @@ import (
 
 	"ci-tools/internal/gate"
 	"ci-tools/internal/gitlab"
+	"ci-tools/internal/gitlabtoken"
 )
 
 // LLMClient defines the interface for language model client integrations.
@@ -175,7 +176,7 @@ func (r *Reviewer) WithPrompt(prompt string) *Reviewer {
 
 // ExecuteCodeReview serves as the common execution entrypoint for reviewer executables,
 // encapsulating client initialization and execution workflow.
-func ExecuteCodeReview(apiURL, projectID, mriid, token string, llm LLMClient) error {
+func ExecuteCodeReview(apiURL, projectID, mriid string, token gitlabtoken.FineGrainedToken, llm LLMClient) error {
 	return New(gitlab.New(apiURL, projectID, mriid, token), llm).Execute()
 }
 

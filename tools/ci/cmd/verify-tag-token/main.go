@@ -1,33 +1,44 @@
-// Command verify-tag-token validates that TAG_PUSH_TOKEN possesses required auto-tag scopes.
-// Read-only scope validation executes during MR pipelines prior to merge; tag creation defers
-// until post-merge execution to align with squash-merge commit SHA reassignments.
+// Command verify-tag-token rejects a legacy TAG_PUSH_TOKEN and validates that the token can read the repository tags of the project.
+// The read-only check runs in MR pipelines before merge. Tag creation waits until after merge
+// because a squash merge assigns a new commit SHA.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
+	"ci-tools/internal/config"
 	"ci-tools/internal/gitlabapi"
+	"ci-tools/internal/gitlabtoken"
 )
 
-// executeVerifyTagToken validates input parameters and delegates scope verification to gitlabapi.VerifyScope.
-// Decouples validation logic from CLI flag parsing and process termination to facilitate unit testing.
+// executeVerifyTagToken validates the inputs, rejects a legacy token, and delegates the tag read to gitlabapi.VerifyTagAccess.
 //
-// Empty tokens exit zero. Protected CI/CD variables are withheld on unprotected source branch pipelines;
-// treating missing credentials as skipped checks prevents false-positive pipeline failures.
-func executeVerifyTagToken(apiBaseURL, requiredScope, token string, stdout, stderr io.Writer) int {
+// An empty token exits zero because unprotected source branch pipelines withhold protected variables.
+func executeVerifyTagToken(ctx context.Context, apiBaseURL, projectID, token string, stdout, stderr io.Writer) int {
 	if apiBaseURL == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --api-url is required.")
 		return 1
 	}
+	if projectID == "" {
+		_, _ = fmt.Fprintln(stderr, "Error: --project-id is required.")
+		return 1
+	}
 	if token == "" {
-		_, _ = fmt.Fprintln(stdout, "Warning: TAG_PUSH_TOKEN unavailable in current pipeline context; skipping scope verification.")
+		_, _ = fmt.Fprintf(stdout, "Warning: %s is unavailable in the current pipeline context. Tag access verification is skipped.\n", config.TagPushTokenEnvName)
 		return 0
 	}
 
-	if err := gitlabapi.VerifyScope(apiBaseURL, token, requiredScope); err != nil {
+	fineGrainedToken, err := gitlabtoken.New(ctx, apiBaseURL, token)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "Error: failed to confirm that %s is a fine-grained personal access token: %v\n", config.TagPushTokenEnvName, err)
+		return 1
+	}
+
+	if err := gitlabapi.VerifyTagAccess(ctx, apiBaseURL, projectID, fineGrainedToken); err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
@@ -37,8 +48,8 @@ func executeVerifyTagToken(apiBaseURL, requiredScope, token string, stdout, stde
 
 func main() {
 	apiBaseURL := flag.String("api-url", "", "GitLab API root, e.g. https://gitlab.com/api/v4")
-	scope := flag.String("scope", "api", "token scope required by auto-tag")
+	projectID := flag.String("project-id", "", "numeric ID or URL-encoded path of the project, e.g. $CI_PROJECT_ID")
 	flag.Parse()
 
-	os.Exit(executeVerifyTagToken(*apiBaseURL, *scope, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeVerifyTagToken(context.Background(), *apiBaseURL, *projectID, os.Getenv(config.TagPushTokenEnvName), os.Stdout, os.Stderr))
 }

@@ -1,6 +1,8 @@
 package gitlabapi
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"ci-tools/internal/gitlabtoken"
+	"ci-tools/internal/testutil"
 )
 
 func TestCreateTag_Success(t *testing.T) {
@@ -25,7 +30,7 @@ func TestCreateTag_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "1.4.4", "abc123", "secret-token"); err != nil {
+	if err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.SecretGitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 
@@ -41,8 +46,8 @@ func TestCreateTag_Success(t *testing.T) {
 	if got := gotQuery.Get("ref"); got != "abc123" {
 		t.Errorf("ref = %q, want %q", got, "abc123")
 	}
-	if gotToken != "secret-token" {
-		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	if gotToken != testutil.SecretGitLabToken {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, testutil.SecretGitLabToken)
 	}
 }
 
@@ -55,7 +60,7 @@ func TestCreateTag_ProjectIDEscaped(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "group/project", "1.4.4", "abc123", "unused"); err != nil {
+	if err := CreateTag(context.Background(), server.URL, "group/project", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 
@@ -71,7 +76,7 @@ func TestCreateTag_ErrorStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
 		t.Fatal("CreateTag(...) succeeded unexpectedly; expected an error")
 	}
@@ -81,7 +86,7 @@ func TestCreateTag_ErrorStatus(t *testing.T) {
 }
 
 func TestCreateTag_UnreachableServer(t *testing.T) {
-	err := CreateTag("http://127.0.0.1:0", "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(context.Background(), "http://127.0.0.1:0", "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
 		t.Fatal("CreateTag(...) against an unreachable server succeeded unexpectedly; expected an error")
 	}
@@ -91,7 +96,7 @@ func TestCreateTag_UnreachableServer(t *testing.T) {
 }
 
 func TestCreateTag_InvalidAPIBaseURL(t *testing.T) {
-	err := CreateTag(fmt.Sprintf("http://%s", string([]byte{0x7f})), "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(context.Background(), fmt.Sprintf("http://%s", string([]byte{0x7f})), "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
 		t.Fatal("CreateTag(...) with a malformed API base URL succeeded unexpectedly; expected an error")
 	}
@@ -105,7 +110,7 @@ func TestCreateTag_NestedNamespaceProjectIDEscaped(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "group/subgroup/project", "1.4.4", "abc123", "unused"); err != nil {
+	if err := CreateTag(context.Background(), server.URL, "group/subgroup/project", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotPath != "/projects/group%2Fsubgroup%2Fproject/repository/tags" {
@@ -123,7 +128,7 @@ func TestCreateTag_TagNameWithSlashRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "release/1.0.0", "abc123", "unused"); err != nil {
+	if err := CreateTag(context.Background(), server.URL, "123", "release/1.0.0", "abc123", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotTagName != "release/1.0.0" {
@@ -141,7 +146,7 @@ func TestCreateTag_RefWithPlusCharacterRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "1.4.4", "feature+branch", "unused"); err != nil {
+	if err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "feature+branch", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotRef != "feature+branch" {
@@ -157,26 +162,11 @@ func TestCreateTag_TagNameWithUnicodeRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CreateTag(server.URL, "123", "版本-1.0.0", "abc123", "unused"); err != nil {
+	if err := CreateTag(context.Background(), server.URL, "123", "版本-1.0.0", "abc123", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 	if gotTagName != "版本-1.0.0" {
 		t.Errorf("tag_name = %q, want %q round-tripped exactly", gotTagName, "版本-1.0.0")
-	}
-}
-
-func TestCreateTag_TokenWithCRLF_HeaderInjectionRejected(t *testing.T) {
-	// CRLF sequences in header values enable HTTP response splitting and header injection.
-	// Ensure client-side transport validation drops malformed tokens before socket writes.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler invoked; want the request rejected client-side before it reaches the server")
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer server.Close()
-
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "token-with-\r\ninjected-header: evil")
-	if err == nil {
-		t.Fatal("CreateTag(...) with a CRLF-bearing token succeeded unexpectedly; want it rejected")
 	}
 }
 
@@ -188,7 +178,7 @@ func TestCreateTag_RequiresExactly201_Rejects200(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
 		t.Fatal("CreateTag(...) succeeded unexpectedly on a 200 OK response; want only 201 Created accepted")
 	}
@@ -203,7 +193,7 @@ func TestCreateTag_ErrorStatusWithEmptyBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := CreateTag(server.URL, "123", "1.4.4", "abc123", "unused")
+	err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
 		t.Fatal("CreateTag(...) succeeded unexpectedly against a 500 response; want an error")
 	}
@@ -225,137 +215,211 @@ func TestCreateTag_FollowsRedirect(t *testing.T) {
 	}))
 	defer redirector.Close()
 
-	if err := CreateTag(redirector.URL, "123", "1.4.4", "abc123", "unused"); err != nil {
+	if err := CreateTag(context.Background(), redirector.URL, "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error following a redirect: %v", err)
 	}
 }
 
-func TestVerifyScope_Success(t *testing.T) {
-	var gotPath, gotToken string
+func TestVerifyTagAccess_Success(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+	var gotQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
 		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
 		gotToken = r.Header.Get("PRIVATE-TOKEN")
-		_, _ = io.WriteString(w, `{"scopes":["api","read_api"],"active":true,"revoked":false}`)
+		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer server.Close()
 
-	if err := VerifyScope(server.URL, "secret-token", "api"); err != nil {
-		t.Fatalf("VerifyScope(...) returned an unexpected error: %v", err)
+	if err := VerifyTagAccess(context.Background(), server.URL, "123", testutil.NewStubToken(t, testutil.SecretGitLabToken)); err != nil {
+		t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 	}
-	if gotPath != "/personal_access_tokens/self" {
-		t.Errorf("request path = %q, want %q", gotPath, "/personal_access_tokens/self")
+	if gotMethod != http.MethodGet {
+		t.Errorf("request method = %q, want %q", gotMethod, http.MethodGet)
 	}
-	if gotToken != "secret-token" {
-		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, "secret-token")
+	if gotPath != "/projects/123/repository/tags" {
+		t.Errorf("request path = %q, want %q", gotPath, "/projects/123/repository/tags")
+	}
+	if got := gotQuery.Get("per_page"); got != "1" {
+		t.Errorf("per_page = %q, want %q", got, "1")
+	}
+	if gotToken != testutil.SecretGitLabToken {
+		t.Errorf("PRIVATE-TOKEN header = %q, want %q", gotToken, testutil.SecretGitLabToken)
 	}
 }
 
-func TestVerifyScope_MissingScope(t *testing.T) {
+func TestVerifyTagAccess_ProjectIDEscaped(t *testing.T) {
+	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"scopes":["write_repository"],"active":true,"revoked":false}`)
+		gotPath = r.URL.EscapedPath()
+		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer server.Close()
 
-	err := VerifyScope(server.URL, "unused", "api")
-	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly for a token missing the required scope")
+	if err := VerifyTagAccess(context.Background(), server.URL, "group/subgroup/project", testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
+		t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "do not include the required") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the missing scope", err.Error())
-	}
-}
-
-func TestVerifyScope_Revoked(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"scopes":["api"],"active":true,"revoked":true}`)
-	}))
-	defer server.Close()
-
-	err := VerifyScope(server.URL, "unused", "api")
-	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly for a revoked token")
-	}
-	if !strings.Contains(err.Error(), "revoked or inactive") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the revoked token", err.Error())
+	if gotPath != "/projects/group%2Fsubgroup%2Fproject/repository/tags" {
+		t.Errorf("request path = %q, want the project ID path-escaped", gotPath)
 	}
 }
 
-func TestVerifyScope_Inactive(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"scopes":["api"],"active":false,"revoked":false}`)
-	}))
-	defer server.Close()
-
-	err := VerifyScope(server.URL, "unused", "api")
-	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly for an inactive token")
-	}
-	if !strings.Contains(err.Error(), "revoked or inactive") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the inactive token", err.Error())
-	}
-}
-
-func TestVerifyScope_ErrorStatus(t *testing.T) {
+func TestVerifyTagAccess_Unauthorized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"message":"401 Unauthorized"}`)
 	}))
 	defer server.Close()
 
-	err := VerifyScope(server.URL, "unused", "api")
+	err := VerifyTagAccess(context.Background(), server.URL, "123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly on a 401 response")
+		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 401 response")
 	}
-	if !strings.Contains(err.Error(), "status 401") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the status code", err.Error())
+	if !strings.Contains(err.Error(), "status 401") || !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to report status 401 as an invalid or revoked token", err.Error())
 	}
 }
 
-func TestVerifyScope_MalformedJSON(t *testing.T) {
+func TestVerifyTagAccess_Forbidden(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `not json`)
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"message":"403 Forbidden"}`)
 	}))
 	defer server.Close()
 
-	err := VerifyScope(server.URL, "unused", "api")
+	err := VerifyTagAccess(context.Background(), server.URL, "123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
-		t.Fatal("VerifyScope(...) succeeded unexpectedly on a malformed response body")
+		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 403 response")
 	}
-	if !strings.Contains(err.Error(), "failed to parse token introspection response") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the parse failure", err.Error())
+	if !strings.Contains(err.Error(), "status 403") || !strings.Contains(err.Error(), "Repository Tag") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to report status 403 with the required permissions", err.Error())
+	}
+	if strings.Contains(err.Error(), "api scope") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want no legacy api scope in the required permissions", err.Error())
 	}
 }
 
-func TestVerifyScope_UnreachableServer(t *testing.T) {
-	err := VerifyScope("http://127.0.0.1:0", "unused", "api")
+func TestVerifyTagAccess_ErrorStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"404 Project Not Found"}`)
+	}))
+	defer server.Close()
+
+	err := VerifyTagAccess(context.Background(), server.URL, "123", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
-		t.Fatal("VerifyScope(...) against an unreachable server succeeded unexpectedly")
+		t.Fatal("VerifyTagAccess(...) succeeded unexpectedly on a 404 response")
+	}
+	if !strings.Contains(err.Error(), "status 404") || !strings.Contains(err.Error(), "Project Not Found") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to mention the status code and response body", err.Error())
+	}
+}
+
+func TestVerifyTagAccess_UnreachableServer(t *testing.T) {
+	err := VerifyTagAccess(context.Background(), "http://127.0.0.1:0", "123", testutil.NewStubToken(t, testutil.GitLabToken))
+	if err == nil {
+		t.Fatal("VerifyTagAccess(...) against an unreachable server succeeded unexpectedly")
 	}
 	if !strings.Contains(err.Error(), "failed to reach GitLab API") {
-		t.Errorf("VerifyScope(...) error = %q, want it to mention the unreachable API", err.Error())
+		t.Errorf("VerifyTagAccess(...) error = %q, want it to mention the unreachable API", err.Error())
 	}
 }
 
-func TestCreateTag_EmptyToken(t *testing.T) {
-	var gotToken string
-	var gotHeaderPresent bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotToken = r.Header.Get("PRIVATE-TOKEN")
-		_, gotHeaderPresent = r.Header["Private-Token"]
-		w.WriteHeader(http.StatusCreated)
+// newRequestCountingServer answers every request with status and counts the requests.
+func newRequestCountingServer(t *testing.T, status int, requests *atomic.Int32) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(status)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server
+}
 
-	// Client-side token validation is omitted to delegate credential authorization
-	// exclusively to the remote API gateway via standard 401 Unauthorized responses.
-	if err := CreateTag(server.URL, "123", "1.4.4", "abc123", ""); err != nil {
-		t.Fatalf("CreateTag(...) returned an unexpected error for an empty token: %v", err)
+// Another package can write the zero FineGrainedToken without New. The zero token MUST fail before any request.
+func TestCreateTag_ZeroTokenRejectedWithoutRequest(t *testing.T) {
+	var requests atomic.Int32
+	server := newRequestCountingServer(t, http.StatusCreated, &requests)
+
+	err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", gitlabtoken.FineGrainedToken{})
+	if err == nil {
+		t.Fatal("CreateTag(...) accepted the zero FineGrainedToken")
 	}
-	if !gotHeaderPresent {
-		t.Error("PRIVATE-TOKEN header absent from the request; want it present (empty) even for an empty token")
+	if !errors.Is(err, gitlabtoken.ErrEmptyToken) {
+		t.Errorf("CreateTag(...) error = %v, want it to wrap gitlabtoken.ErrEmptyToken", err)
 	}
-	if gotToken != "" {
-		t.Errorf("PRIVATE-TOKEN header = %q, want empty", gotToken)
+	if got := requests.Load(); got != 0 {
+		t.Errorf("server received %d requests, want 0", got)
+	}
+}
+
+func TestVerifyTagAccess_ZeroTokenRejectedWithoutRequest(t *testing.T) {
+	var requests atomic.Int32
+	server := newRequestCountingServer(t, http.StatusOK, &requests)
+
+	err := VerifyTagAccess(context.Background(), server.URL, "123", gitlabtoken.FineGrainedToken{})
+	if err == nil {
+		t.Fatal("VerifyTagAccess(...) accepted the zero FineGrainedToken")
+	}
+	if !errors.Is(err, gitlabtoken.ErrEmptyToken) {
+		t.Errorf("VerifyTagAccess(...) error = %v, want it to wrap gitlabtoken.ErrEmptyToken", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("server received %d requests, want 0", got)
+	}
+}
+
+// Draining an unparsed response body lets the next request reuse the TCP connection.
+func TestCreateTag_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
+	server, connections := testutil.NewConnectionCountingServer(t, http.StatusCreated, `{"name":"1.4.4"}`)
+	token := testutil.NewStubToken(t, testutil.GitLabToken)
+
+	for range 2 {
+		if err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", token); err != nil {
+			t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
+		}
+	}
+	if got := connections.Load(); got != 1 {
+		t.Errorf("server accepted %d connections, want 1 reused connection", got)
+	}
+}
+
+func TestVerifyTagAccess_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
+	server, connections := testutil.NewConnectionCountingServer(t, http.StatusOK, `[{"name":"1.4.4"}]`)
+	token := testutil.NewStubToken(t, testutil.GitLabToken)
+
+	for range 2 {
+		if err := VerifyTagAccess(context.Background(), server.URL, "123", token); err != nil {
+			t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
+		}
+	}
+	if got := connections.Load(); got != 1 {
+		t.Errorf("server accepted %d connections, want 1 reused connection", got)
+	}
+}
+
+func TestCreateTag_CanceledContextRejected(t *testing.T) {
+	var requests atomic.Int32
+	server := newRequestCountingServer(t, http.StatusCreated, &requests)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := CreateTag(ctx, server.URL, "123", "1.4.4", "abc123", testutil.NewStubToken(t, testutil.GitLabToken))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("CreateTag(...) error = %v, want it to wrap context.Canceled", err)
+	}
+}
+
+func TestVerifyTagAccess_CanceledContextRejected(t *testing.T) {
+	var requests atomic.Int32
+	server := newRequestCountingServer(t, http.StatusOK, &requests)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := VerifyTagAccess(ctx, server.URL, "123", testutil.NewStubToken(t, testutil.GitLabToken))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("VerifyTagAccess(...) error = %v, want it to wrap context.Canceled", err)
 	}
 }
 
@@ -381,18 +445,18 @@ func TestCreateTag_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
 
-	_ = CreateTag(redirector.URL, "1", "1.0.0", "abc", "secret-token")
+	_ = CreateTag(context.Background(), redirector.URL, "1", "1.0.0", "abc", testutil.NewStubToken(t, testutil.SecretGitLabToken))
 
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
 	}
 }
 
-func TestVerifyScope_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
+func TestVerifyTagAccess_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
 
-	_ = VerifyScope(redirector.URL, "secret-token", "api")
+	_ = VerifyTagAccess(context.Background(), redirector.URL, "1", testutil.NewStubToken(t, testutil.SecretGitLabToken))
 
 	if got, _ := leaked.Load().(string); got != "" {
 		t.Errorf("redirect target received PRIVATE-TOKEN %q", got)
@@ -407,7 +471,7 @@ func TestCreateTag_TrailingSlashApiURLDoesNotProduceEmptyPathSegment(t *testing.
 	}))
 	t.Cleanup(server.Close)
 
-	_ = CreateTag(server.URL+"/api/v4/", "1", "1.0.0", "abc", "token")
+	_ = CreateTag(context.Background(), server.URL+"/api/v4/", "1", "1.0.0", "abc", testutil.NewStubToken(t, testutil.GitLabToken))
 
 	if path, _ := gotPath.Load().(string); strings.Contains(path, "//") {
 		t.Errorf("request path %q contains an empty segment", path)
@@ -429,6 +493,7 @@ func TestCreateTag_ConflictingWriterReceivesError(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
+	token := testutil.NewStubToken(t, testutil.GitLabToken)
 	results := make([]error, writers)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -437,7 +502,7 @@ func TestCreateTag_ConflictingWriterReceivesError(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			results[i] = CreateTag(server.URL, "1", "1.0.0", "abc", "token")
+			results[i] = CreateTag(context.Background(), server.URL, "1", "1.0.0", "abc", token)
 		}(i)
 	}
 	close(start)
@@ -480,7 +545,7 @@ func TestCreateTag_ParameterEscapingBoundaries(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			if err := CreateTag(server.URL, "1", tc.tag, tc.ref, "token"); err != nil {
+			if err := CreateTag(context.Background(), server.URL, "1", tc.tag, tc.ref, testutil.NewStubToken(t, testutil.GitLabToken)); err != nil {
 				t.Fatalf("CreateTag returned an unexpected error: %v", err)
 			}
 			if got, _ := gotTag.Load().(string); got != tc.tag {
@@ -500,7 +565,7 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	err := CreateTag(server.URL, "1", "1.0.0", "abc", "token")
+	err := CreateTag(context.Background(), server.URL, "1", "1.0.0", "abc", testutil.NewStubToken(t, testutil.GitLabToken))
 	if err == nil {
 		t.Fatal("CreateTag succeeded unexpectedly")
 	}
@@ -509,41 +574,39 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 	}
 }
 
-func TestVerifyScope_ScopeListBoundaries(t *testing.T) {
+// Only 200 proves tag read access. A 201 or 204 from an intermediary MUST NOT pass as a read.
+func TestVerifyTagAccess_StatusBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
-		body    string
+		status  int
 		wantErr bool
 	}{
-		{name: "scope present", body: `{"scopes":["api"],"active":true,"revoked":false}`},
-		{name: "scope among many", body: `{"scopes":["read_api","api","read_user"],"active":true}`},
-		{name: "scope case differs", body: `{"scopes":["API"],"active":true}`, wantErr: true},
-		{name: "scope with padding", body: `{"scopes":[" api"],"active":true}`, wantErr: true},
-		{name: "empty scopes", body: `{"scopes":[],"active":true}`, wantErr: true},
-		{name: "null scopes", body: `{"scopes":null,"active":true}`, wantErr: true},
-		{name: "missing scopes", body: `{"active":true}`, wantErr: true},
-		{name: "inactive", body: `{"scopes":["api"],"active":false}`, wantErr: true},
-		{name: "missing active", body: `{"scopes":["api"]}`, wantErr: true},
-		{name: "revoked and active", body: `{"scopes":["api"],"active":true,"revoked":true}`, wantErr: true},
-		{name: "scopes as string", body: `{"scopes":"api","active":true}`, wantErr: true},
-		{name: "trailing garbage after object", body: `{"scopes":["api"],"active":true} garbage`},
-		{name: "empty body", body: ``, wantErr: true},
-		{name: "array body", body: `[]`, wantErr: true},
+		{name: "ok", status: http.StatusOK},
+		{name: "created", status: http.StatusCreated, wantErr: true},
+		{name: "no content", status: http.StatusNoContent, wantErr: true},
+		{name: "unauthorized", status: http.StatusUnauthorized, wantErr: true},
+		{name: "forbidden", status: http.StatusForbidden, wantErr: true},
+		{name: "not found", status: http.StatusNotFound, wantErr: true},
+		{name: "too many requests", status: http.StatusTooManyRequests, wantErr: true},
+		{name: "internal server error", status: http.StatusInternalServerError, wantErr: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = fmt.Fprint(w, tc.body)
+				w.WriteHeader(tc.status)
 			}))
 			t.Cleanup(server.Close)
 
-			err := VerifyScope(server.URL, "token", "api")
+			err := VerifyTagAccess(context.Background(), server.URL, "1", testutil.NewStubToken(t, testutil.GitLabToken))
 			if tc.wantErr && err == nil {
-				t.Error("VerifyScope succeeded unexpectedly")
+				t.Error("VerifyTagAccess succeeded unexpectedly")
 			}
 			if !tc.wantErr && err != nil {
-				t.Errorf("VerifyScope returned an unexpected error: %v", err)
+				t.Errorf("VerifyTagAccess returned an unexpected error: %v", err)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), fmt.Sprintf("status %d", tc.status)) {
+				t.Errorf("VerifyTagAccess error = %q, want it to report status %d", err.Error(), tc.status)
 			}
 		})
 	}

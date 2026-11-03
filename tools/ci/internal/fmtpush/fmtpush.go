@@ -12,6 +12,9 @@ import (
 	"ci-tools/internal/gitremote"
 )
 
+// JobTokenUsername is the HTTP basic auth username which GitLab pairs with CI_JOB_TOKEN.
+const JobTokenUsername = "gitlab-ci-token"
+
 // DetectWorktreeModifications reports whether the repository working tree contains
 // modifications or untracked files relative to the index and HEAD.
 func DetectWorktreeModifications(repoPath string) (bool, error) {

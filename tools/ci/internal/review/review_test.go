@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"ci-tools/internal/gitlab"
+	"ci-tools/internal/testutil"
 )
 
 var errBoom = errors.New("boom")
@@ -457,7 +458,7 @@ func TestReviewer_Execute_NoChanges_ReturnsNilWithoutCallingLLM(t *testing.T) {
 		`[]`,
 	)
 	llm := &fakeLLM{name: "Test"}
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), llm)
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), llm)
 
 	if err := reviewer.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -472,7 +473,7 @@ func TestReviewer_Execute_MissingDiffRefs(t *testing.T) {
 		`{"title":"feat: x","description":"","diff_refs":{"base_sha":"","start_sha":"","head_sha":""}}`,
 		`[{"new_path":"main.go","old_path":"main.go","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test"})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test"})
 
 	err := reviewer.Execute()
 	if err == nil {
@@ -489,7 +490,7 @@ func TestReviewer_Execute_AllFilesFilteredOut(t *testing.T) {
 		`[{"new_path":"go.sum","old_path":"go.sum","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
 	llm := &fakeLLM{name: "Test"}
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), llm)
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), llm)
 
 	if err := reviewer.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -504,7 +505,7 @@ func TestReviewer_Execute_LLMCallFails(t *testing.T) {
 		`{"title":"feat: x","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`,
 		`[{"new_path":"main.go","old_path":"main.go","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", err: errBoom})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test", err: errBoom})
 
 	err := reviewer.Execute()
 	if err == nil {
@@ -520,7 +521,7 @@ func TestReviewer_Execute_MalformedLLMResponse(t *testing.T) {
 		`{"title":"feat: x","description":"","diff_refs":{"base_sha":"b","start_sha":"s","head_sha":"h"}}`,
 		`[{"new_path":"main.go","old_path":"main.go","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", response: "not json"})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test", response: "not json"})
 
 	if err := reviewer.Execute(); err == nil {
 		t.Fatal("Run() succeeded unexpectedly on an unparseable LLM response; want an error")
@@ -533,7 +534,7 @@ func TestReviewer_Execute_SecurityFindingAppliesLabel(t *testing.T) {
 		`[{"new_path":"main.go","old_path":"main.go","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
 	response := `[{"file":"main.go","start_line":1,"end_line":1,"description":"sql injection","security":true}]`
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", response: response})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test", response: response})
 
 	if err := reviewer.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -557,7 +558,7 @@ func TestReviewer_Execute_UnknownFileFallsBackToNote(t *testing.T) {
 	// Findings referencing files absent from MR diff metadata MUST fallback to general discussion notes
 	// to avoid GitLab API position validation errors.
 	response := `[{"file":"other.go","start_line":1,"end_line":1,"description":"issue"}]`
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", response: response})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test", response: response})
 
 	if err := reviewer.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -588,7 +589,7 @@ func TestReviewer_Execute_RenameOnlyFile_CommentFallsBackToNote(t *testing.T) {
 		`[{"new_path":"new_name.go","old_path":"old_name.go","diff":"`+renameDiff+`"}]`,
 	)
 	response := `[{"file":"new_name.go","start_line":1,"end_line":1,"description":"consider the new name"}]`
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", response: response})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test", response: response})
 
 	if err := reviewer.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -616,7 +617,7 @@ func TestReviewer_Execute_MissingStartLine_CommentSkipped(t *testing.T) {
 		`[{"new_path":"main.go","old_path":"main.go","diff":"@@ -1,1 +1,1 @@\n+x\n"}]`,
 	)
 	response := `[{"file":"main.go","description":"no line info"}]`
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test", response: response})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test", response: response})
 
 	if err := reviewer.Execute(); err != nil {
 		t.Fatalf("Run() returned an unexpected error: %v", err)
@@ -631,7 +632,7 @@ func TestReviewer_Execute_MissingStartLine_CommentSkipped(t *testing.T) {
 func TestReviewer_Execute_MaxDescriptionCharsInvalid_FailsBeforeFetch(t *testing.T) {
 	t.Setenv("MAX_DESCRIPTION_CHARS", "not-a-number")
 	server, calls := newTestGitLabServer(t, `{}`, `[]`)
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test"})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test"})
 
 	if err := reviewer.Execute(); err == nil {
 		t.Fatal("Run() succeeded unexpectedly with an invalid MAX_DESCRIPTION_CHARS; want an error")
@@ -646,7 +647,7 @@ func TestReviewer_Execute_GitLabFetchFails(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)
-	reviewer := New(gitlab.New(server.URL, "1", "2", "token"), &fakeLLM{name: "Test"})
+	reviewer := New(gitlab.New(server.URL, "1", "2", testutil.NewStubToken(t, testutil.GitLabToken)), &fakeLLM{name: "Test"})
 
 	err := reviewer.Execute()
 	if err == nil {

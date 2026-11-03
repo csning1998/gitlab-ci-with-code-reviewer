@@ -8,7 +8,13 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"ci-tools/internal/config"
+	"ci-tools/internal/testutil"
 )
+
+// fallbackToken identifies the Gemini variable when the Claude variable is empty.
+const fallbackToken = "gemini-only-token"
 
 func executeMRGateSubprocess(t *testing.T, extraEnv ...string) (exitCode int, stdout, stderr string) {
 	t.Helper()
@@ -18,7 +24,7 @@ func executeMRGateSubprocess(t *testing.T, extraEnv ...string) (exitCode int, st
 		"CI_API_V4_URL=https://gitlab.example.com/api/v4",
 		"CI_PROJECT_ID=1",
 		"CI_MERGE_REQUEST_IID=2",
-		"CLAUDE_MR_REVIEWER=mock-gitlab-token",
+		config.ClaudeReviewTokenEnvName + "=" + testutil.GitLabToken,
 	}
 	cmd.Env = append(os.Environ(), append(baseEnv, extraEnv...)...)
 	var outBuf, errBuf bytes.Buffer
@@ -44,12 +50,27 @@ func TestMRGateSubprocessHelper(t *testing.T) {
 }
 
 func TestMRGate_MissingTokens_ExitsNonzero(t *testing.T) {
-	code, _, stderr := executeMRGateSubprocess(t, "CLAUDE_MR_REVIEWER=", "GEMINI_MR_REVIEWER=")
+	code, _, stderr := executeMRGateSubprocess(t, config.ClaudeReviewTokenEnvName+"=", config.GeminiReviewTokenEnvName+"=")
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr, "need CLAUDE_MR_REVIEWER or GEMINI_MR_REVIEWER") {
+	if !strings.Contains(stderr, "need "+config.ClaudeReviewTokenEnvName+" or "+config.GeminiReviewTokenEnvName) {
 		t.Errorf("stderr = %q, want mention of required tokens", stderr)
+	}
+}
+
+func TestMRGate_LegacyTokenRejectedBeforeMRRequest(t *testing.T) {
+	server, mrRequests := testutil.NewLegacyTokenServer(t)
+
+	code, _, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "legacy scopes") {
+		t.Errorf("stderr = %q, want it to report the prohibited legacy scopes", stderr)
+	}
+	if got := mrRequests.Load(); got != 0 {
+		t.Errorf("server received %d merge request API calls, want 0", got)
 	}
 }
 
@@ -58,15 +79,15 @@ func TestMRGate_InvalidRuneLimit_ExitsNonzero(t *testing.T) {
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr, "Error:") {
-		t.Errorf("stderr = %q, want mention of Error", stderr)
+	if !strings.Contains(stderr, "MAX_DESCRIPTION_CHARS") {
+		t.Errorf("stderr = %q, want the invalid MAX_DESCRIPTION_CHARS named", stderr)
 	}
 }
 
 func TestMRGate_FetchDescriptionFails_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL)
@@ -79,10 +100,10 @@ func TestMRGate_FetchDescriptionFails_ExitsNonzero(t *testing.T) {
 }
 
 func TestMRGate_DescriptionExceedsLimit_ExitsNonzero(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"description":"` + strings.Repeat("x", 100) + `"}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, _, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL, "MAX_DESCRIPTION_CHARS=50")
@@ -95,10 +116,10 @@ func TestMRGate_DescriptionExceedsLimit_ExitsNonzero(t *testing.T) {
 }
 
 func TestMRGate_DescriptionWithinLimit_Succeeds(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"description":"short valid description"}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, stdout, stderr := executeMRGateSubprocess(t, "CI_API_V4_URL="+server.URL, "MAX_DESCRIPTION_CHARS=500")
@@ -111,20 +132,20 @@ func TestMRGate_DescriptionWithinLimit_Succeeds(t *testing.T) {
 }
 
 func TestMRGate_FallbackToGeminiToken_Succeeds(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("PRIVATE-TOKEN") != "gemini-only-token" {
+	server := httptest.NewServer(testutil.HandleFineGrainedSelf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("PRIVATE-TOKEN") != fallbackToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"description":"valid"}`))
-	}))
+	})))
 	t.Cleanup(server.Close)
 
 	code, stdout, stderr := executeMRGateSubprocess(t,
 		"CI_API_V4_URL="+server.URL,
-		"CLAUDE_MR_REVIEWER=",
-		"GEMINI_MR_REVIEWER=gemini-only-token",
+		config.ClaudeReviewTokenEnvName+"=",
+		config.GeminiReviewTokenEnvName+"="+fallbackToken,
 	)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)

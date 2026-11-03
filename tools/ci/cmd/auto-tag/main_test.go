@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,20 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	ciconfig "ci-tools/internal/config"
+	"ci-tools/internal/testutil"
+)
+
+const (
+	testProjectID           = "123"
+	unreachableAPIURL       = "https://example.invalid/api/v4"
+	subprocessEnvName       = "BE_AUTO_TAG"
+	missingTokenEnvName     = "BE_AUTO_TAG_MISSING_TOKEN"
+	subprocessRepoEnvName   = "TEST_REPO_DIR"
+	subprocessConfigEnvName = "TEST_CONFIG_PATH"
+	subprocessSHAEnvName    = "TEST_SHA"
+	subprocessAPIURLEnvName = "TEST_API_URL"
 )
 
 // tagRequest records parameters captured from a single POST /projects/:id/repository/tags API call.
@@ -28,17 +43,35 @@ type tagRequest struct {
 }
 
 // tagAPIServer implements a mock GitLab tag creation endpoint that logs requests and returns a fixed status code.
+// The server answers /personal_access_tokens/self without recording the request as a tag request.
 type tagAPIServer struct {
 	*httptest.Server
-	mu       sync.Mutex
-	requests []tagRequest
-	status   int
+	mu           sync.Mutex
+	requests     []tagRequest
+	status       int
+	selfStatus   int
+	selfBody     string
+	selfRequests int
 }
 
+// newTagAPIServer answers the self endpoint as a fine-grained token lacking Personal Access Token Read.
 func newTagAPIServer(t *testing.T, status int) *tagAPIServer {
 	t.Helper()
-	s := &tagAPIServer{status: status}
+	return newTagAPIServerWithSelf(t, status, http.StatusForbidden, testutil.InsufficientGranularScopeBody)
+}
+
+func newTagAPIServerWithSelf(t *testing.T, status, selfStatus int, selfBody string) *tagAPIServer {
+	t.Helper()
+	s := &tagAPIServer{status: status, selfStatus: selfStatus, selfBody: selfBody}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/personal_access_tokens/self" {
+			s.mu.Lock()
+			s.selfRequests++
+			s.mu.Unlock()
+			w.WriteHeader(s.selfStatus)
+			_, _ = io.WriteString(w, s.selfBody)
+			return
+		}
 		s.mu.Lock()
 		s.requests = append(s.requests, tagRequest{
 			projectPath: r.URL.Path,
@@ -59,6 +92,12 @@ func (s *tagAPIServer) recorded() []tagRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]tagRequest(nil), s.requests...)
+}
+
+func (s *tagAPIServer) countSelfRequests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.selfRequests
 }
 
 func assertTagCreated(t *testing.T, s *tagAPIServer, tagName, wantRef string) {
@@ -99,16 +138,16 @@ func TestExecuteAutoTag_MissingArguments(t *testing.T) {
 		password   string
 		wantErr    string
 	}{
-		{"missing sha", "", "https://example.invalid/api/v4", "123", "token", "--sha, --api-url, and --project-id are required"},
-		{"missing api-url", "abc", "", "123", "token", "--sha, --api-url, and --project-id are required"},
-		{"missing project-id", "abc", "https://example.invalid/api/v4", "", "token", "--sha, --api-url, and --project-id are required"},
-		{"missing password", "abc", "https://example.invalid/api/v4", "123", "", "TAG_PUSH_TOKEN must be set"},
+		{"missing sha", "", unreachableAPIURL, testProjectID, testutil.GitLabToken, "--sha, --api-url, and --project-id are required"},
+		{"missing api-url", "abc", "", testProjectID, testutil.GitLabToken, "--sha, --api-url, and --project-id are required"},
+		{"missing project-id", "abc", unreachableAPIURL, "", testutil.GitLabToken, "--sha, --api-url, and --project-id are required"},
+		{"missing password", "abc", unreachableAPIURL, testProjectID, "", ciconfig.TagPushTokenEnvName + " must be set"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var stderr bytes.Buffer
-			code := executeAutoTag(".", ".gitlab/versioning.yml", c.sha, c.apiBaseURL, c.projectID, c.password, io.Discard, &stderr)
+			code := executeAutoTag(context.Background(), ".", ".gitlab/versioning.yml", c.sha, c.apiBaseURL, c.projectID, c.password, io.Discard, &stderr)
 			if code != 1 {
 				t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 			}
@@ -125,7 +164,7 @@ func TestExecuteAutoTag_MissingConfig_AppliesWholeRepositoryDefaults(t *testing.
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, missingConfig, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, missingConfig, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -144,7 +183,7 @@ modules:
 `)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, malformedConfig, sha, "https://example.invalid/api/v4", "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, malformedConfig, sha, unreachableAPIURL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -161,7 +200,7 @@ modules:
 `)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(t.TempDir(), config, "abc123", "https://example.invalid/api/v4", "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), t.TempDir(), config, "abc123", unreachableAPIURL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -222,7 +261,7 @@ modules:
 			server := newTagAPIServer(t, http.StatusCreated)
 
 			var stdout, stderr bytes.Buffer
-			code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+			code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 			if code != 0 {
 				t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 			}
@@ -262,7 +301,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -282,7 +321,7 @@ modules:
 	nonExistentSHA := strings.Repeat("f", 40)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, nonExistentSHA, server.URL, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, nonExistentSHA, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -304,7 +343,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -334,7 +373,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -368,7 +407,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -401,7 +440,7 @@ modules:
 		sha := commitFiles(t, repo, step.files, step.message)
 
 		var stdout, stderr bytes.Buffer
-		code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+		code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 		if code != 0 {
 			t.Fatalf("executeAutoTag(%q) code = %d, want 0, stderr = %q", step.message, code, stderr.String())
 		}
@@ -419,7 +458,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusBadRequest)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -447,7 +486,7 @@ modules:
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0 (a local mirror failure must not fail the job), stderr = %q", code, stderr.String())
 	}
@@ -470,7 +509,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -492,7 +531,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -514,7 +553,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusBadRequest)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -533,7 +572,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, sha, server.URL, "group/subgroup/project", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, "group/subgroup/project", testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -557,7 +596,7 @@ modules:
 	unreachableAPI := "http://127.0.0.1:1"
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, unreachableAPI, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, unreachableAPI, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -586,7 +625,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -601,7 +640,7 @@ func TestExecuteAutoTag_ConfigPathIsDirectory_DoesNotApplyDefaults(t *testing.T)
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, t.TempDir(), sha, server.URL, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, t.TempDir(), sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1 (a directory is not a missing config file)", code)
 	}
@@ -617,7 +656,7 @@ func TestExecuteAutoTag_InvalidYAML_DoesNotApplyDefaults(t *testing.T) {
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, malformedConfig, sha, server.URL, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, malformedConfig, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -633,7 +672,7 @@ func TestExecuteAutoTag_EmptyModules_Fails(t *testing.T) {
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, emptyModules, sha, server.URL, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, emptyModules, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -651,7 +690,7 @@ func TestExecuteAutoTag_MissingConfig_NonRootCommitTagsWholeRepository(t *testin
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout, stderr bytes.Buffer
-	code := executeAutoTag(repoDir, missingConfig, sha, server.URL, "123", "token-value", &stdout, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, missingConfig, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -664,6 +703,53 @@ func TestExecuteAutoTag_MissingConfig_NonRootCommitTagsWholeRepository(t *testin
 	assertTagCreated(t, server, "0.1.0", sha)
 }
 
+func TestExecuteAutoTag_LegacyTokenRejectedBeforeTagCreation(t *testing.T) {
+	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
+	config := writeConfig(t, `
+modules:
+  - name: ""
+    dir: "."
+`)
+	server := newTagAPIServerWithSelf(t, http.StatusCreated, http.StatusOK, `{"active":true,"scopes":["api"]}`)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
+	if code != 1 {
+		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "legacy scopes") {
+		t.Errorf("executeAutoTag(...) stderr = %q, want it to report the prohibited legacy scopes", stderr.String())
+	}
+	assertNoTagsCreated(t, server)
+}
+
+// The self endpoint answers one request per run because every module shares one token.
+func TestExecuteAutoTag_MultiModule_ChecksTokenOnce(t *testing.T) {
+	repoDir, repo := initRepo(t)
+	commitFiles(t, repo, map[string]string{"a/a.txt": "1\n", "b/b.txt": "1\n"}, "chore: init")
+	sha := commitFiles(t, repo, map[string]string{"a/a.txt": "2\n", "b/b.txt": "2\n"}, "feat: both")
+	config := writeConfig(t, `
+modules:
+  - name: a
+    dir: a
+  - name: b
+    dir: b
+`)
+	server := newTagAPIServer(t, http.StatusCreated)
+
+	var stderr bytes.Buffer
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
+	if code != 0 {
+		t.Fatalf("executeAutoTag(...) code = %d, want 0, stderr = %q", code, stderr.String())
+	}
+	if got := server.countSelfRequests(); got != 1 {
+		t.Errorf("self endpoint received %d requests, want 1", got)
+	}
+	if got := len(server.recorded()); got != 2 {
+		t.Errorf("recorded %d tag creation requests, want 2", got)
+	}
+}
+
 func TestExecuteAutoTag_SendsPrivateTokenAndPOST(t *testing.T) {
 	repoDir, sha := setupRepo(t, map[string]string{"README.md": "test\n"}, "feat: initial release")
 	config := writeConfig(t, `
@@ -672,9 +758,9 @@ modules:
     dir: "."
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
-	const token = "glpat-auto-tag-token"
+	const token = testutil.SecretGitLabToken
 
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", token, io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, token, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -699,7 +785,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -716,7 +802,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -741,7 +827,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -767,7 +853,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -802,7 +888,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, sha.String(), server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, sha.String(), server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -821,7 +907,7 @@ modules:
 `)
 	server := newTagAPIServer(t, http.StatusCreated)
 
-	code := executeAutoTag(repoDir, config, secondSHA, server.URL, "123", "unused", io.Discard, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, secondSHA, server.URL, testProjectID, testutil.GitLabToken, io.Discard, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -838,7 +924,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusOK)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1 (tag creation requires HTTP 201)", code)
 	}
@@ -857,7 +943,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stderr bytes.Buffer
-	code := executeAutoTag(repoDir, config, "   ", server.URL, "123", "unused", io.Discard, &stderr)
+	code := executeAutoTag(context.Background(), repoDir, config, "   ", server.URL, testProjectID, testutil.GitLabToken, io.Discard, &stderr)
 	if code != 1 {
 		t.Errorf("executeAutoTag(...) code = %d, want 1", code)
 	}
@@ -877,7 +963,7 @@ modules:
 	server := newTagAPIServer(t, http.StatusCreated)
 
 	var stdout bytes.Buffer
-	code := executeAutoTag(repoDir, config, sha, server.URL, "123", "unused", &stdout, io.Discard)
+	code := executeAutoTag(context.Background(), repoDir, config, sha, server.URL, testProjectID, testutil.GitLabToken, &stdout, io.Discard)
 	if code != 0 {
 		t.Fatalf("executeAutoTag(...) code = %d, want 0", code)
 	}
@@ -992,29 +1078,29 @@ func TestResolveFirstParentSHA_InvalidSHA(t *testing.T) {
 }
 
 func TestMainSubprocess_MissingToken_ExitsOne(t *testing.T) {
-	if os.Getenv("BE_AUTO_TAG_MISSING_TOKEN") == "1" {
+	if os.Getenv(missingTokenEnvName) == "1" {
 		os.Args = []string{
 			"auto-tag",
 			"--sha=abc",
-			"--api-url=http://example.invalid",
-			"--project-id=123",
+			"--api-url=" + unreachableAPIURL,
+			"--project-id=" + testProjectID,
 		}
 		main()
 		return
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestMainSubprocess_MissingToken_ExitsOne$")
-	cmd.Env = append(envWithout(os.Environ(), "TAG_PUSH_TOKEN"), "BE_AUTO_TAG_MISSING_TOKEN=1")
+	cmd.Env = append(envWithout(os.Environ(), ciconfig.TagPushTokenEnvName), missingTokenEnvName+"=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err == nil {
-		t.Fatal("subprocess exited 0; want exit 1 when TAG_PUSH_TOKEN is unset")
+		t.Fatalf("subprocess exited 0; want exit 1 when %s is unset", ciconfig.TagPushTokenEnvName)
 	}
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 		t.Fatalf("subprocess error = %v, want exit code 1", err)
 	}
-	if !strings.Contains(stderr.String(), "TAG_PUSH_TOKEN must be set") {
+	if !strings.Contains(stderr.String(), ciconfig.TagPushTokenEnvName+" must be set") {
 		t.Errorf("subprocess stderr = %q, want the missing-token error", stderr.String())
 	}
 }
@@ -1103,14 +1189,14 @@ func envWithout(env []string, key string) []string {
 
 // TestMainSubprocess executes main in a child process to isolate os.Exit calls.
 func TestMainSubprocess(t *testing.T) {
-	if os.Getenv("BE_AUTO_TAG") == "1" {
+	if os.Getenv(subprocessEnvName) == "1" {
 		os.Args = []string{
 			"auto-tag",
-			"--repo=" + os.Getenv("TEST_REPO_DIR"),
-			"--config=" + os.Getenv("TEST_CONFIG_PATH"),
-			"--sha=" + os.Getenv("TEST_SHA"),
-			"--api-url=" + os.Getenv("TEST_API_URL"),
-			"--project-id=123",
+			"--repo=" + os.Getenv(subprocessRepoEnvName),
+			"--config=" + os.Getenv(subprocessConfigEnvName),
+			"--sha=" + os.Getenv(subprocessSHAEnvName),
+			"--api-url=" + os.Getenv(subprocessAPIURLEnvName),
+			"--project-id=" + testProjectID,
 		}
 		main()
 		return
@@ -1126,12 +1212,12 @@ modules:
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestMainSubprocess$")
 	cmd.Env = append(os.Environ(),
-		"BE_AUTO_TAG=1",
-		"TAG_PUSH_TOKEN=unused",
-		"TEST_REPO_DIR="+repoDir,
-		"TEST_CONFIG_PATH="+config,
-		"TEST_SHA="+sha,
-		"TEST_API_URL="+server.URL,
+		subprocessEnvName+"=1",
+		ciconfig.TagPushTokenEnvName+"="+testutil.GitLabToken,
+		subprocessRepoEnvName+"="+repoDir,
+		subprocessConfigEnvName+"="+config,
+		subprocessSHAEnvName+"="+sha,
+		subprocessAPIURLEnvName+"="+server.URL,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

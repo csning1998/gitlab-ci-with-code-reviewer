@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	ciconfig "ci-tools/internal/config"
 	"ci-tools/internal/gitlabapi"
+	"ci-tools/internal/gitlabtoken"
 	"ci-tools/internal/gittag"
 	"ci-tools/internal/semver"
 	"ci-tools/internal/versiontag"
@@ -44,13 +47,13 @@ func resolveFirstParentSHA(repo *git.Repository, sha string) (string, bool, erro
 
 // executeAutoTag processes module version bumps and publishes tags for a given commit.
 // Logic is decoupled from flags and process termination to permit direct unit testing.
-func executeAutoTag(repoPath, configPath, sha, apiBaseURL, projectID, password string, stdout, stderr io.Writer) int {
+func executeAutoTag(ctx context.Context, repoPath, configPath, sha, apiBaseURL, projectID, password string, stdout, stderr io.Writer) int {
 	if sha == "" || apiBaseURL == "" || projectID == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --sha, --api-url, and --project-id are required.")
 		return 1
 	}
 	if password == "" {
-		_, _ = fmt.Fprintln(stderr, "Error: TAG_PUSH_TOKEN must be set in the environment.")
+		_, _ = fmt.Fprintf(stderr, "Error: %s must be set in the environment.\n", ciconfig.TagPushTokenEnvName)
 		return 1
 	}
 
@@ -83,6 +86,9 @@ func executeAutoTag(repoPath, configPath, sha, apiBaseURL, projectID, password s
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
+
+	// The token check runs before the first tag creation alone, which spares the self request on runs without a release.
+	var fineGrainedToken gitlabtoken.FineGrainedToken
 
 	for _, mod := range cfg.Modules {
 		label := mod.Name
@@ -123,8 +129,16 @@ func executeAutoTag(repoPath, configPath, sha, apiBaseURL, projectID, password s
 		}
 		newTag := prefix + nextVersion
 
+		if fineGrainedToken.IsZero() {
+			fineGrainedToken, err = gitlabtoken.New(ctx, apiBaseURL, password)
+			if err != nil {
+				_, _ = fmt.Fprintf(stderr, "Error: failed to confirm that %s is a fine-grained personal access token: %v\n", ciconfig.TagPushTokenEnvName, err)
+				return 1
+			}
+		}
+
 		_, _ = fmt.Fprintf(stdout, "%s: bumping %s to %s for %s.\n", label, latestTag, newTag, sha)
-		if err := gitlabapi.CreateTag(apiBaseURL, projectID, newTag, sha, password); err != nil {
+		if err := gitlabapi.CreateTag(ctx, apiBaseURL, projectID, newTag, sha, fineGrainedToken); err != nil {
 			_, _ = fmt.Fprintln(stderr, "Error:", err)
 			return 1
 		}
@@ -146,5 +160,5 @@ func main() {
 	projectID := flag.String("project-id", "", "GitLab project ID owning the tags")
 	flag.Parse()
 
-	os.Exit(executeAutoTag(*repo, *config, *sha, *apiBaseURL, *projectID, os.Getenv("TAG_PUSH_TOKEN"), os.Stdout, os.Stderr))
+	os.Exit(executeAutoTag(context.Background(), *repo, *config, *sha, *apiBaseURL, *projectID, os.Getenv(ciconfig.TagPushTokenEnvName), os.Stdout, os.Stderr))
 }

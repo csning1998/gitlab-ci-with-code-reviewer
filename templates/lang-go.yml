@@ -2,10 +2,10 @@
 spec:
   inputs:
     go_image:
-      default: 'golang:1.26-alpine'
+      default: 'golang:1.27-alpine'
       description: 'Go toolchain image for fmt and build.'
     golangci_image:
-      default: 'golangci/golangci-lint:v2.12.2-alpine'
+      default: 'golangci/golangci-lint:v2.15.0-alpine'
       description: 'golangci-lint image for the lint job.'
     go_dir:
       default: 'tools/ci'
