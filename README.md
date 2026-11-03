@@ -157,6 +157,17 @@ The review engine operates as a decoupled, state-agnostic consumer:
 | `CLAUDE_API_KEY`               | Only for Claude Static Key | Sensitive | Anthropic Console API key (when not using WIF)              |
 | `MAX_TOTAL_DIFF`               | No                         | Number    | Diff truncation threshold in characters (Default: `300000`) |
 
+#### Fine-Grained Token Enforcement
+
+1. Every command which calls the GitLab REST API (`review`, `mr-gate`, `mr-labeler`, `verify-tag-token`, and `auto-tag`) MUST obtain the token through `gitlabtoken.New` before the first GitLab request. `review` and `mr-gate` run the check after the local configuration checks, and `auto-tag` runs the check before the first tag creation.
+2. The GitLab API clients in `internal/gitlab` and `internal/gitlabapi` accept a `gitlabtoken.FineGrainedToken` alone. A raw token string therefore fails to compile at every call site, since the type has no exported constructor other than `gitlabtoken.New`.
+3. `gitlabtoken.New` reads `/personal_access_tokens/self` with the token and classifies the response:
+    - HTTP 403 with the error `insufficient_granular_scope` identifies a fine-grained token lacking Personal Access Token Read, and the token passes.
+    - HTTP 200 with a non-empty `granular_scopes` identifies a fine-grained token holding Personal Access Token Read, and the token passes.
+    - Every other response, including HTTP 200 without `granular_scopes`, fails the job.
+4. The check fails closed. A change of the `insufficient_granular_scope` error code on GitLab fails every job until the check follows the change, and each job spends one additional request.
+5. The check covers the GitLab personal access tokens in `REVIEW_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_MR_REVIEWER`, and `TAG_PUSH_TOKEN`. `CI_JOB_TOKEN`, which `fmt-commit-pusher` uses for Git pushes, carries no scopes and stays outside the check. The Terraform provider tokens which the `administration-gitlab-project` layer reads from Bastion Vault stay outside the check, and the fine-grained token matrix of `parent-group-governance` governs those tokens.
+
 ### Step C. Runner Setup and Network Topology
 
 Provisioning of local self-hosted runners occurs through Podman Compose:
@@ -393,7 +404,7 @@ Release management enforces strict Semantic Versioning (SemVer) aligning contain
         - Breaking changes (`!`): Major version bump (`X.0.0`).
         - Other commit types (`chore`, `docs`, `refactor`, `adhoc`, `test`): Suppress release generation.
     - Creates the resulting SemVer tag through the GitLab REST API with `TAG_PUSH_TOKEN`. The token MUST carry fine-grained permissions limited to Repository Tag Create and Read.
-    - The `auto-tag:verify-token` job reads the repository tags with `TAG_PUSH_TOKEN` in MR pipelines. The read detects an invalid token before merge. The read detects a missing Repository Tag Read permission on a private project alone, and no read detects a missing Repository Tag Create permission.
+    - The `auto-tag:verify-token` job rejects a legacy `TAG_PUSH_TOKEN` and then reads the repository tags with the token in MR pipelines. The read detects an invalid token before merge. The read detects a missing Repository Tag Read permission on a private project alone, and no read detects a missing Repository Tag Create permission.
 2. **Tag Pipeline and Catalog Publication**:
     - The tag pipeline triggers `build:reviewer-image` to produce `reviewer:<tag>`.
     - The `publish-catalog` job publishes all components in `templates/` to the GitLab CI/CD Catalog using `release-cli`.
