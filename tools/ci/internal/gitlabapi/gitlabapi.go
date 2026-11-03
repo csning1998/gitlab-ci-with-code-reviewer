@@ -4,7 +4,8 @@
 package gitlabapi
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"ci-tools/internal/gitlabtoken"
 	"ci-tools/internal/httpguard"
 )
 
@@ -21,26 +23,29 @@ const requestTimeout = 30 * time.Second
 // Limits response body reads to 4 KiB to prevent log buffer exhaustion from excessive API responses.
 const maxResponseBodyBytes = 4096
 
-// maxSelfResponseBytes limits the /personal_access_tokens/self response size to 64 KiB, since a fine-grained token lists every granted permission.
-const maxSelfResponseBytes = 64 << 10
-
 var httpClient = &http.Client{Timeout: requestTimeout, CheckRedirect: httpguard.RefuseCrossHostRedirect}
+
+// errEmptyToken rejects the zero FineGrainedToken, which another package can write without gitlabtoken.New.
+var errEmptyToken = errors.New("the GitLab token is empty")
 
 // CreateTag creates a Git tag at the specified target reference in a GitLab project.
 //
 // Authenticates against apiBaseURL using the PRIVATE-TOKEN header.
-func CreateTag(apiBaseURL, projectID, tagName, ref, token string) (err error) {
+func CreateTag(ctx context.Context, apiBaseURL, projectID, tagName, ref string, token gitlabtoken.FineGrainedToken) (err error) {
+	if token.Value() == "" {
+		return errEmptyToken
+	}
 	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
 	if err != nil {
 		return fmt.Errorf("failed to construct tag creation endpoint: %w", err)
 	}
 	endpoint.RawQuery = url.Values{"tag_name": {tagName}, "ref": {ref}}.Encode()
 
-	req, err := http.NewRequest(http.MethodPost, endpoint.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to construct tag creation request: %w", err)
 	}
-	req.Header.Set("PRIVATE-TOKEN", token)
+	req.Header.Set("PRIVATE-TOKEN", token.Value())
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -60,73 +65,22 @@ func CreateTag(apiBaseURL, projectID, tagName, ref, token string) (err error) {
 	return nil
 }
 
-// RejectLegacyToken returns an error unless token is a fine-grained personal access token.
-//
-// The /personal_access_tokens/self endpoint returns HTTP 403 with error "insufficient_granular_scope"
-// for a fine-grained token lacking Personal Access Token Read, and returns HTTP 200 without granular scopes
-// for a legacy token.
-func RejectLegacyToken(apiBaseURL, token string) (err error) {
-	endpoint := strings.TrimRight(apiBaseURL, "/") + "/personal_access_tokens/self"
-
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("failed to construct request for /personal_access_tokens/self: %w", err)
-	}
-	req.Header.Set("PRIVATE-TOKEN", token)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to reach GitLab API at %q: %w", endpoint, err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var self struct {
-			Scopes         []string          `json:"scopes"`
-			GranularScopes []json.RawMessage `json:"granular_scopes"`
-		}
-		if err := json.NewDecoder(io.LimitReader(resp.Body, maxSelfResponseBytes)).Decode(&self); err != nil {
-			return fmt.Errorf("failed to decode response from /personal_access_tokens/self: %w", err)
-		}
-		if len(self.GranularScopes) == 0 {
-			return fmt.Errorf("token carries legacy scopes %v, which are prohibited; a fine-grained personal access token is required", self.Scopes)
-		}
-		return nil
-	case http.StatusUnauthorized:
-		return fmt.Errorf("GitLab API returned status 401 because the token is invalid, expired, or revoked")
-	case http.StatusForbidden:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
-		var denial struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(body, &denial) == nil && denial.Error == "insufficient_granular_scope" {
-			return nil
-		}
-		return fmt.Errorf("GitLab API returned status 403 from /personal_access_tokens/self: %s", body)
-	default:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
-		return fmt.Errorf("GitLab API returned status %d from /personal_access_tokens/self: %s", resp.StatusCode, body)
-	}
-}
-
 // VerifyTagAccess validates that token can read the repository tags of projectID without writing.
-func VerifyTagAccess(apiBaseURL, projectID, token string) (err error) {
+func VerifyTagAccess(ctx context.Context, apiBaseURL, projectID string, token gitlabtoken.FineGrainedToken) (err error) {
+	if token.Value() == "" {
+		return errEmptyToken
+	}
 	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
 	if err != nil {
 		return fmt.Errorf("failed to construct tag read endpoint: %w", err)
 	}
 	endpoint.RawQuery = url.Values{"per_page": {"1"}}.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to construct tag read request: %w", err)
 	}
-	req.Header.Set("PRIVATE-TOKEN", token)
+	req.Header.Set("PRIVATE-TOKEN", token.Value())
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

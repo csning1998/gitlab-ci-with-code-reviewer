@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -11,12 +12,13 @@ import (
 
 	"ci-tools/internal/config"
 	"ci-tools/internal/gitlabapi"
+	"ci-tools/internal/gitlabtoken"
 )
 
 // executeVerifyTagToken validates the inputs, rejects a legacy token, and delegates the tag read to gitlabapi.VerifyTagAccess.
 //
 // An empty token exits zero because unprotected source branch pipelines withhold protected variables.
-func executeVerifyTagToken(apiBaseURL, projectID, token string, stdout, stderr io.Writer) int {
+func executeVerifyTagToken(ctx context.Context, apiBaseURL, projectID, token string, stdout, stderr io.Writer) int {
 	if apiBaseURL == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --api-url is required.")
 		return 1
@@ -30,12 +32,13 @@ func executeVerifyTagToken(apiBaseURL, projectID, token string, stdout, stderr i
 		return 0
 	}
 
-	if err := gitlabapi.RejectLegacyToken(apiBaseURL, token); err != nil {
+	fineGrainedToken, err := gitlabtoken.New(ctx, apiBaseURL, token)
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Error: failed to confirm that %s is a fine-grained personal access token: %v\n", config.TagPushTokenEnvName, err)
 		return 1
 	}
 
-	if err := gitlabapi.VerifyTagAccess(apiBaseURL, projectID, token); err != nil {
+	if err := gitlabapi.VerifyTagAccess(ctx, apiBaseURL, projectID, fineGrainedToken); err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
@@ -48,5 +51,5 @@ func main() {
 	projectID := flag.String("project-id", "", "numeric ID or URL-encoded path of the project, e.g. $CI_PROJECT_ID")
 	flag.Parse()
 
-	os.Exit(executeVerifyTagToken(*apiBaseURL, *projectID, os.Getenv(config.TagPushTokenEnvName), os.Stdout, os.Stderr))
+	os.Exit(executeVerifyTagToken(context.Background(), *apiBaseURL, *projectID, os.Getenv(config.TagPushTokenEnvName), os.Stdout, os.Stderr))
 }

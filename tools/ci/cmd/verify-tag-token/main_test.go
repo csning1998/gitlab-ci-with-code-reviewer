@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,7 +27,7 @@ const (
 
 func TestExecuteVerifyTagToken_MissingAPIURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken("", testProjectID, testutil.GitLabToken, &stdout, &stderr)
+	code := executeVerifyTagToken(context.Background(), "", testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -37,7 +38,7 @@ func TestExecuteVerifyTagToken_MissingAPIURL(t *testing.T) {
 
 func TestExecuteVerifyTagToken_MissingProjectID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(unreachableAPIURL, "", testutil.GitLabToken, &stdout, &stderr)
+	code := executeVerifyTagToken(context.Background(), unreachableAPIURL, "", testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -48,7 +49,7 @@ func TestExecuteVerifyTagToken_MissingProjectID(t *testing.T) {
 
 func TestExecuteVerifyTagToken_MissingToken_SkipsWithoutFailing(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(unreachableAPIURL, testProjectID, "", &stdout, &stderr)
+	code := executeVerifyTagToken(context.Background(), unreachableAPIURL, testProjectID, "", &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 0 (a missing token skips rather than fails)", code)
 	}
@@ -90,7 +91,7 @@ func TestExecuteVerifyTagToken_Success(t *testing.T) {
 	server, paths := newGitLabStub(t, http.StatusForbidden, testutil.InsufficientGranularScopeBody, http.StatusOK)
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
+	code := executeVerifyTagToken(context.Background(), server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("executeVerifyTagToken(...) code = %d, want 0, stderr = %q", code, stderr.String())
 	}
@@ -103,7 +104,7 @@ func TestExecuteVerifyTagToken_LegacyTokenRejectedBeforeTagRead(t *testing.T) {
 	server, paths := newGitLabStub(t, http.StatusOK, legacyTokenSelf, http.StatusOK)
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
+	code := executeVerifyTagToken(context.Background(), server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}
@@ -121,7 +122,7 @@ func TestExecuteVerifyTagToken_NoTagReadAccess(t *testing.T) {
 	server, _ := newGitLabStub(t, http.StatusForbidden, testutil.InsufficientGranularScopeBody, http.StatusForbidden)
 
 	var stdout, stderr bytes.Buffer
-	code := executeVerifyTagToken(server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
+	code := executeVerifyTagToken(context.Background(), server.URL, testProjectID, testutil.GitLabToken, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("executeVerifyTagToken(...) code = %d, want 1", code)
 	}

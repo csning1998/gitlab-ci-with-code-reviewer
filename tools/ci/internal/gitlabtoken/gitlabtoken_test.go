@@ -232,6 +232,25 @@ func TestFineGrainedToken_ZeroValueCarriesNoToken(t *testing.T) {
 	}
 }
 
+// CRLF sequences in header values enable header injection. The transport MUST drop the token before
+// the request reaches the server.
+func TestNew_TokenWithCRLFRejectedBeforeRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("handler invoked; want the request rejected client-side before it reaches the server")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, testutil.InsufficientGranularScopeBody)
+	}))
+	t.Cleanup(server.Close)
+
+	token, err := gitlabtoken.New(context.Background(), server.URL, "token-with-\r\ninjected-header: evil")
+	if err == nil {
+		t.Fatal("New(...) with a CRLF-bearing token succeeded unexpectedly")
+	}
+	if token.Value() != "" {
+		t.Errorf("New(...).Value() = %q, want empty on error", token.Value())
+	}
+}
+
 func TestNew_CanceledContextRejected(t *testing.T) {
 	server := newSelfServer(t, http.StatusForbidden, testutil.InsufficientGranularScopeBody)
 	ctx, cancel := context.WithCancel(context.Background())
