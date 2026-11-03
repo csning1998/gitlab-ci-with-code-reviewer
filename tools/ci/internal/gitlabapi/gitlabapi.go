@@ -57,8 +57,7 @@ func CreateTag(apiBaseURL, projectID, tagName, ref, token string) (err error) {
 }
 
 // VerifyTagAccess validates that token can read the repository tags of projectID without writing.
-// A tag read accepts both a legacy api-scoped token and a fine-grained Repository Tag token,
-// whereas /personal_access_tokens/self rejects a fine-grained token lacking that permission.
+// /personal_access_tokens/self rejects a fine-grained token lacking the Personal Access Token permission.
 func VerifyTagAccess(apiBaseURL, projectID, token string) (err error) {
 	endpoint, err := url.Parse(fmt.Sprintf("%s/projects/%s/repository/tags", strings.TrimRight(apiBaseURL, "/"), url.PathEscape(projectID)))
 	if err != nil {
@@ -88,7 +87,7 @@ func VerifyTagAccess(apiBaseURL, projectID, token string) (err error) {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("GitLab API returned status 401 because the token is invalid, expired, or revoked")
 	case http.StatusForbidden:
-		return fmt.Errorf("GitLab API returned status 403 because the token cannot read the repository tags of project %q (requires the api scope or Repository Tag Create and Read)", projectID)
+		return fmt.Errorf("GitLab API returned status 403 because the token cannot read the repository tags of project %q (requires Repository Tag Create and Read)", projectID)
 	default:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 		return fmt.Errorf("GitLab API returned status %d reading the repository tags: %s", resp.StatusCode, body)

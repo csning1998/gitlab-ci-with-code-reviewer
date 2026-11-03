@@ -305,6 +305,9 @@ func TestVerifyTagAccess_Forbidden(t *testing.T) {
 	if !strings.Contains(err.Error(), "status 403") || !strings.Contains(err.Error(), "Repository Tag") {
 		t.Errorf("VerifyTagAccess(...) error = %q, want it to report status 403 with the required permissions", err.Error())
 	}
+	if strings.Contains(err.Error(), "api scope") {
+		t.Errorf("VerifyTagAccess(...) error = %q, want no legacy api scope in the required permissions", err.Error())
+	}
 }
 
 func TestVerifyTagAccess_ErrorStatus(t *testing.T) {
