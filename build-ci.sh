@@ -39,18 +39,28 @@ proxy_env=$(vault-proxy-env credential-distributor-gitlab-ci-with-code-reviewer)
 sonar_token=$(eval "${proxy_env}" && vault kv get -mount=secret -field="${sonar_token_field}" "${sonar_token_path}")
 unset proxy_env
 
-# Container mounts MUST remain read-only and restricted to tracked source trees to prevent analyzer modification.
-SONAR_TOKEN="${sonar_token}" podman run --rm --network host \
-    --security-opt label=type:spc_t \
+# The scanner receives copies of the unignored files, the git history, and the coverage reports through podman cp,
+# which bind-mounts no host path and skips ignored trees such as .terraform, node_modules, and Packer output.
+# The copies carry the labels of the container and leave the host files out of reach of the analyzer.
+# The traps remove the scanner, whose stored configuration holds SONAR_TOKEN, on every exit path.
+scanner=""
+remove_scanner() { if [ -n "${scanner}" ]; then podman rm -f "${scanner}" >/dev/null 2>&1 || true; scanner=""; fi; }
+trap 'remove_scanner' EXIT
+trap 'remove_scanner; exit 130' INT TERM
+scanner=$(SONAR_TOKEN="${sonar_token}" podman create --network host \
     -e SONAR_HOST_URL="${sonar_host_url}" \
     -e SONAR_TOKEN \
     -e SONAR_SCANNER_OPTS="-Dsonar.projectKey=${sonar_project_key} -Dsonar.projectBaseDir=/usr/src -Dsonar.qualitygate.wait=true -Dsonar.sources=tools,terraform,templates -Dsonar.exclusions=**/testdata/**,**/.terraform/**,**/*_test.go -Dsonar.tests=tools -Dsonar.test.inclusions=**/*_test.go -Dsonar.go.coverage.reportPaths=tools/${cli_module}/coverage.out" \
-    -v "$PWD/tools:/usr/src/tools:ro" \
-    -v "$PWD/terraform:/usr/src/terraform:ro" \
-    -v "$PWD/templates:/usr/src/templates:ro" \
-    -v "$PWD/.git:/usr/src/.git:ro" \
-    -v "$PWD/.gitignore:/usr/src/.gitignore:ro" \
-    "${scanner_image}"
+    "${scanner_image}")
+{
+    git ls-files -z --cached --others --exclude-standard -- tools terraform templates sonar-project.properties .gitignore
+    printf '%s\0' .git
+    for report in tools/${cli_module}/coverage.out; do
+        if [ -e "${report}" ]; then printf '%s\0' "${report}"; fi
+    done
+} | tar -c --null --ignore-failed-read -T - | podman cp - "${scanner}:/usr/src"
+podman start --attach "${scanner}"
+remove_scanner
 
 # Binary compilation MUST produce statically linked, path-independent executables matching deployment images.
 mkdir -p bin

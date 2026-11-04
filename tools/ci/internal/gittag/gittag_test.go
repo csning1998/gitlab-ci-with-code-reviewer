@@ -1,6 +1,8 @@
 package gittag
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,24 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+func TestCreateTag_CancelledContextWritesNoTag(t *testing.T) {
+	dir := t.TempDir()
+	sha := newRepoWithCommit(t, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := CreateTag(ctx, dir, "1.0.0", sha); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CreateTag(cancelled) error = %v, want context.Canceled", err)
+	}
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	if _, err := repo.Tag("1.0.0"); err == nil {
+		t.Error("tag 1.0.0 exists after a cancelled CreateTag")
+	}
+}
 
 func newRepoWithCommit(t *testing.T, dir string) string {
 	t.Helper()
@@ -48,7 +68,7 @@ func TestCreateTag(t *testing.T) {
 	dir := t.TempDir()
 	sha := newRepoWithCommit(t, dir)
 
-	if err := CreateTag(dir, "1.4.4", sha); err != nil {
+	if err := CreateTag(context.Background(), dir, "1.4.4", sha); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 	}
 
@@ -67,7 +87,7 @@ func TestCreateTag(t *testing.T) {
 }
 
 func TestCreateTag_MissingRepo(t *testing.T) {
-	if err := CreateTag(t.TempDir(), "1.4.4", "0000000000000000000000000000000000000000"); err == nil {
+	if err := CreateTag(context.Background(), t.TempDir(), "1.4.4", "0000000000000000000000000000000000000000"); err == nil {
 		t.Error("CreateTag(...) on uninitialized directory succeeded unexpectedly; expected an error")
 	}
 }
@@ -76,7 +96,7 @@ func TestCreateTag_InvalidCommitSHA(t *testing.T) {
 	dir := t.TempDir()
 	newRepoWithCommit(t, dir)
 
-	err := CreateTag(dir, "1.4.4", "not-a-valid-sha")
+	err := CreateTag(context.Background(), dir, "1.4.4", "not-a-valid-sha")
 	if err == nil {
 		t.Fatal("CreateTag(...) with a malformed commit SHA succeeded unexpectedly; expected an error")
 	}
@@ -91,7 +111,7 @@ func TestCreateTag_UppercaseHexSHA_RejectedAsInvalid(t *testing.T) {
 	dir := t.TempDir()
 	sha := newRepoWithCommit(t, dir)
 
-	err := CreateTag(dir, "1.4.4", strings.ToUpper(sha))
+	err := CreateTag(context.Background(), dir, "1.4.4", strings.ToUpper(sha))
 	if err == nil {
 		t.Fatal("CreateTag(...) with an uppercase-hex SHA succeeded unexpectedly; want it rejected as invalid")
 	}
@@ -104,7 +124,7 @@ func TestCreateTag_SHAWithTrailingWhitespace_RejectedAsInvalid(t *testing.T) {
 	dir := t.TempDir()
 	sha := newRepoWithCommit(t, dir)
 
-	err := CreateTag(dir, "1.4.4", sha+" ")
+	err := CreateTag(context.Background(), dir, "1.4.4", sha+" ")
 	if err == nil {
 		t.Fatal("CreateTag(...) with a whitespace-padded SHA succeeded unexpectedly; want it rejected as invalid")
 	}
@@ -117,7 +137,7 @@ func TestCreateTag_NonExistentButWellFormedSHA_TagStillCreated(t *testing.T) {
 	newRepoWithCommit(t, dir)
 	danglingSHA := strings.Repeat("f", 40)
 
-	if err := CreateTag(dir, "1.4.4", danglingSHA); err != nil {
+	if err := CreateTag(context.Background(), dir, "1.4.4", danglingSHA); err != nil {
 		t.Fatalf("CreateTag(...) with a well-formed but nonexistent SHA returned an unexpected error: %v", err)
 	}
 
@@ -138,11 +158,11 @@ func TestCreateTag_DuplicateTagName_Fails(t *testing.T) {
 	dir := t.TempDir()
 	sha := newRepoWithCommit(t, dir)
 
-	if err := CreateTag(dir, "1.4.4", sha); err != nil {
+	if err := CreateTag(context.Background(), dir, "1.4.4", sha); err != nil {
 		t.Fatalf("first CreateTag(...) returned an unexpected error: %v", err)
 	}
 
-	err := CreateTag(dir, "1.4.4", sha)
+	err := CreateTag(context.Background(), dir, "1.4.4", sha)
 	if err == nil {
 		t.Fatal("second CreateTag(...) with an already-existing tag name succeeded unexpectedly; want an error")
 	}
@@ -155,7 +175,7 @@ func TestCreateTag_EmptyTagName_Fails(t *testing.T) {
 	dir := t.TempDir()
 	sha := newRepoWithCommit(t, dir)
 
-	if err := CreateTag(dir, "", sha); err == nil {
+	if err := CreateTag(context.Background(), dir, "", sha); err == nil {
 		t.Error("CreateTag(...) with an empty tag name succeeded unexpectedly; want an error")
 	}
 }
@@ -165,7 +185,7 @@ func TestCreateTag_TagNameWithInvalidRefCharacters_Fails(t *testing.T) {
 	sha := newRepoWithCommit(t, dir)
 
 	// Rejects spaces and tildes to comply with Git reference naming rules (git-check-ref-format).
-	if err := CreateTag(dir, "invalid tag~name", sha); err == nil {
+	if err := CreateTag(context.Background(), dir, "invalid tag~name", sha); err == nil {
 		t.Error("CreateTag(...) with an invalid ref-name character succeeded unexpectedly; want an error")
 	}
 }
@@ -175,7 +195,7 @@ func TestCreateTag_TagNameContainingSlash_CreatesNestedRef(t *testing.T) {
 	dir := t.TempDir()
 	sha := newRepoWithCommit(t, dir)
 
-	if err := CreateTag(dir, "release/1.0.0", sha); err != nil {
+	if err := CreateTag(context.Background(), dir, "release/1.0.0", sha); err != nil {
 		t.Fatalf("CreateTag(...) returned an unexpected error for a slash-bearing tag name: %v", err)
 	}
 
@@ -218,7 +238,7 @@ func TestCreateTag_BareRepository(t *testing.T) {
 	}
 	_ = bareRepo
 
-	if err := CreateTag(bareDir, "1.4.4", sha); err != nil {
+	if err := CreateTag(context.Background(), bareDir, "1.4.4", sha); err != nil {
 		t.Fatalf("CreateTag(...) against a bare repository returned an unexpected error: %v", err)
 	}
 
@@ -290,7 +310,7 @@ func raceCreateTag(dir, tag string, shas []string, writers int) []error {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			results[i] = CreateTag(dir, tag, shas[i%len(shas)])
+			results[i] = CreateTag(context.Background(), dir, tag, shas[i%len(shas)])
 		}(i)
 	}
 	close(start)
@@ -343,7 +363,7 @@ func TestCreateTag_ConcurrentWritersOfDistinctNames_AllSucceed(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			results[i] = CreateTag(dir, fmt.Sprintf("2.0.%d", i), sha)
+			results[i] = CreateTag(context.Background(), dir, fmt.Sprintf("2.0.%d", i), sha)
 		}(i)
 	}
 	close(start)
@@ -391,7 +411,7 @@ func TestCreateTag_TagNameBoundaries(t *testing.T) {
 			dir := t.TempDir()
 			sha := newRepoWithCommit(t, dir)
 
-			err := CreateTag(dir, tc.tag, sha)
+			err := CreateTag(context.Background(), dir, tc.tag, sha)
 			if tc.wantErr && err == nil {
 				t.Errorf("CreateTag(%q) succeeded unexpectedly; want a rejection", tc.tag)
 			}
@@ -422,7 +442,7 @@ func TestCreateTag_SHABoundaries(t *testing.T) {
 
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := CreateTag(dir, fmt.Sprintf("s%d", i), tc.sha); err == nil {
+			if err := CreateTag(context.Background(), dir, fmt.Sprintf("s%d", i), tc.sha); err == nil {
 				t.Errorf("CreateTag with SHA %q succeeded unexpectedly; want a rejection", tc.sha)
 			}
 		})

@@ -2,6 +2,7 @@
 package gittag
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +15,10 @@ import (
 // CreateTag generates a lightweight Git tag specified by tagName at the commit identified by
 // commitSHA within the repository at repoPath. Exactly one of the concurrent callers which name
 // one tag succeeds.
-func CreateTag(repoPath, tagName, commitSHA string) error {
+func CreateTag(ctx context.Context, repoPath, tagName, commitSHA string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return fmt.Errorf("failed to open repository at path %q: %w", repoPath, err)
@@ -24,7 +28,7 @@ func CreateTag(repoPath, tagName, commitSHA string) error {
 	if hash.String() != commitSHA {
 		return fmt.Errorf("invalid commit SHA %q", commitSHA)
 	}
-	if err := createTagReference(repo, tagName, hash); err != nil {
+	if err := createTagReference(ctx, repo, tagName, hash); err != nil {
 		return fmt.Errorf("failed to create tag %q at commit %q: %w", tagName, commitSHA, err)
 	}
 
@@ -33,7 +37,10 @@ func CreateTag(repoPath, tagName, commitSHA string) error {
 
 // createTagReference writes refs/tags/<tagName> through an exclusive create. The check of
 // go-git followed by an unconditional write leaves a window in which two writers both succeed.
-func createTagReference(repo *git.Repository, tagName string, hash plumbing.Hash) error {
+func createTagReference(ctx context.Context, repo *git.Repository, tagName string, hash plumbing.Hash) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	name := plumbing.NewTagReferenceName(tagName)
 	if err := name.Validate(); err != nil {
 		return err

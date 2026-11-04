@@ -23,8 +23,8 @@ selinux/*.mod
 selinux/*.pp
 
 ## BLOB
-fmt-commit-pusher
-claude-review
+/fmt-commit-pusher
+/claude-review
 
 ## Go
 coverage.out
