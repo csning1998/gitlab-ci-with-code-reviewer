@@ -979,7 +979,7 @@ func TestResolveCommitSubject_UsesFirstLineOnly(t *testing.T) {
 	_, repo := initRepo(t)
 	sha := commitFiles(t, repo, map[string]string{"README.md": "test\n"}, "feat: subject\n\nfix: body must be ignored")
 
-	got, err := resolveCommitSubject(repo, sha)
+	got, err := resolveCommitSubject(context.Background(), repo, sha)
 	if err != nil {
 		t.Fatalf("resolveCommitSubject(...) error = %v", err)
 	}
@@ -992,7 +992,7 @@ func TestResolveCommitSubject_InvalidSHA(t *testing.T) {
 	_, repo := initRepo(t)
 	commitFiles(t, repo, map[string]string{"README.md": "test\n"}, "feat: initial")
 
-	_, err := resolveCommitSubject(repo, strings.Repeat("0", 40))
+	_, err := resolveCommitSubject(context.Background(), repo, strings.Repeat("0", 40))
 	if err == nil {
 		t.Fatal("resolveCommitSubject(...) succeeded for a missing SHA; want an error")
 	}
@@ -1006,7 +1006,7 @@ func TestResolveFirstParentSHA_RootAndLinearHistory(t *testing.T) {
 	root := commitFiles(t, repo, map[string]string{"a.txt": "1"}, "root")
 	child := commitFiles(t, repo, map[string]string{"a.txt": "2"}, "child")
 
-	parent, hasParent, err := resolveFirstParentSHA(repo, root)
+	parent, hasParent, err := resolveFirstParentSHA(context.Background(), repo, root)
 	if err != nil {
 		t.Fatalf("resolveFirstParentSHA(root) error = %v", err)
 	}
@@ -1014,7 +1014,7 @@ func TestResolveFirstParentSHA_RootAndLinearHistory(t *testing.T) {
 		t.Errorf("resolveFirstParentSHA(root) = (%q, %v), want (\"\", false)", parent, hasParent)
 	}
 
-	parent, hasParent, err = resolveFirstParentSHA(repo, child)
+	parent, hasParent, err = resolveFirstParentSHA(context.Background(), repo, child)
 	if err != nil {
 		t.Fatalf("resolveFirstParentSHA(child) error = %v", err)
 	}
@@ -1055,7 +1055,7 @@ func TestResolveFirstParentSHA_MergeCommitUsesFirstParent(t *testing.T) {
 		t.Fatalf("merge commit failed: %v", err)
 	}
 
-	got, hasParent, err := resolveFirstParentSHA(repo, merge.String())
+	got, hasParent, err := resolveFirstParentSHA(context.Background(), repo, merge.String())
 	if err != nil {
 		t.Fatalf("resolveFirstParentSHA(merge) error = %v", err)
 	}
@@ -1071,7 +1071,7 @@ func TestResolveFirstParentSHA_InvalidSHA(t *testing.T) {
 	_, repo := initRepo(t)
 	commitFiles(t, repo, map[string]string{"a.txt": "1"}, "root")
 
-	_, _, err := resolveFirstParentSHA(repo, strings.Repeat("0", 40))
+	_, _, err := resolveFirstParentSHA(context.Background(), repo, strings.Repeat("0", 40))
 	if err == nil {
 		t.Fatal("resolveFirstParentSHA(...) succeeded for a missing SHA; want an error")
 	}
@@ -1227,4 +1227,20 @@ modules:
 	}
 
 	assertTagCreated(t, server, "0.1.0", sha)
+}
+
+func TestExecuteAutoTag_CancelledContextStopsBeforeReading(t *testing.T) {
+	dir, repo := initRepo(t)
+	sha := commitFiles(t, repo, map[string]string{"a.txt": "a"}, "feat: add a")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var stderr bytes.Buffer
+	req := autoTagRequest{repoPath: dir, configPath: filepath.Join(dir, "missing.yml"), sha: sha, apiBaseURL: unreachableAPIURL, projectID: testProjectID, password: testutil.GitLabToken}
+	if code := executeAutoTag(ctx, req, io.Discard, &stderr); code != 1 {
+		t.Errorf("executeAutoTag(cancelled) code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), context.Canceled.Error()) {
+		t.Errorf("executeAutoTag(cancelled) stderr = %q, want it to report %q", stderr.String(), context.Canceled)
+	}
 }

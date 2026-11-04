@@ -1,6 +1,7 @@
 package versiontag
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -136,7 +137,7 @@ modules:
     tag_prefix: "reviewer-"
 `)
 
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadConfig(%q) returned an unexpected error: %v", path, err)
 	}
@@ -162,7 +163,7 @@ modules:
 
 func TestLoadConfig_MissingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "does-not-exist.yml")
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err == nil {
 		t.Fatal("LoadConfig(...) on a missing file succeeded unexpectedly; expected an error")
 	}
@@ -178,7 +179,7 @@ func TestLoadConfig_MissingFile(t *testing.T) {
 }
 
 func TestLoadConfig_MissingFile_DoesNotReturnDefaultConfig(t *testing.T) {
-	cfg, err := LoadConfig(filepath.Join(t.TempDir(), "does-not-exist.yml"))
+	cfg, err := LoadConfig(context.Background(), filepath.Join(t.TempDir(), "does-not-exist.yml"))
 	if err == nil {
 		t.Fatal("LoadConfig(...) on a missing file succeeded unexpectedly")
 	}
@@ -189,7 +190,7 @@ func TestLoadConfig_MissingFile_DoesNotReturnDefaultConfig(t *testing.T) {
 }
 
 func TestLoadConfig_PathIsDirectory_IsNotErrNotExist(t *testing.T) {
-	cfg, err := LoadConfig(t.TempDir())
+	cfg, err := LoadConfig(context.Background(), t.TempDir())
 	if err == nil {
 		t.Fatal("LoadConfig(...) on a directory succeeded unexpectedly; expected an error")
 	}
@@ -202,14 +203,14 @@ func TestLoadConfig_PathIsDirectory_IsNotErrNotExist(t *testing.T) {
 }
 
 func TestLoadConfig_EmptyPath(t *testing.T) {
-	if _, err := LoadConfig(""); err == nil {
+	if _, err := LoadConfig(context.Background(), ""); err == nil {
 		t.Fatal("LoadConfig(\"\") succeeded unexpectedly; expected an error")
 	}
 }
 
 func TestLoadConfig_NoModules(t *testing.T) {
 	path := writeConfig(t, "modules: []\n")
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err == nil {
 		t.Fatal("LoadConfig(...) with zero modules succeeded unexpectedly; expected an error")
 	}
@@ -229,7 +230,7 @@ func TestLoadConfig_NoModules(t *testing.T) {
 
 func TestLoadConfig_ModuleMissingDir(t *testing.T) {
 	path := writeConfig(t, "modules:\n  - name: reviewer\n")
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err == nil {
 		t.Fatal("LoadConfig(...) with a module missing dir succeeded unexpectedly; expected an error")
 	}
@@ -303,7 +304,7 @@ func TestLatestTag_TagSelection(t *testing.T) {
 			repo, sha := newRepoWithCommit(t)
 			createLatestTagFixtures(t, repo, sha, c.tags, c.annotated)
 
-			tag, version, err := LatestTag(repo, c.prefix)
+			tag, version, err := LatestTag(context.Background(), repo, c.prefix)
 			if err != nil {
 				t.Fatalf("LatestTag(...) error = %v", err)
 			}
@@ -324,7 +325,7 @@ func TestDetectDirectoryTreeChanges(t *testing.T) {
 		"dirB/file.txt": "b1",
 	})
 
-	changedA, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA")
+	changedA, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA\") returned an unexpected error: %v", err)
 	}
@@ -332,7 +333,7 @@ func TestDetectDirectoryTreeChanges(t *testing.T) {
 		t.Error("DetectDirectoryTreeChanges(..., \"dirA\") = false, want true")
 	}
 
-	changedB, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirB")
+	changedB, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirB")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirB\") returned an unexpected error: %v", err)
 	}
@@ -340,7 +341,7 @@ func TestDetectDirectoryTreeChanges(t *testing.T) {
 		t.Error("DetectDirectoryTreeChanges(..., \"dirB\") = true, want false")
 	}
 
-	changedRoot, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, ".")
+	changedRoot, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, ".")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \".\") returned an unexpected error: %v", err)
 	}
@@ -351,7 +352,7 @@ func TestDetectDirectoryTreeChanges(t *testing.T) {
 
 func TestLoadConfig_InvalidYAML(t *testing.T) {
 	path := writeConfig(t, "modules: [unclosed_bracket")
-	if _, err := LoadConfig(path); err == nil {
+	if _, err := LoadConfig(context.Background(), path); err == nil {
 		t.Error("LoadConfig(...) with invalid YAML succeeded unexpectedly; expected an error")
 	}
 }
@@ -360,10 +361,10 @@ func TestDetectDirectoryTreeChanges_InvalidSHA(t *testing.T) {
 	repo, validSHA := newRepoWithCommit(t)
 	invalidSHA := "0000000000000000000000000000000000000000"
 
-	if _, err := DetectDirectoryTreeChanges(repo, invalidSHA, validSHA, "."); err == nil {
+	if _, err := DetectDirectoryTreeChanges(context.Background(), repo, invalidSHA, validSHA, "."); err == nil {
 		t.Error("DetectDirectoryTreeChanges(...) with invalid parentSHA succeeded unexpectedly; expected an error")
 	}
-	if _, err := DetectDirectoryTreeChanges(repo, validSHA, invalidSHA, "."); err == nil {
+	if _, err := DetectDirectoryTreeChanges(context.Background(), repo, validSHA, invalidSHA, "."); err == nil {
 		t.Error("DetectDirectoryTreeChanges(...) with invalid target SHA succeeded unexpectedly; expected an error")
 	}
 }
@@ -378,7 +379,7 @@ func TestDetectDirectoryTreeChanges_SubdirectoryPath(t *testing.T) {
 		"dirA-other/file.txt": "1",
 	})
 
-	changedSub, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA/sub")
+	changedSub, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA/sub")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA/sub\") returned an unexpected error: %v", err)
 	}
@@ -386,7 +387,7 @@ func TestDetectDirectoryTreeChanges_SubdirectoryPath(t *testing.T) {
 		t.Error("DetectDirectoryTreeChanges(..., \"dirA/sub\") = false, want true")
 	}
 
-	changedOther, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA-other")
+	changedOther, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA-other")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA-other\") returned an unexpected error: %v", err)
 	}
@@ -397,21 +398,21 @@ func TestDetectDirectoryTreeChanges_SubdirectoryPath(t *testing.T) {
 
 func TestLoadConfig_EmptyFile(t *testing.T) {
 	path := writeConfig(t, "")
-	if _, err := LoadConfig(path); err == nil {
+	if _, err := LoadConfig(context.Background(), path); err == nil {
 		t.Error("LoadConfig(...) with empty file content succeeded unexpectedly; expected an error")
 	}
 }
 
 func TestLoadConfig_NilModules(t *testing.T) {
 	path := writeConfig(t, "other_key: value")
-	if _, err := LoadConfig(path); err == nil {
+	if _, err := LoadConfig(context.Background(), path); err == nil {
 		t.Error("LoadConfig(...) missing modules key succeeded unexpectedly; expected an error")
 	}
 }
 
 func TestDetectDirectoryTreeChanges_SameCommit(t *testing.T) {
 	repo, sha := newRepoWithCommit(t)
-	changed, err := DetectDirectoryTreeChanges(repo, sha, sha, ".")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, sha, sha, ".")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) with identical commits returned an unexpected error: %v", err)
 	}
@@ -428,7 +429,7 @@ func TestDetectDirectoryTreeChanges_TrailingSlashAndEmptyDir(t *testing.T) {
 		"dirA/file.txt": "a2",
 	})
 
-	changedTrailing, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA/")
+	changedTrailing, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA/")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA/\") returned an unexpected error: %v", err)
 	}
@@ -436,7 +437,7 @@ func TestDetectDirectoryTreeChanges_TrailingSlashAndEmptyDir(t *testing.T) {
 		t.Error("DetectDirectoryTreeChanges(..., \"dirA/\") = false, want true")
 	}
 
-	changedEmpty, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "")
+	changedEmpty, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"\") returned an unexpected error: %v", err)
 	}
@@ -464,7 +465,7 @@ func TestDetectDirectoryTreeChanges_FileDeletion(t *testing.T) {
 		t.Fatalf("Commit() failed: %v", err)
 	}
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA.String(), "dirA")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA.String(), "dirA")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) on file deletion returned an unexpected error: %v", err)
 	}
@@ -480,7 +481,7 @@ modules:
     dir: tools/ci
     tag_prefix: ""
 `)
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadConfig(...) error = %v", err)
 	}
@@ -503,7 +504,7 @@ modules:
   - name: broken
     dir: ""
 `)
-	_, err := LoadConfig(path)
+	_, err := LoadConfig(context.Background(), path)
 	if err == nil {
 		t.Fatal("LoadConfig(...) succeeded; expected an empty dir error at index 1")
 	}
@@ -518,7 +519,7 @@ modules:
   - name: odd
     dir: " "
 `)
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadConfig(...) error = %v; whitespace-only dir is non-empty and must pass validation", err)
 	}
@@ -534,7 +535,7 @@ modules:
     dir: tools/ci
     extra: ignored
 `)
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadConfig(...) error = %v", err)
 	}
@@ -551,7 +552,7 @@ modules:
   - name: dup
     dir: b
 `)
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadConfig(...) error = %v; duplicate names have no uniqueness check", err)
 	}
@@ -562,7 +563,7 @@ modules:
 
 func TestLoadConfig_InvalidYAML_WrapsParseError(t *testing.T) {
 	path := writeConfig(t, "modules: [unclosed_bracket")
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err == nil {
 		t.Fatal("LoadConfig(...) with invalid YAML succeeded unexpectedly")
 	}
@@ -582,7 +583,7 @@ func TestLoadConfig_InvalidYAML_WrapsParseError(t *testing.T) {
 
 func TestLoadConfig_YAMLNullModules(t *testing.T) {
 	path := writeConfig(t, "modules: null\n")
-	if _, err := LoadConfig(path); err == nil {
+	if _, err := LoadConfig(context.Background(), path); err == nil {
 		t.Fatal("LoadConfig(...) with null modules succeeded; expected an error")
 	}
 }
@@ -594,7 +595,7 @@ modules:
   - name: root
     dir: "."
 `)
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadConfig(...) error = %v", err)
 	}
@@ -617,7 +618,7 @@ modules:
 	}
 	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 
-	_, err := LoadConfig(path)
+	_, err := LoadConfig(context.Background(), path)
 	if err == nil {
 		t.Fatal("LoadConfig(...) succeeded on an unreadable file")
 	}
@@ -635,7 +636,7 @@ func TestLatestTag_OrdersByVersionNotCommitAncestry(t *testing.T) {
 	mustTag(t, repo, "reviewer-2.0.0", firstSHA)
 	mustTag(t, repo, "reviewer-1.0.0", secondSHA)
 
-	tag, version, err := LatestTag(repo, "reviewer-")
+	tag, version, err := LatestTag(context.Background(), repo, "reviewer-")
 	if err != nil {
 		t.Fatalf("LatestTag(...) error = %v", err)
 	}
@@ -652,7 +653,7 @@ func TestDetectDirectoryTreeChanges_FileAddition(t *testing.T) {
 		"dirA/new.txt": "2",
 	})
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) error = %v", err)
 	}
@@ -679,7 +680,7 @@ func TestDetectDirectoryTreeChanges_RenameWithinDirectory(t *testing.T) {
 		t.Fatalf("Commit() failed: %v", err)
 	}
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA.String(), "dirA")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA.String(), "dirA")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) error = %v", err)
 	}
@@ -707,14 +708,14 @@ func TestDetectDirectoryTreeChanges_RenameOutOfDirectory(t *testing.T) {
 		t.Fatalf("Commit() failed: %v", err)
 	}
 
-	changedA, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA.String(), "dirA")
+	changedA, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA.String(), "dirA")
 	if err != nil {
 		t.Fatalf("dirA: %v", err)
 	}
 	if changedA {
 		t.Error("dirA reported a change; DetectDirectoryTreeChanges prefers change.To.Name and therefore misses the source path of a rename")
 	}
-	changedB, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA.String(), "dirB")
+	changedB, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA.String(), "dirB")
 	if err != nil {
 		t.Fatalf("dirB: %v", err)
 	}
@@ -731,7 +732,7 @@ func TestDetectDirectoryTreeChanges_FileNamedExactlyDir(t *testing.T) {
 		"mod": "v2",
 	})
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "mod")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "mod")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) error = %v", err)
 	}
@@ -749,7 +750,7 @@ func TestDetectDirectoryTreeChanges_PrefixDoesNotMatchLongerSiblingName(t *testi
 		"pkgutil/file.txt": "2",
 	})
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "pkg")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "pkg")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) error = %v", err)
 	}
@@ -766,7 +767,7 @@ func TestDetectDirectoryTreeChanges_DoubleTrailingSlashDoesNotMatch(t *testing.T
 		"dirA/file.txt": "2",
 	})
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA//")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA//")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) error = %v", err)
 	}
@@ -784,7 +785,7 @@ func TestDetectDirectoryTreeChanges_RootFileDoesNotMatchNestedDir(t *testing.T) 
 		"README.md": "2",
 	})
 
-	changed, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA")
+	changed, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(...) error = %v", err)
 	}
@@ -792,7 +793,7 @@ func TestDetectDirectoryTreeChanges_RootFileDoesNotMatchNestedDir(t *testing.T) 
 		t.Error("DetectDirectoryTreeChanges(..., \"dirA\") = true for a root README change, want false")
 	}
 
-	changedRoot, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, ".")
+	changedRoot, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, ".")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \".\") error = %v", err)
 	}
@@ -805,7 +806,7 @@ func TestDetectDirectoryTreeChanges_InvalidSHAIncludesQuotedHash(t *testing.T) {
 	repo, validSHA := newRepoWithCommit(t)
 	invalidSHA := "0000000000000000000000000000000000000000"
 
-	_, err := DetectDirectoryTreeChanges(repo, invalidSHA, validSHA, ".")
+	_, err := DetectDirectoryTreeChanges(context.Background(), repo, invalidSHA, validSHA, ".")
 	if err == nil {
 		t.Fatal("expected an error for an invalid parent SHA")
 	}
@@ -813,7 +814,7 @@ func TestDetectDirectoryTreeChanges_InvalidSHAIncludesQuotedHash(t *testing.T) {
 		t.Errorf("error = %q, want the invalid parent SHA included", err.Error())
 	}
 
-	_, err = DetectDirectoryTreeChanges(repo, validSHA, invalidSHA, ".")
+	_, err = DetectDirectoryTreeChanges(context.Background(), repo, validSHA, invalidSHA, ".")
 	if err == nil {
 		t.Fatal("expected an error for an invalid target SHA")
 	}
@@ -824,7 +825,7 @@ func TestDetectDirectoryTreeChanges_InvalidSHAIncludesQuotedHash(t *testing.T) {
 
 func TestDetectDirectoryTreeChanges_EmptySHA(t *testing.T) {
 	repo, validSHA := newRepoWithCommit(t)
-	if _, err := DetectDirectoryTreeChanges(repo, "", validSHA, "."); err == nil {
+	if _, err := DetectDirectoryTreeChanges(context.Background(), repo, "", validSHA, "."); err == nil {
 		t.Error("DetectDirectoryTreeChanges(...) with empty parentSHA succeeded; expected an error")
 	}
 }
@@ -838,7 +839,7 @@ func TestDetectDirectoryTreeChanges_NestedDirChangeDoesNotMatchChildOnlyQuery(t 
 		"dirA/other/file.txt": "2",
 	})
 
-	changedSub, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA/sub")
+	changedSub, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA/sub")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA/sub\") error = %v", err)
 	}
@@ -846,7 +847,7 @@ func TestDetectDirectoryTreeChanges_NestedDirChangeDoesNotMatchChildOnlyQuery(t 
 		t.Error("DetectDirectoryTreeChanges(..., \"dirA/sub\") = true for a sibling subtree change, want false")
 	}
 
-	changedParent, err := DetectDirectoryTreeChanges(repo, firstSHA, secondSHA, "dirA")
+	changedParent, err := DetectDirectoryTreeChanges(context.Background(), repo, firstSHA, secondSHA, "dirA")
 	if err != nil {
 		t.Fatalf("DetectDirectoryTreeChanges(..., \"dirA\") error = %v", err)
 	}
@@ -914,4 +915,20 @@ func sign(n int) int {
 		return -1
 	}
 	return 0
+}
+
+func TestCancelledContextStopsEveryRepositoryRead(t *testing.T) {
+	repo, sha := newRepoWithCommit(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := LoadConfig(ctx, writeConfig(t, "modules: []\n")); !errors.Is(err, context.Canceled) {
+		t.Errorf("LoadConfig(cancelled) error = %v, want context.Canceled", err)
+	}
+	if _, _, err := LatestTag(ctx, repo, ""); !errors.Is(err, context.Canceled) {
+		t.Errorf("LatestTag(cancelled) error = %v, want context.Canceled", err)
+	}
+	if _, err := DetectDirectoryTreeChanges(ctx, repo, sha, sha, "."); !errors.Is(err, context.Canceled) {
+		t.Errorf("DetectDirectoryTreeChanges(cancelled) error = %v, want context.Canceled", err)
+	}
 }

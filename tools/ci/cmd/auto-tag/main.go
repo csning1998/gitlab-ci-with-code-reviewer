@@ -24,7 +24,10 @@ import (
 )
 
 // resolveCommitSubject returns the subject line of a commit SHA for Conventional Commit header parsing.
-func resolveCommitSubject(repo *git.Repository, sha string) (string, error) {
+func resolveCommitSubject(ctx context.Context, repo *git.Repository, sha string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve commit %q: %w", sha, err)
@@ -34,7 +37,10 @@ func resolveCommitSubject(repo *git.Repository, sha string) (string, error) {
 }
 
 // resolveFirstParentSHA locates the first parent SHA of a commit to establish baseline trees for directory diffs.
-func resolveFirstParentSHA(repo *git.Repository, sha string) (string, bool, error) {
+func resolveFirstParentSHA(ctx context.Context, repo *git.Repository, sha string) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return "", false, fmt.Errorf("failed to resolve commit %q: %w", sha, err)
@@ -81,8 +87,8 @@ type tagRun struct {
 
 // loadVersioningConfig falls back to whole-repository tagging when the file is missing.
 // Parse errors remain fatal to prevent masking invalid configurations.
-func loadVersioningConfig(configPath string, stdout io.Writer) (versiontag.Config, error) {
-	cfg, err := versiontag.LoadConfig(configPath)
+func loadVersioningConfig(ctx context.Context, configPath string, stdout io.Writer) (versiontag.Config, error) {
+	cfg, err := versiontag.LoadConfig(ctx, configPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		_, _ = fmt.Fprintf(stdout, "No versioning config at %q. Applying whole-repository defaults.\n", configPath)
 		return versiontag.DefaultConfig(), nil
@@ -91,16 +97,19 @@ func loadVersioningConfig(configPath string, stdout io.Writer) (versiontag.Confi
 }
 
 // newTagRun opens the repository and resolves the release bump and the parent of the commit.
-func newTagRun(req autoTagRequest, stdout, stderr io.Writer) (*tagRun, error) {
+func newTagRun(ctx context.Context, req autoTagRequest, stdout, stderr io.Writer) (*tagRun, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	repo, err := git.PlainOpen(req.repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository at path %q: %w", req.repoPath, err)
 	}
-	subject, err := resolveCommitSubject(repo, req.sha)
+	subject, err := resolveCommitSubject(ctx, repo, req.sha)
 	if err != nil {
 		return nil, err
 	}
-	parent, hasParent, err := resolveFirstParentSHA(repo, req.sha)
+	parent, hasParent, err := resolveFirstParentSHA(ctx, repo, req.sha)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +126,11 @@ func newTagRun(req autoTagRequest, stdout, stderr io.Writer) (*tagRun, error) {
 
 // moduleChanged reports whether the commit touches the module directory.
 // Every module counts as changed on a root commit, because a root commit lacks a parent tree for the diff.
-func (r *tagRun) moduleChanged(mod versiontag.Module) (bool, error) {
+func (r *tagRun) moduleChanged(ctx context.Context, mod versiontag.Module) (bool, error) {
 	if !r.hasParent {
 		return true, nil
 	}
-	return versiontag.DetectDirectoryTreeChanges(r.repo, r.parent, r.req.sha, mod.Dir)
+	return versiontag.DetectDirectoryTreeChanges(ctx, r.repo, r.parent, r.req.sha, mod.Dir)
 }
 
 // ensureToken classifies the tag push token once, before the first tag creation.
@@ -143,7 +152,7 @@ func (r *tagRun) tagModule(ctx context.Context, mod versiontag.Module) error {
 	if label == "" {
 		label = "<repository>"
 	}
-	changed, err := r.moduleChanged(mod)
+	changed, err := r.moduleChanged(ctx, mod)
 	if err != nil {
 		return err
 	}
@@ -153,7 +162,7 @@ func (r *tagRun) tagModule(ctx context.Context, mod versiontag.Module) error {
 	}
 
 	prefix := mod.Prefix()
-	latestTag, latestVersion, err := versiontag.LatestTag(r.repo, prefix)
+	latestTag, latestVersion, err := versiontag.LatestTag(ctx, r.repo, prefix)
 	if err != nil {
 		return err
 	}
@@ -176,7 +185,7 @@ func (r *tagRun) tagModule(ctx context.Context, mod versiontag.Module) error {
 	}
 	// Mirror tag locally to supply updated ref state for sequential module version evaluation.
 	// Remote REST API creation is authoritative, and a failed local ref write does not stop the release.
-	if err := gittag.CreateTag(r.req.repoPath, newTag, r.req.sha); err != nil {
+	if err := gittag.CreateTag(ctx, r.req.repoPath, newTag, r.req.sha); err != nil {
 		_, _ = fmt.Fprintln(r.stderr, "Warning:", err)
 	}
 	return nil
@@ -189,12 +198,12 @@ func executeAutoTag(ctx context.Context, req autoTagRequest, stdout, stderr io.W
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
-	cfg, err := loadVersioningConfig(req.configPath, stdout)
+	cfg, err := loadVersioningConfig(ctx, req.configPath, stdout)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
-	run, err := newTagRun(req, stdout, stderr)
+	run, err := newTagRun(ctx, req, stdout, stderr)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "Error:", err)
 		return 1

@@ -3,6 +3,7 @@
 package versiontag
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -47,7 +48,10 @@ func DefaultConfig() Config {
 }
 
 // LoadConfig retrieves and parses the versioning specification from the specified file path.
-func LoadConfig(path string) (Config, error) {
+func LoadConfig(ctx context.Context, path string) (Config, error) {
+	if err := ctx.Err(); err != nil {
+		return Config{}, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to read versioning config %q: %w", path, err)
@@ -72,7 +76,10 @@ func LoadConfig(path string) (Config, error) {
 // LatestTag returns the highest semver tag and parsed MAJOR.MINOR.PATCH version matching
 // prefix. Tags are ordered by semantic version instead of commit ancestry. Returns
 // "<prefix>0.0.0" and "0.0.0" if no tag matches.
-func LatestTag(repo *git.Repository, prefix string) (tag, version string, err error) {
+func LatestTag(ctx context.Context, repo *git.Repository, prefix string) (tag, version string, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	iter, err := repo.Tags()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to list tags: %w", err)
@@ -121,12 +128,12 @@ func compareVersions(majorA, minorA, patchA, majorB, minorB, patchB int) int {
 
 // DetectDirectoryTreeChanges reports whether any files under dir were modified between parentSHA and sha commit
 // trees. Passing "." or "" matches changes anywhere in the repository.
-func DetectDirectoryTreeChanges(repo *git.Repository, parentSHA, sha, dir string) (bool, error) {
-	fromTree, err := resolveCommitTree(repo, parentSHA)
+func DetectDirectoryTreeChanges(ctx context.Context, repo *git.Repository, parentSHA, sha, dir string) (bool, error) {
+	fromTree, err := resolveCommitTree(ctx, repo, parentSHA)
 	if err != nil {
 		return false, err
 	}
-	toTree, err := resolveCommitTree(repo, sha)
+	toTree, err := resolveCommitTree(ctx, repo, sha)
 	if err != nil {
 		return false, err
 	}
@@ -156,7 +163,10 @@ func pathContainedInDirectory(path, dir string) bool {
 	return path == dir || strings.HasPrefix(path, dir+"/")
 }
 
-func resolveCommitTree(repo *git.Repository, sha string) (*object.Tree, error) {
+func resolveCommitTree(ctx context.Context, repo *git.Repository, sha string) (*object.Tree, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve commit %q: %w", sha, err)
