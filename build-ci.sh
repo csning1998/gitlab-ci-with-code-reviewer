@@ -41,10 +41,9 @@ unset proxy_env
 
 # Container mounts MUST remain read-only and restricted to tracked source trees to prevent analyzer modification.
 SONAR_TOKEN="${sonar_token}" podman run --rm --network host \
-    --security-opt label=type:spc_t \
     -e SONAR_HOST_URL="${sonar_host_url}" \
     -e SONAR_TOKEN \
-    -e SONAR_SCANNER_OPTS="-Dsonar.projectKey=${sonar_project_key} -Dsonar.projectBaseDir=/usr/src -Dsonar.qualitygate.wait=true -Dsonar.sources=tools,terraform,templates -Dsonar.exclusions=**/testdata/**,**/.terraform/**,**/*_test.go -Dsonar.tests=tools -Dsonar.test.inclusions=**/*_test.go -Dsonar.go.coverage.reportPaths=tools/${cli_module}/coverage.out" \
+    -e SONAR_SCANNER_OPTS="-Dsonar.projectKey=${sonar_project_key} -Dsonar.projectBaseDir=/usr/src -Dsonar.qualitygate.wait=true -Dsonar.sources=tools,terraform,templates -Dsonar.exclusions=**/testdata/**,**/.terraform/**,**/*_test.go -Dsonar.coverage.exclusions=**/internal/testutil/** -Dsonar.tests=tools -Dsonar.test.inclusions=**/*_test.go -Dsonar.go.coverage.reportPaths=tools/${cli_module}/coverage.out" \
     -v "$PWD/tools:/usr/src/tools:ro" \
     -v "$PWD/terraform:/usr/src/terraform:ro" \
     -v "$PWD/templates:/usr/src/templates:ro" \
