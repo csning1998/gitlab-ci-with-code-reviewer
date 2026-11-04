@@ -370,18 +370,23 @@ func TestVerifyTagAccess_ZeroTokenRejectedWithoutRequest(t *testing.T) {
 	}
 }
 
+// reuseRequests is the request count of the connection reuse tests. An undrained body opens one
+// connection per request, and the transport returns a drained connection to the idle pool
+// asynchronously, which makes fewer connections than requests the stable assertion.
+const reuseRequests = 10
+
 // Draining an unparsed response body lets the next request reuse the TCP connection.
 func TestCreateTag_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
 	server, connections := testutil.NewConnectionCountingServer(t, http.StatusCreated, `{"name":"1.4.4"}`)
 	token := testutil.NewStubToken(t, testutil.GitLabToken)
 
-	for range 2 {
+	for range reuseRequests {
 		if err := CreateTag(context.Background(), server.URL, "123", "1.4.4", "abc123", token); err != nil {
 			t.Fatalf("CreateTag(...) returned an unexpected error: %v", err)
 		}
 	}
-	if got := connections.Load(); got != 1 {
-		t.Errorf("server accepted %d connections, want 1 reused connection", got)
+	if got := connections.Load(); got >= reuseRequests {
+		t.Errorf("server accepted %d connections for %d requests, want reused connections", got, reuseRequests)
 	}
 }
 
@@ -389,13 +394,13 @@ func TestVerifyTagAccess_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T
 	server, connections := testutil.NewConnectionCountingServer(t, http.StatusOK, `[{"name":"1.4.4"}]`)
 	token := testutil.NewStubToken(t, testutil.GitLabToken)
 
-	for range 2 {
+	for range reuseRequests {
 		if err := VerifyTagAccess(context.Background(), server.URL, "123", token); err != nil {
 			t.Fatalf("VerifyTagAccess(...) returned an unexpected error: %v", err)
 		}
 	}
-	if got := connections.Load(); got != 1 {
-		t.Errorf("server accepted %d connections, want 1 reused connection", got)
+	if got := connections.Load(); got >= reuseRequests {
+		t.Errorf("server accepted %d connections for %d requests, want reused connections", got, reuseRequests)
 	}
 }
 

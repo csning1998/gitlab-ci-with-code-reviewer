@@ -236,16 +236,19 @@ func TestFineGrainedToken_IsZero(t *testing.T) {
 }
 
 // Draining an unparsed response body lets the next request reuse the TCP connection.
+// An undrained body opens one connection per request, and the transport returns a drained connection
+// to the idle pool asynchronously, which makes fewer connections than requests the stable assertion.
 func TestNew_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
+	const requests = 10
 	server, connections := testutil.NewConnectionCountingServer(t, http.StatusUnauthorized, `{"message":"401 Unauthorized"}`)
 
-	for range 2 {
+	for range requests {
 		if _, err := gitlabtoken.New(context.Background(), server.URL, testutil.GitLabToken); err == nil {
 			t.Fatal("New(...) succeeded unexpectedly on a 401 response")
 		}
 	}
-	if got := connections.Load(); got != 1 {
-		t.Errorf("server accepted %d connections, want 1 reused connection", got)
+	if got := connections.Load(); got >= requests {
+		t.Errorf("server accepted %d connections for %d requests, want reused connections", got, requests)
 	}
 }
 
