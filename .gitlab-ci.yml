@@ -19,6 +19,7 @@ include:
       review_models:
         - "claude-sonnet-5.5"
         - "claude-opus-5.5"
+        - "gemini-4-argon"
         - "gemini-3.8-flash"
         - "azure-gpt-5.4-mini"
       enable_sonarqube: true
