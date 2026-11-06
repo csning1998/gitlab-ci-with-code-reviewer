@@ -393,6 +393,7 @@ func TestNormalizeAndValidateModel_ApprovedModelsAccepted(t *testing.T) {
 			"claude-haiku-4-5-20251001",
 		},
 		"gemini": {
+			"gemini-4-argon",
 			"gemini-3.8-flash",
 			"gemini-3.7-flash",
 			"gemini-3.6-flash",
