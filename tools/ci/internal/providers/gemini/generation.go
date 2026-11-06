@@ -10,12 +10,20 @@ import (
 // gemmaThinkingLevels lists the two switch positions Gemma 4 accepts on the Gemini API.
 var gemmaThinkingLevels = map[string]bool{"high": true, "minimal": true}
 
+// gemini4ThinkingLevels lists the levels the Gemini 4 generation accepts.
+var gemini4ThinkingLevels = map[string]bool{"low": true, "medium": true, "high": true}
+
 // thinkingLevels lists the levels the 3.x generation accepts.
 var thinkingLevels = map[string]bool{"minimal": true, "low": true, "medium": true, "high": true}
 
 // supportsThinkingLevel reports whether model accepts thinkingLevel over thinkingBudget.
 func supportsThinkingLevel(model string) bool {
-	return strings.HasPrefix(model, "gemini-3") || strings.HasPrefix(model, "gemma-")
+	return strings.HasPrefix(model, "gemini-4") || strings.HasPrefix(model, "gemini-3") || strings.HasPrefix(model, "gemma-")
+}
+
+// isGemini4Model reports whether model represents Gemini 4.
+func isGemini4Model(model string) bool {
+	return strings.HasPrefix(model, "gemini-4")
 }
 
 // isGemmaModel reports whether model represents open-weights Gemma hosted on Gemini API.
@@ -58,6 +66,13 @@ func validateThinkingLevel(model, level string) error {
 		}
 		return nil
 	}
+	if isGemini4Model(model) {
+		if !gemini4ThinkingLevels[level] {
+			return fmt.Errorf(
+				"gemini: model %q accepts reasoning_level low, medium, or high only, got %q", model, level)
+		}
+		return nil
+	}
 	if !thinkingLevels[level] {
 		return fmt.Errorf(
 			"gemini: reasoning_level %q is unsupported; want minimal, low, medium, or high", level)
@@ -73,14 +88,16 @@ func buildGenerationConfig(model string, opts reviewerconfig.ModelOptions) map[s
 		generationConfig["responseMimeType"] = mimeType
 	}
 
-	if opts.Temperature != nil {
-		generationConfig["temperature"] = *opts.Temperature
-	}
-	if opts.TopP != nil {
-		generationConfig["topP"] = *opts.TopP
-	}
-	if opts.TopK != nil {
-		generationConfig["topK"] = *opts.TopK
+	if !isGemini4Model(model) {
+		if opts.Temperature != nil {
+			generationConfig["temperature"] = *opts.Temperature
+		}
+		if opts.TopP != nil {
+			generationConfig["topP"] = *opts.TopP
+		}
+		if opts.TopK != nil {
+			generationConfig["topK"] = *opts.TopK
+		}
 	}
 	if opts.MaxTokens > 0 {
 		generationConfig["maxOutputTokens"] = opts.MaxTokens
