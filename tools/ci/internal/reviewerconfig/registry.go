@@ -77,17 +77,18 @@ var canonicalRegistry = map[string]map[string]struct{}{
 		"claude-haiku-4-5-20251001":  {}, // Retires not sooner than October 15, 2026.
 	},
 	"gemini": {
+		"gemini-4-argon":         {}, // Active with no announced retirement date.
 		"gemini-3.8-flash":       {}, // Active with no announced retirement date.
-		"gemini-3.7-flash":       {}, // Retires on January 28, 2027.
-		"gemini-3.6-flash":       {}, // Retires on November 19, 2026.
-		"gemini-3.5-flash":       {}, // Retires on May 19, 2027 or later.
-		"gemini-3.5-flash-lite":  {}, // Retires on July 21, 2027 or later.
-		"gemini-3.1-flash-lite":  {}, // Retires on May 7, 2027 or later.
+		"gemini-3.7-flash":       {}, // Deprecated on October 8, 2026; upstream routed to gemini-3.8-flash.
+		"gemini-3.6-flash":       {}, // Active with no announced retirement date.
+		"gemini-3.5-flash":       {}, // Deprecated on October 8, 2026; upstream routed to gemini-3.6-flash.
+		"gemini-3.5-flash-lite":  {}, // Active with no announced retirement date.
+		"gemini-3.1-flash-lite":  {}, // Deprecated with retirement on May 7, 2027.
 		"gemini-3.1-pro-preview": {},
 		"gemini-3-flash-preview": {},
-		"gemini-2.5-pro":         {}, // Retires on October 20, 2026.
-		"gemini-2.5-flash":       {}, // Retires on October 20, 2026.
-		"gemini-2.5-flash-lite":  {}, // Retires on October 20, 2026.
+		"gemini-2.5-pro":         {}, // Legacy restricted access; retired on October 20, 2026.
+		"gemini-2.5-flash":       {}, // Legacy restricted access; retired on October 20, 2026.
+		"gemini-2.5-flash-lite":  {}, // Legacy restricted access; retired on October 20, 2026.
 		"gemma-4-31b-it":         {},
 		"gemma-4-26b-a4b-it":     {},
 	},

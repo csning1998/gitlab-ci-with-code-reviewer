@@ -338,6 +338,26 @@ func TestReview_OmitsGenerationFieldsWhenUnset(t *testing.T) {
 	}
 }
 
+func TestReview_Gemini4OmitsDeprecatedSamplingParameters(t *testing.T) {
+	var gotBody map[string]any
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
+		Model:       "gemini-4-argon",
+		Temperature: testutil.Ptr(0.7),
+		TopP:        testutil.Ptr(0.9),
+		TopK:        testutil.Ptr(40),
+	}, &gotBody)
+
+	if _, err := c.Review("prompt"); err != nil {
+		t.Fatalf("Review(...) returned an unexpected error: %v", err)
+	}
+	genConfig, _ := gotBody["generationConfig"].(map[string]any)
+	for _, field := range []string{"temperature", "topP", "topK"} {
+		if _, present := genConfig[field]; present {
+			t.Errorf("gemini-4-argon: generationConfig[%q] must be omitted, got %v", field, genConfig[field])
+		}
+	}
+}
+
 func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 	t.Run("rejects invalid thinking configuration", func(t *testing.T) {
 		tests := []struct {
@@ -366,6 +386,22 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				opts: reviewerconfig.ModelOptions{
 					Model:          "gemma-4-31b-it",
 					ReasoningLevel: "medium",
+				},
+				wantError: "reasoning_level",
+			},
+			{
+				name: "gemini 4 rejects thinkingBudget",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-argon",
+					ThinkingBudget: testutil.Ptr(4096),
+				},
+				wantError: "thinking_budget",
+			},
+			{
+				name: "gemini 4 rejects minimal reasoningLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-argon",
+					ReasoningLevel: "minimal",
 				},
 				wantError: "reasoning_level",
 			},
@@ -427,6 +463,16 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 				wantKey:   "thinkingLevel",
 				wantValue: "minimal",
+				unwantKey: "thinkingBudget",
+			},
+			{
+				name: "gemini 4 sends thinkingLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-argon",
+					ReasoningLevel: "high",
+				},
+				wantKey:   "thinkingLevel",
+				wantValue: "high",
 				unwantKey: "thinkingBudget",
 			},
 		}
