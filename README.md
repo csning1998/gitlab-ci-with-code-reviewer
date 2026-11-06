@@ -24,7 +24,7 @@
 3. **Zero-Trust Model Allowlist**:
     - Model selection is enforced by a compile-time allowlist registry (`internal/config/registry.go`).
     - Any unapproved, retired, or arbitrary model identifier injected via configuration or environment variables is rejected immediately prior to network dispatch.
-    - Official snapshots and vendor aliases are normalized to canonical IDs (e.g., `claude-sonnet-5`, `gemini-3.7-flash`, `gpt-6-sol`).
+    - Official snapshots and vendor aliases are normalized to canonical IDs (e.g., `claude-sonnet-5`, `gemini-3.8-flash`, `gpt-6-sol`).
 
 4. **MR Intent Context and Actionable Review Standards**:
     - **MR Intent Injection**: The reviewer extracts author title and description under `=== Merge Request Intent ===`, treating documented intentional trade-offs as authoritative context.
@@ -185,97 +185,33 @@ The reviewer supports declarative configuration via `.gitlab/reviewer.yml` (path
 
 ### Task A. Configuration Structure
 
-The file consists of three sections: `defaults`, `models`, and `slots`.
+The file consists of three sections: `defaults`, `models`, and `slots`. A comprehensive multi-provider template is maintained in [`.gitlab/reviewer.example.yml`](file:///home/csning1998/GitLab/csning1998-lab/gitlab-ci-with-code-reviewer/.gitlab/reviewer.example.yml).
 
 ```yaml
 defaults:
-    max_tokens: 8192
-    timeout: 5m
-    # temperature: 0.2
-    # top_p: 0.95
+    max_tokens: 16384
+    timeout: 10m
 
 models:
-    # Anthropic Claude configuration (Claude 4.x / 5.x)
     claude-sonnet-5:
         provider: claude
         model: claude-sonnet-5
         thinking_type: adaptive
         reasoning_level: high
         prompt_file: .gitlab/code_review_guidelines/generic_rules.md
-        # Optional tuning parameters:
-        # max_tokens: 16384
-        # timeout: 10m
-        # (Legacy models only: thinking_budget: 4096)
 
-    # Google Gemini configuration (Gemini 2.x / 3.x)
-    gemini-3.7-flash:
+    gemini-3.8-flash:
         provider: gemini
-        model: gemini-3.7-flash
+        model: gemini-3.8-flash
+        google_search: true
         temperature: 0.0
+        max_tokens: 65536
         reasoning_level: high
         prompt_file: .gitlab/code_review_guidelines/generic_rules.md
-        # Optional tuning parameters:
-        # top_p: 0.95
-        # top_k: 40
-        # max_tokens: 8192
-        # response_mime_type: application/json
-        # (Gemini 2.x generation only: thinking_budget: 2048, include_thoughts: false)
-
-    # OpenAI configuration example (GPT-6 series / o-series reasoning models)
-    # openai-gpt-6-sol:
-    #   provider: openai
-    #   model: gpt-6-sol
-    #   reasoning_level: high
-    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
-    #   # Optional tuning parameters:
-    #   # max_tokens: 16384
-    #   # temperature: 0.2
-    #   # top_p: 1.0
-    #   # frequency_penalty: 0.0
-    #   # presence_penalty: 0.0
-    #   # seed: 42
-
-    # Azure OpenAI configuration example
-    # azure-gpt-6-sol:
-    #   provider: azure-openai
-    #   model: gpt-6-sol-deployment
-    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
-    #   # Optional tuning parameters:
-    #   # temperature: 0.0
-    #   # max_tokens: 8192
-    #   # (Requires REVIEW_BASE_URL and REVIEW_API_VERSION provided via CI/CD inputs or environment variables)
-
-    # xAI Grok configuration example (Grok 4.x flagship series)
-    # grok-4-7:
-    #   provider: grok
-    #   model: grok-4.7
-    #   reasoning_level: high
-    #   temperature: 0.0
-    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
-    #   # Optional tuning parameters:
-    #   # max_tokens: 16384
-    #   # top_p: 0.95
-
-    # Local OpenAI-compatible server configuration example (vLLM / Ollama / SGLang / llama.cpp)
-    # local-qwen3-coder:
-    #   provider: local
-    #   model: Qwen/Qwen3-Coder-Next-Instruct
-    #   temperature: 0.1
-    #   prompt_file: .gitlab/code_review_guidelines/generic_rules.md
-    #   # Optional tuning parameters:
-    #   # max_tokens: 8192
-    #   # top_p: 0.9
-    #   # repetition_penalty: 1.05
-    #   # min_p: 0.05
-    #   # (Requires REVIEW_BASE_URL provided via CI/CD variables, e.g., http://vllm-host:8000/v1)
 
 slots:
     primary: claude-sonnet-5
-    fast: gemini-3.7-flash
-    # balanced: openai-gpt-6-sol
-    # enterprise: azure-gpt-6-sol
-    # grok: grok-4-7
-    # onprem: local-qwen3-coder
+    fast: gemini-3.8-flash
 ```
 
 ### Task B. Custom Prompt Guidelines
@@ -290,6 +226,84 @@ Custom instructions can be defined inline using `prompt` or loaded from an exter
 - **Bounded File Ingestion**: `.gitlab/reviewer.yml` is parsed with a 64 KiB size limit and a 5-second timeout to prevent denial-of-service from unbounded inputs or non-terminating FIFOs.
 - **Strict Decoding**: YAML decoding uses `KnownFields(true)`. Unknown or misspelled fields fail immediately at initialization.
 - **Endpoint Isolation**: Neither `base_url` nor `api_version` can be declared within `.gitlab/reviewer.yml`. Target endpoints MUST originate from trusted CI inputs (`review_base_url`, `review_api_version`), preventing untrusted MRs from redirecting diffs or credentials to arbitrary hosts.
+
+### Task D. Approved Model Specifications and Quota Reference
+
+Model selection within `gitlab-ci-with-code-reviewer` is governed by the compiled allowlist in `internal/reviewerconfig/registry.go`. The specifications below record official context windows, hardware maximum output limits, and vendor API pricing across approved provider models.
+
+> [!NOTE]
+> The `max_tokens` parameter declared in `.gitlab/reviewer.yml` establishes an operational safety bound for individual CI review jobs. Upstream providers may update maximum output capabilities or adjust token pricing throughout a model's lifecycle. Upstream capacity changes MUST be verified against vendor documentation prior to adjusting job limits.
+
+#### Task D.1. Google Gemini Specifications
+
+##### Active Approved Gemini Models
+
+| Model Identifier        | Context Window | Max Output Tokens                        | Input Price (per 1M)                | Output Price (per 1M)                 | Cached Read (per 1M)                | Capabilities and Lifecycle                                                           |
+| :---------------------- | :------------- | :--------------------------------------- | :---------------------------------- | :------------------------------------ | :---------------------------------- | :----------------------------------------------------------------------------------- |
+| `gemini-4-argon`        | 1,048,576      | 65,536 (Sync)<br>1,048,576 (Long decode) | \$2.00 (Promo)<br>\$4.00 (Standard) | \$10.00 (Promo)<br>\$20.00 (Standard) | \$0.10 (Promo)<br>\$0.20 (Implicit) | Active GA; Flagship reasoning model (`low`, `medium`, `high`); omits sampling params |
+| `gemini-3.8-flash`      | 1,048,576      | 65,536                                   | \$0.75 (Promo)<br>\$1.50 (Standard) | \$3.75 (Promo)<br>\$7.50 (Standard)   | \$0.075 (Promo)<br>\$0.15 + storage | Active GA; Recommended fast reasoning model (`minimal`, `low`, `medium`, `high`)     |
+| `gemini-3.6-flash`      | 1,048,576      | 65,536                                   | \$0.50 (≤ 128k)<br>\$1.00 (> 128k)  | \$2.00 (≤ 128k)<br>\$4.00 (> 128k)    | \$0.05 + storage                    | Active GA; High-throughput reasoning model; supersedes `gemini-3.5-flash`            |
+| `gemini-3.5-flash-lite` | 1,048,576      | 65,536                                   | \$0.075 (≤ 128k)<br>\$0.15 (> 128k) | \$0.30 (≤ 128k)<br>\$0.60 (> 128k)    | \$0.01875 + storage                 | Active GA; High-efficiency lightweight model; supersedes `gemini-3.1-flash-lite`     |
+
+##### Deprecated and Legacy Gemini Models Reference
+
+| Model Identifier        | Lifecycle Status | Deprecation Date | Earliest Shutdown | Recommended Replacement | Upstream Routing and Operational Notice                                      |
+| :---------------------- | :--------------- | :--------------- | :---------------- | :---------------------- | :--------------------------------------------------------------------------- |
+| `gemini-3.7-flash`      | Deprecated       | October 8, 2026  | None announced    | `gemini-3.8-flash`      | Removed from AI Studio; API calls automatically routed to `gemini-3.8-flash` |
+| `gemini-3.5-flash`      | Deprecated       | October 8, 2026  | None announced    | `gemini-3.6-flash`      | Removed from AI Studio; API calls automatically routed to `gemini-3.6-flash` |
+| `gemini-3.1-flash-lite` | Deprecated       | May 7, 2026      | May 7, 2027       | `gemini-3.5-flash-lite` | Formal retirement scheduled for May 7, 2027                                  |
+| `gemini-2.5-pro`        | Retired / Legacy | June 17, 2025    | October 20, 2026  | `gemini-4-argon`        | Retired on October 20, 2026; limited access restricted to prior callers      |
+| `gemini-2.5-flash`      | Retired / Legacy | June 17, 2025    | October 20, 2026  | `gemini-3.8-flash`      | Retired on October 20, 2026; limited access restricted to prior callers      |
+| `gemini-2.5-flash-lite` | Retired / Legacy | July 22, 2025    | October 20, 2026  | `gemini-3.5-flash-lite` | Retired on October 20, 2026; limited access restricted to prior callers      |
+
+#### Task D.2. Anthropic Claude Specifications
+
+##### Active Approved Claude Models
+
+| Model Identifier    | Context Window | Max Output Tokens | Input Price (per 1M) | Output Price (per 1M) | Cached Read (per 1M)    | Capabilities and Lifecycle                                             |
+| :------------------ | :------------- | :---------------- | :------------------- | :-------------------- | :---------------------- | :--------------------------------------------------------------------- |
+| `claude-sonnet-5.5` | 1,000,000      | 128,000           | \$3.00               | \$15.00               | \$0.30 (Write: \$3.75)  | Active; Adaptive thinking; retires not sooner than September 28, 2027  |
+| `claude-opus-5.5`   | 1,000,000      | 128,000           | \$15.00              | \$75.00               | \$1.50 (Write: \$18.75) | Active; Flagship reasoning model; retires not sooner than Sep 22, 2027 |
+| `claude-sonnet-5`   | 1,000,000      | 64,000            | \$3.00               | \$15.00               | \$0.30 (Write: \$3.75)  | Active; Adaptive thinking; retires not sooner than June 30, 2027       |
+| `claude-opus-5`     | 1,000,000      | 64,000            | \$15.00              | \$75.00               | \$1.50 (Write: \$18.75) | Active; Advanced reasoning; retires not sooner than July 24, 2027      |
+| `claude-fable-5.1`  | 1,000,000      | 128,000           | \$10.00              | \$50.00               | \$1.00 (Write: \$12.50) | Active; Complex system synthesis; retires not sooner than Sep 1, 2027  |
+
+##### Deprecated and Retired Claude Models Reference
+
+| Model Identifier             | Lifecycle Status | Deprecation Date   | Earliest Shutdown | Recommended Replacement | Operational Notice                                                |
+| :--------------------------- | :--------------- | :----------------- | :---------------- | :---------------------- | :---------------------------------------------------------------- |
+| `claude-sonnet-4-5-20250929` | Deprecated       | September 29, 2025 | November 30, 2026 | `claude-sonnet-5`       | Deprecated dated snapshot; vendor retirement on November 30, 2026 |
+| `claude-haiku-4-5-20251001`  | Retired / Legacy | October 1, 2025    | October 15, 2026  | `claude-sonnet-5`       | Vendor minimum service commitment expired on October 15, 2026     |
+
+#### Task D.3. OpenAI and Azure OpenAI Specifications
+
+##### Active Approved OpenAI Models
+
+| Model Identifier | Context Window | Max Output Tokens | Input Price (per 1M) | Output Price (per 1M) | Cached Read (per 1M) | Capabilities and Lifecycle                                           |
+| :--------------- | :------------- | :---------------- | :------------------- | :-------------------- | :------------------- | :------------------------------------------------------------------- |
+| `gpt-5.6-sol`    | 256,000        | 65,536            | \$2.50               | \$10.00               | \$1.25               | Unified reasoning architecture; Azure retirement on January 11, 2028 |
+| `gpt-5.4-mini`   | 256,000        | 32,768            | \$0.75               | \$3.00                | \$0.375              | Azure DataZoneStandard deployment; retires on September 21, 2027     |
+| `o3`             | 200,000        | 100,000           | \$10.00              | \$40.00               | \$5.00               | Advanced chain-of-thought reasoning; supports `reasoning_effort`     |
+| `o3-mini`        | 200,000        | 100,000           | \$1.10               | \$4.40                | \$0.55               | Lightweight reasoning model; structured JSON support                 |
+| `o1`             | 200,000        | 100,000           | \$15.00              | \$60.00               | \$7.50               | Frontier reasoning model; reasoning tokens billed as output tokens   |
+| `gpt-4o`         | 128,000        | 16,384            | \$2.50               | \$10.00               | \$1.25               | Omnimodal standard model; structured JSON support                    |
+
+##### Deprecated and Retiring OpenAI / Azure Models Reference
+
+| Model Identifier    | Lifecycle Status | Hosting Facility | Earliest Shutdown | Recommended Replacement    | Operational Notice                                           |
+| :------------------ | :--------------- | :--------------- | :---------------- | :------------------------- | :----------------------------------------------------------- |
+| `o4-mini`           | Deprecated       | Azure OpenAI     | November 19, 2026 | `gpt-5.4-mini` / `o3-mini` | Deprecated with retirement on November 19, 2026 on Azure     |
+| `gpt-4o-2024-05-13` | Deprecated       | Azure OpenAI     | December 9, 2026  | `gpt-4o`                   | Deprecated snapshot; retirement on December 9, 2026 on Azure |
+| `gpt-4o-mini`       | Deprecated       | Azure OpenAI     | April 14, 2027    | `gpt-5.4-mini`             | Deprecated on Azure; retirement on April 14, 2027            |
+| `gpt-5.1`           | Deprecated       | OpenAI & Azure   | April 1, 2027     | `gpt-5.4` / `gpt-5.6-sol`  | OpenAI shutdown April 1, 2027; Azure retirement May 15, 2027 |
+
+#### Task D.4. xAI Grok Specifications
+
+| Model Identifier | Context Window | Max Output Tokens | Input Price (per 1M) | Output Price (per 1M) | Cached Read (per 1M) | Capabilities and Lifecycle             |
+| :--------------- | :------------- | :---------------- | :------------------- | :-------------------- | :------------------- | :------------------------------------- |
+| `grok-4.7`       | 256,000        | 65,536            | \$2.00               | \$10.00               | \$1.00               | Flagship frontier code reasoning model |
+| `grok-4.6`       | 131,072        | 32,768            | \$2.00               | \$10.00               | \$1.00               | Extended reasoning and analysis model  |
+| `grok-4.3`       | 131,072        | 16,384            | \$1.50               | \$6.00                | \$0.75               | Lightweight structured review model    |
 
 ## Section 5. Consuming CI/CD Catalog Components
 
@@ -306,7 +320,7 @@ include:
           reviewer_image: registry.gitlab.com/csning1998-lab/gitlab-ci-with-code-reviewer/reviewer:1.6.6
           review_models:
               - 'claude-sonnet-5'
-              - 'gemini-3.7-flash'
+              - 'gemini-3.8-flash'
           enable_sonarqube: true
           sonar_scanner_tags: ['sonarqube-network']
 ```
