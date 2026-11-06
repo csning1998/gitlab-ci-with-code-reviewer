@@ -185,7 +185,7 @@ The reviewer supports declarative configuration via `.gitlab/reviewer.yml` (path
 
 ### Task A. Configuration Structure
 
-The file consists of three sections: `defaults`, `models`, and `slots`. A comprehensive multi-provider template is maintained in [`.gitlab/reviewer.example.yml`](file:///home/csning1998/GitLab/csning1998-lab/gitlab-ci-with-code-reviewer/.gitlab/reviewer.example.yml).
+The file consists of three sections: `defaults`, `models`, and `slots`. A comprehensive multi-provider template is maintained in `.gitlab/reviewer.example.yml`.
 
 ```yaml
 defaults:
