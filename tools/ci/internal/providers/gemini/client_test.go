@@ -339,22 +339,26 @@ func TestReview_OmitsGenerationFieldsWhenUnset(t *testing.T) {
 }
 
 func TestReview_Gemini4OmitsDeprecatedSamplingParameters(t *testing.T) {
-	var gotBody map[string]any
-	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
-		Model:       "gemini-4-argon",
-		Temperature: testutil.Ptr(0.7),
-		TopP:        testutil.Ptr(0.9),
-		TopK:        testutil.Ptr(40),
-	}, &gotBody)
+	for _, model := range []string{"gemini-4-argon", "gemini-4-carbon"} {
+		t.Run(model, func(t *testing.T) {
+			var gotBody map[string]any
+			c := stubCapturingClient(t, reviewerconfig.ModelOptions{
+				Model:       model,
+				Temperature: testutil.Ptr(0.7),
+				TopP:        testutil.Ptr(0.9),
+				TopK:        testutil.Ptr(40),
+			}, &gotBody)
 
-	if _, err := c.Review("prompt"); err != nil {
-		t.Fatalf("Review(...) returned an unexpected error: %v", err)
-	}
-	genConfig, _ := gotBody["generationConfig"].(map[string]any)
-	for _, field := range []string{"temperature", "topP", "topK"} {
-		if _, present := genConfig[field]; present {
-			t.Errorf("gemini-4-argon: generationConfig[%q] must be omitted, got %v", field, genConfig[field])
-		}
+			if _, err := c.Review("prompt"); err != nil {
+				t.Fatalf("Review(...) returned an unexpected error: %v", err)
+			}
+			genConfig, _ := gotBody["generationConfig"].(map[string]any)
+			for _, field := range []string{"temperature", "topP", "topK"} {
+				if _, present := genConfig[field]; present {
+					t.Errorf("%s: generationConfig[%q] must be omitted, got %v", model, field, genConfig[field])
+				}
+			}
+		})
 	}
 }
 
@@ -390,7 +394,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				wantError: "reasoning_level",
 			},
 			{
-				name: "gemini 4 rejects thinkingBudget",
+				name: "gemini 4 argon rejects thinkingBudget",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-4-argon",
 					ThinkingBudget: testutil.Ptr(4096),
@@ -398,9 +402,25 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				wantError: "thinking_budget",
 			},
 			{
-				name: "gemini 4 rejects minimal reasoningLevel",
+				name: "gemini 4 carbon rejects thinkingBudget",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-carbon",
+					ThinkingBudget: testutil.Ptr(4096),
+				},
+				wantError: "thinking_budget",
+			},
+			{
+				name: "gemini 4 argon rejects minimal reasoningLevel",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-4-argon",
+					ReasoningLevel: "minimal",
+				},
+				wantError: "reasoning_level",
+			},
+			{
+				name: "gemini 4 carbon rejects minimal reasoningLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-carbon",
 					ReasoningLevel: "minimal",
 				},
 				wantError: "reasoning_level",
@@ -466,13 +486,23 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				unwantKey: "thinkingBudget",
 			},
 			{
-				name: "gemini 4 sends thinkingLevel",
+				name: "gemini 4 argon sends thinkingLevel",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-4-argon",
 					ReasoningLevel: "high",
 				},
 				wantKey:   "thinkingLevel",
 				wantValue: "high",
+				unwantKey: "thinkingBudget",
+			},
+			{
+				name: "gemini 4 carbon sends thinkingLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-carbon",
+					ReasoningLevel: "medium",
+				},
+				wantKey:   "thinkingLevel",
+				wantValue: "medium",
 				unwantKey: "thinkingBudget",
 			},
 		}

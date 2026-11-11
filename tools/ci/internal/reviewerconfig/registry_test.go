@@ -23,6 +23,7 @@ func TestResolveProvider_Matrix(t *testing.T) {
 		{name: "claude sonnet", model: "claude-sonnet-5", want: "claude"},
 		{name: "claude dated snapshot", model: "claude-opus-4-5-20251101", want: "claude"},
 		{name: "claude alias dot notation", model: "claude-opus-4.7", want: "claude"},
+		{name: "gemini carbon", model: "gemini-4-carbon", want: "gemini"},
 		{name: "gemini argon", model: "gemini-4-argon", want: "gemini"},
 		{name: "gemini flash", model: "gemini-2.5-flash", want: "gemini"},
 		{name: "gemini pro alias", model: "gemini-3-pro", want: "gemini"},
@@ -211,7 +212,7 @@ func TestSupportedModels_Matrix(t *testing.T) {
 			name:        "gemini models",
 			provider:    "gemini",
 			minCount:    5,
-			mustContain: []string{"gemini-3.8-flash", "gemini-4-argon"},
+			mustContain: []string{"gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon"},
 		},
 		{
 			name:        "openai models",

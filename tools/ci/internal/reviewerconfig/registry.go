@@ -77,6 +77,7 @@ var canonicalRegistry = map[string]map[string]struct{}{
 		"claude-haiku-4-5-20251001":  {}, // Retires not sooner than October 15, 2026.
 	},
 	"gemini": {
+		"gemini-4-carbon":        {}, // Active with no announced retirement date.
 		"gemini-4-argon":         {}, // Active with no announced retirement date.
 		"gemini-3.8-flash":       {}, // Active with no announced retirement date.
 		"gemini-3.7-flash":       {}, // Deprecated on October 8, 2026; upstream routed to gemini-3.8-flash.
