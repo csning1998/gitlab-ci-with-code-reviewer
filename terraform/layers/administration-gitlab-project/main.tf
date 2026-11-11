@@ -51,14 +51,6 @@ module "workload_identity_federation" {
   }
 }
 
-module "code_reviewer" {
-  source    = "../../modules/provisioner-code-reviewer"
-  providers = { vault = vault.bastion }
-
-  gitlab_project_id    = module.provisioner_gitlab_project.project_id
-  legacy_alias_enabled = true
-}
-
 module "github_mirror" {
   source  = "gitlab.com/csning1998-lab/provisioner-github-mirror/gitlab"
   version = "0.3.1"
