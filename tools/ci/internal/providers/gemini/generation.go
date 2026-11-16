@@ -67,6 +67,13 @@ func validateThinkingLevel(model, level string) error {
 		return nil
 	}
 	if isGemini4Model(model) {
+		if model == "gemini-4-hydrogen" {
+			if !gemini4ThinkingLevels[level] && level != "xhigh" {
+				return fmt.Errorf(
+					"gemini: model %q accepts reasoning_level low, medium, high, or xhigh only, got %q", model, level)
+			}
+			return nil
+		}
 		if !gemini4ThinkingLevels[level] {
 			return fmt.Errorf(
 				"gemini: model %q accepts reasoning_level low, medium, or high only, got %q", model, level)
