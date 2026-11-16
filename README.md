@@ -16,8 +16,8 @@
 
 2. **Multi-Provider and Modern Model Support**:
     - **Anthropic Claude**: Messages streaming API, adaptive thinking (`reasoning_level: low` to `max`), and extended thinking (`thinking_budget`).
-    - **Google Gemini**: REST `generateContent` API, Gemini 3.x series (`thinkingLevel`), and Gemini 2.5 series (`thinkingBudget`).
-    - **OpenAI and Azure OpenAI**: Unified via `openaicompat` Chat Completions wire format, supporting modern reasoning models (`gpt-6-sol`, `o3`, `o4-mini`, `reasoning_effort`), deployment routing, and `api-key` header handling.
+    - **Google Gemini**: REST `generateContent` API, Gemini 4 and 3.x series (`thinkingLevel`).
+    - **OpenAI and Azure OpenAI**: Unified via `openaicompat` Chat Completions wire format, supporting modern reasoning models (`gpt-6-sol`, `o3`, `reasoning_effort`), deployment routing, and `api-key` header handling.
     - **xAI Grok**: `grok-4.7` series through `openaicompat`.
     - **Local Inference Engines**: Self-hosted OpenAI-compatible inference servers (such as vLLM, Ollama, or llama.cpp) hosting open-weights models (such as `gemma-2-9b`, `gemma-4-31b`, `llama-3.3-70b`).
 
@@ -238,45 +238,48 @@ Model selection within `gitlab-ci-with-code-reviewer` is governed by the compile
 
 ##### Active Approved Gemini Models
 
-| Model Identifier        | Context Window | Max Output Tokens                        | Input Price (per 1M)                | Output Price (per 1M)                 | Cached Read (per 1M)                | Capabilities and Lifecycle                                                           |
-| :---------------------- | :------------- | :--------------------------------------- | :---------------------------------- | :------------------------------------ | :---------------------------------- | :----------------------------------------------------------------------------------- |
-| `gemini-4-carbon`       | 1,048,576      | 65,536 (Sync)<br>1,048,576 (Long decode) | \$2.00 (Promo)<br>\$4.00 (Standard) | \$10.00 (Promo)<br>\$20.00 (Standard) | \$0.10 (Promo)<br>\$0.20 (Implicit) | Active Stable, most capable Gemini 4, more tokens and latency than `gemini-4-argon`  |
-| `gemini-4-argon`        | 1,048,576      | 65,536 (Sync)<br>1,048,576 (Long decode) | \$2.00 (Promo)<br>\$4.00 (Standard) | \$10.00 (Promo)<br>\$20.00 (Standard) | \$0.10 (Promo)<br>\$0.20 (Implicit) | Active GA, faster Gemini 4, fewer tokens per turn than `gemini-4-carbon`             |
-| `gemini-3.8-flash`      | 1,048,576      | 65,536                                   | \$0.75 (Promo)<br>\$1.50 (Standard) | \$3.75 (Promo)<br>\$7.50 (Standard)   | \$0.075 (Promo)<br>\$0.15 + storage | Active GA; Recommended fast reasoning model (`minimal`, `low`, `medium`, `high`)     |
-| `gemini-3.6-flash`      | 1,048,576      | 65,536                                   | \$0.50 (≤ 128k)<br>\$1.00 (> 128k)  | \$2.00 (≤ 128k)<br>\$4.00 (> 128k)    | \$0.05 + storage                    | Active GA; High-throughput reasoning model; supersedes `gemini-3.5-flash`            |
-| `gemini-3.5-flash-lite` | 1,048,576      | 65,536                                   | \$0.075 (≤ 128k)<br>\$0.15 (> 128k) | \$0.30 (≤ 128k)<br>\$0.60 (> 128k)    | \$0.01875 + storage                 | Active GA; High-efficiency lightweight model; supersedes `gemini-3.1-flash-lite`     |
+| Model Identifier        | Context Window | Max Output Tokens                       | Input Price (per 1M)               | Output Price (per 1M)                | Cached Read (per 1M)               | Capabilities and Lifecycle                                                                            |
+| :---------------------- | :------------- | :-------------------------------------- | :--------------------------------- | :----------------------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------- |
+| `gemini-4-hydrogen`     | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$1.50                             | \$7.50                               | \$0.075 (Implicit)                 | Active GA; default high, supports low, medium, high, xhigh; recommended upgrade from gemini-3.8-flash |
+| `gemini-4-carbon`       | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$2.00 (Promo) / \$4.00 (Standard) | \$10.00 (Promo) / \$20.00 (Standard) | \$0.10 (Promo) / \$0.20 (Implicit) | Active Stable, most capable Gemini 4, more tokens and latency than `gemini-4-argon`                   |
+| `gemini-4-argon`        | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$2.00 (Promo) / \$4.00 (Standard) | \$10.00 (Promo) / \$20.00 (Standard) | \$0.10 (Promo) / \$0.20 (Implicit) | Active GA, faster Gemini 4, fewer tokens per turn than `gemini-4-carbon`                              |
+| `gemini-3.8-flash`      | 1,048,576      | 65,536                                  | \$0.75 (Promo) / \$1.50 (Standard) | \$3.75 (Promo) / \$7.50 (Standard)   | \$0.075 (Promo) / \$0.15 + storage | Active GA; Recommended fast reasoning model (`minimal`, `low`, `medium`, `high`)                      |
+| `gemini-3.6-flash`      | 1,048,576      | 65,536                                  | \$0.50 (≤ 128k) / \$1.00 (> 128k)  | \$2.00 (≤ 128k) / \$4.00 (> 128k)    | \$0.05 + storage                   | Active GA; High-throughput reasoning model; supersedes `gemini-3.5-flash`                             |
+| `gemini-3.5-flash-lite` | 1,048,576      | 65,536                                  | \$0.075 (≤ 128k) / \$0.15 (> 128k) | \$0.30 (≤ 128k) / \$0.60 (> 128k)    | \$0.01875 + storage                | Active GA; High-efficiency lightweight model; supersedes `gemini-3.1-flash-lite`                      |
 
-`gemini-4-carbon` and `gemini-4-argon` are distinct Gemini 4 models which share one request contract. Both models accept `reasoning_level` values `low`, `medium`, and `high`. The reviewer omits `temperature`, `top_p`, and `top_k` for both models.
+`gemini-4-hydrogen`, `gemini-4-carbon`, and `gemini-4-argon` are distinct Gemini 4 models which omit `temperature`, `top_p`, and `top_k`. `gemini-4-carbon` and `gemini-4-argon` accept `reasoning_level` values `low`, `medium`, and `high`. `gemini-4-hydrogen` accepts `low`, `medium`, `high`, and `xhigh`.
 
 ##### Deprecated and Legacy Gemini Models Reference
 
-| Model Identifier        | Lifecycle Status | Deprecation Date | Earliest Shutdown | Recommended Replacement | Upstream Routing and Operational Notice                                      |
-| :---------------------- | :--------------- | :--------------- | :---------------- | :---------------------- | :--------------------------------------------------------------------------- |
-| `gemini-3.7-flash`      | Deprecated       | October 8, 2026  | None announced    | `gemini-3.8-flash`      | Removed from AI Studio; API calls automatically routed to `gemini-3.8-flash` |
-| `gemini-3.5-flash`      | Deprecated       | October 8, 2026  | None announced    | `gemini-3.6-flash`      | Removed from AI Studio; API calls automatically routed to `gemini-3.6-flash` |
-| `gemini-3.1-flash-lite` | Deprecated       | May 7, 2026      | May 7, 2027       | `gemini-3.5-flash-lite` | Formal retirement scheduled for May 7, 2027                                  |
-| `gemini-2.5-pro`        | Retired / Legacy | June 17, 2025    | October 20, 2026  | `gemini-4-argon`        | Retired on October 20, 2026; limited access restricted to prior callers      |
-| `gemini-2.5-flash`      | Retired / Legacy | June 17, 2025    | October 20, 2026  | `gemini-3.8-flash`      | Retired on October 20, 2026; limited access restricted to prior callers      |
-| `gemini-2.5-flash-lite` | Retired / Legacy | July 22, 2025    | October 20, 2026  | `gemini-3.5-flash-lite` | Retired on October 20, 2026; limited access restricted to prior callers      |
+| Model Identifier        | Lifecycle Status | Deprecation Date | Earliest Shutdown | Recommended Replacement | Upstream Routing and Operational Notice                                       |
+| :---------------------- | :--------------- | :--------------- | :---------------- | :---------------------- | :---------------------------------------------------------------------------- |
+| `gemini-3.7-flash`      | Deprecated       | October 8, 2026  | None announced    | `gemini-3.8-flash`      | Removed from AI Studio; API calls automatically routed to `gemini-3.8-flash`  |
+| `gemini-3.5-flash`      | Deprecated       | October 8, 2026  | None announced    | `gemini-3.6-flash`      | Removed from AI Studio; API calls automatically routed to `gemini-3.6-flash`  |
+| `gemini-3.1-flash-lite` | Deprecated       | May 7, 2026      | May 7, 2027       | `gemini-3.5-flash-lite` | Formal retirement scheduled for May 7, 2027                                   |
+| `gemini-2.5-pro`        | Deprecated       | November 2, 2026 | December 1, 2026  | `gemini-3.8-flash`      | Deprecated on November 2, 2026; rerouted to `gemini-3.8-flash` on Dec 1, 2026 |
+| `gemini-2.5-flash`      | Deprecated       | November 2, 2026 | December 1, 2026  | `gemini-3.5-flash-lite` | Deprecated on November 2, 2026; rerouted to `gemini-3.5-flash-lite` on Dec 1  |
+| `gemini-2.5-flash-lite` | Retired / Legacy | July 22, 2025    | October 20, 2026  | `gemini-3.5-flash-lite` | Retired on October 20, 2026; limited access restricted to prior callers       |
 
 #### Task D.2. Anthropic Claude Specifications
 
 ##### Active Approved Claude Models
 
-| Model Identifier    | Context Window | Max Output Tokens | Input Price (per 1M) | Output Price (per 1M) | Cached Read (per 1M)    | Capabilities and Lifecycle                                             |
-| :------------------ | :------------- | :---------------- | :------------------- | :-------------------- | :---------------------- | :--------------------------------------------------------------------- |
-| `claude-sonnet-5.5` | 1,000,000      | 128,000           | \$3.00               | \$15.00               | \$0.30 (Write: \$3.75)  | Active; Adaptive thinking; retires not sooner than September 28, 2027  |
-| `claude-opus-5.5`   | 1,000,000      | 128,000           | \$15.00              | \$75.00               | \$1.50 (Write: \$18.75) | Active; Flagship reasoning model; retires not sooner than Sep 22, 2027 |
-| `claude-sonnet-5`   | 1,000,000      | 64,000            | \$3.00               | \$15.00               | \$0.30 (Write: \$3.75)  | Active; Adaptive thinking; retires not sooner than June 30, 2027       |
-| `claude-opus-5`     | 1,000,000      | 64,000            | \$15.00              | \$75.00               | \$1.50 (Write: \$18.75) | Active; Advanced reasoning; retires not sooner than July 24, 2027      |
-| `claude-fable-5.1`  | 1,000,000      | 128,000           | \$10.00              | \$50.00               | \$1.00 (Write: \$12.50) | Active; Complex system synthesis; retires not sooner than Sep 1, 2027  |
+| Model Identifier            | Context Window | Max Output Tokens | Input Price (per 1M)              | Output Price (per 1M)             | Cached Read (per 1M)              | Capabilities and Lifecycle                                                    |
+| :-------------------------- | :------------- | :---------------- | :-------------------------------- | :-------------------------------- | :-------------------------------- | :---------------------------------------------------------------------------- |
+| `claude-fable-5-2`          | 1,000,000      | 128,000           | \$8.00                            | \$40.00                           | \$0.20 (Write: \$10.00)           | Active; Adaptive thinking; retires not sooner than November 9, 2027           |
+| `claude-haiku-5-5`          | 1,000,000      | 128,000           | \$0.10 (≤ 100k) / \$0.50 (> 100k) | \$0.50 (≤ 100k) / \$2.50 (> 100k) | \$0.01 (≤ 100k) / \$0.05 (> 100k) | Active; Adaptive thinking; retires not sooner than October 7, 2027            |
+| `claude-fable-5-1`          | 1,000,000      | 128,000           | \$10.00                           | \$50.00                           | \$0.25 (Write: \$12.50)           | Active; Legacy; complex system synthesis; retires not sooner than Sep 1, 2027 |
+| `claude-opus-5.5`           | 1,000,000      | 128,000           | \$4.00                            | \$20.00                           | \$0.20 (Write: \$5.00)            | Active; Flagship reasoning model; retires not sooner than Sep 22, 2027        |
+| `claude-sonnet-5.5`         | 1,000,000      | 128,000           | \$2.00                            | \$10.00                           | \$0.10 (Write: \$2.50)            | Active; Adaptive thinking; retires not sooner than September 28, 2027         |
+| `claude-opus-5`             | 1,000,000      | 64,000            | \$5.00                            | \$25.00                           | \$0.50 (Write: \$6.25)            | Active; Advanced reasoning; retires not sooner than July 24, 2027             |
+| `claude-sonnet-5`           | 1,000,000      | 64,000            | \$2.00                            | \$10.00                           | \$0.20 (Write: \$2.50)            | Active; Adaptive thinking; retires not sooner than June 30, 2027              |
+| `claude-haiku-4-5-20251001` | 200,000        | 64,000            | \$1.00                            | \$5.00                            | \$0.10 (Write: \$1.25)            | Active; Manual thinking budget; October 15, 2026 earliest retirement passed   |
 
 ##### Deprecated and Retired Claude Models Reference
 
 | Model Identifier             | Lifecycle Status | Deprecation Date   | Earliest Shutdown | Recommended Replacement | Operational Notice                                                |
 | :--------------------------- | :--------------- | :----------------- | :---------------- | :---------------------- | :---------------------------------------------------------------- |
 | `claude-sonnet-4-5-20250929` | Deprecated       | September 29, 2025 | November 30, 2026 | `claude-sonnet-5`       | Deprecated dated snapshot; vendor retirement on November 30, 2026 |
-| `claude-haiku-4-5-20251001`  | Retired / Legacy | October 1, 2025    | October 15, 2026  | `claude-sonnet-5`       | Vendor minimum service commitment expired on October 15, 2026     |
 
 #### Task D.3. OpenAI and Azure OpenAI Specifications
 
