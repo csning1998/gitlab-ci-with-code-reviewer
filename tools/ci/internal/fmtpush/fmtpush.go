@@ -3,6 +3,7 @@ package fmtpush
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -51,7 +52,7 @@ func CommitAndPush(repoPath, message, branch, remoteURL, username, password stri
 	}
 
 	if _, err := worktree.Commit(message, &git.CommitOptions{
-		Author: &object.Signature{Name: "GitLab CI", Email: "gitlab-ci@noreply"},
+		Author: &object.Signature{Name: "GitLab CI", Email: "gitlab-ci@noreply", When: time.Now()},
 	}); err != nil {
 		return fmt.Errorf("failed to create commit %q: %w", message, err)
 	}
