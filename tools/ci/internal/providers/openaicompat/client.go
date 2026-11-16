@@ -128,24 +128,8 @@ func resolveEndpoint(modelOptions reviewerconfig.ModelOptions) string {
 
 func (c *Client) Name() string { return c.name }
 
-func isReasoningModel(model string) bool {
-	m := strings.ToLower(model)
-	return strings.HasPrefix(m, "o1") ||
-		strings.HasPrefix(m, "o3") ||
-		strings.HasPrefix(m, "o4") ||
-		strings.HasPrefix(m, "grok-4.5") ||
-		strings.HasPrefix(m, "grok-4.6")
-}
-
-func shouldUseMaxCompletionTokens(model string) bool {
-	m := strings.ToLower(model)
-	return strings.HasPrefix(m, "o1") ||
-		strings.HasPrefix(m, "o3") ||
-		strings.HasPrefix(m, "o4") ||
-		strings.HasPrefix(m, "gpt-5")
-}
-
 func (c *Client) buildPayload(prompt string) map[string]any {
+	spec := reviewerconfig.ResolveModelSpec(c.modelOptions.Provider, c.modelOptions.Model)
 	payload := map[string]any{
 		"model": c.modelOptions.Model,
 		"messages": []any{
@@ -154,7 +138,7 @@ func (c *Client) buildPayload(prompt string) map[string]any {
 	}
 
 	if c.modelOptions.MaxTokens > 0 {
-		if shouldUseMaxCompletionTokens(c.modelOptions.Model) {
+		if spec.Sampling.UseMaxCompletionTokens {
 			payload["max_completion_tokens"] = c.modelOptions.MaxTokens
 		} else {
 			payload["max_tokens"] = c.modelOptions.MaxTokens
@@ -182,7 +166,7 @@ func (c *Client) buildPayload(prompt string) map[string]any {
 		payload["min_p"] = *c.modelOptions.MinP
 	}
 
-	if !isReasoningModel(c.modelOptions.Model) && c.modelOptions.ReasoningLevel == "" {
+	if !spec.Sampling.OmitPenaltiesWhenReasoning && c.modelOptions.ReasoningLevel == "" {
 		if c.modelOptions.FrequencyPenalty != nil {
 			payload["frequency_penalty"] = *c.modelOptions.FrequencyPenalty
 		}
