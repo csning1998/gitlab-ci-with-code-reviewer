@@ -23,9 +23,14 @@ func TestResolveProvider_Matrix(t *testing.T) {
 		{name: "claude sonnet", model: "claude-sonnet-5", want: "claude"},
 		{name: "claude dated snapshot", model: "claude-opus-4-5-20251101", want: "claude"},
 		{name: "claude alias dot notation", model: "claude-opus-4.7", want: "claude"},
+		{name: "claude fable 5.2", model: "claude-fable-5-2", want: "claude"},
+		{name: "claude fable 5.2 alias", model: "claude-fable-5.2", want: "claude"},
+		{name: "claude haiku 5.5", model: "claude-haiku-5-5", want: "claude"},
+		{name: "claude haiku 5.5 alias", model: "claude-haiku-5.5", want: "claude"},
+		{name: "gemini hydrogen", model: "gemini-4-hydrogen", want: "gemini"},
 		{name: "gemini carbon", model: "gemini-4-carbon", want: "gemini"},
 		{name: "gemini argon", model: "gemini-4-argon", want: "gemini"},
-		{name: "gemini flash", model: "gemini-2.5-flash", want: "gemini"},
+		{name: "gemini flash", model: "gemini-3.8-flash", want: "gemini"},
 		{name: "gemini pro alias", model: "gemini-3-pro", want: "gemini"},
 		{name: "gemma on gemini", model: "gemma-4-31b-it", want: "gemini"},
 		{name: "grok canonical", model: "grok-4.6", want: "grok"},
@@ -39,7 +44,7 @@ func TestResolveProvider_Matrix(t *testing.T) {
 		{name: "openai mini without api version", model: "gpt-5.4-mini", want: "openai"},
 		{name: "openai alias without api version", model: "gpt-5.6", want: "openai"},
 		{name: "openai o3 without api version", model: "o3-mini", want: "openai"},
-		{name: "openai o4-mini without api version", model: "o4-mini-2025-04-16", want: "openai"},
+		{name: "openai mini snapshot without api version", model: "gpt-5.4-mini-2026-03-17", want: "openai"},
 		{name: "azure with api version", model: "gpt-4o", apiVersion: "2026-01-01", want: "azure-openai"},
 		{name: "azure gpt-5 with api version", model: "gpt-5", apiVersion: "2026-01-01", want: "azure-openai"},
 		{name: "azure o1 with api version", model: "o1", apiVersion: "2026-01-01", want: "azure-openai"},
@@ -100,7 +105,7 @@ func TestNormalizeModel_Matrix(t *testing.T) {
 	tests := []normalizeModelCase{
 		// Identity mappings (canonical models)
 		{name: "claude canonical", provider: "claude", model: "claude-sonnet-5", want: "claude-sonnet-5"},
-		{name: "gemini canonical", provider: "gemini", model: "gemini-2.5-flash", want: "gemini-2.5-flash"},
+		{name: "gemini canonical", provider: "gemini", model: "gemini-3.8-flash", want: "gemini-3.8-flash"},
 		{name: "openai canonical", provider: "openai", model: "gpt-4o", want: "gpt-4o"},
 		{name: "azure canonical", provider: "azure-openai", model: "gpt-4o", want: "gpt-4o"},
 		{name: "grok canonical", provider: "grok", model: "grok-4.6", want: "grok-4.6"},
@@ -110,10 +115,10 @@ func TestNormalizeModel_Matrix(t *testing.T) {
 		{name: "claude opus 5.5 dot alias", provider: "claude", model: "claude-opus-5.5", want: "claude-opus-5-5"},
 		{name: "claude sonnet 5.5 dot alias", provider: "claude", model: "claude-sonnet-5.5", want: "claude-sonnet-5-5"},
 		{name: "claude alias dot notation", provider: "claude", model: "claude-opus-4.7", want: "claude-opus-4-7"},
-		{name: "claude alias short name", provider: "claude", model: "claude-sonnet-4-5", want: "claude-sonnet-4-5-20250929"},
+		{name: "claude alias short name", provider: "claude", model: "claude-opus-4-5", want: "claude-opus-4-5-20251101"},
 		{name: "gemini alias preview", provider: "gemini", model: "gemini-3-flash", want: "gemini-3-flash-preview"},
 		{name: "gemini alias pro", provider: "gemini", model: "gemini-3-pro", want: "gemini-3.1-pro-preview"},
-		{name: "openai alias snapshot", provider: "openai", model: "gpt-4.1-2025-04-14", want: "gpt-4.1"},
+		{name: "openai alias snapshot", provider: "openai", model: "gpt-5.4-mini-2026-03-17", want: "gpt-5.4-mini"},
 		{name: "openai alias sol", provider: "openai", model: "gpt-5.6", want: "gpt-5.6-sol"},
 		{name: "grok alias latest", provider: "grok", model: "grok-4.6-latest", want: "grok-4.6"},
 
@@ -122,8 +127,8 @@ func TestNormalizeModel_Matrix(t *testing.T) {
 		{name: "whitespace padded model", provider: "claude", model: "  claude-sonnet-5  ", want: "claude-sonnet-5"},
 
 		// Error cases: case mismatch, unknown provider, unknown model, cross-provider mismatch
-		{name: "capitalized provider rejected", provider: "Gemini", model: "gemini-3.5-flash", wantErr: true},
-		{name: "uppercase provider rejected", provider: "GEMINI", model: "gemini-3.5-flash", wantErr: true},
+		{name: "capitalized provider rejected", provider: "Gemini", model: "gemini-3.8-flash", wantErr: true},
+		{name: "uppercase provider rejected", provider: "GEMINI", model: "gemini-3.8-flash", wantErr: true},
 		{name: "model with interior space", provider: "claude", model: "claude sonnet-5", wantErr: true},
 		{name: "unknown provider", provider: "unknown", model: "claude-sonnet-5", wantErr: true},
 		{name: "unknown model for valid provider", provider: "claude", model: "claude-unknown-9", wantErr: true},
@@ -206,13 +211,13 @@ func TestSupportedModels_Matrix(t *testing.T) {
 			name:        "claude models",
 			provider:    "claude",
 			minCount:    5,
-			mustContain: []string{"claude-sonnet-5", "claude-opus-5"},
+			mustContain: []string{"claude-sonnet-5", "claude-opus-5", "claude-fable-5-2", "claude-fable-5-1", "claude-haiku-5-5"},
 		},
 		{
 			name:        "gemini models",
 			provider:    "gemini",
 			minCount:    5,
-			mustContain: []string{"gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon"},
+			mustContain: []string{"gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen"},
 		},
 		{
 			name:        "openai models",
@@ -387,5 +392,144 @@ func TestRegistry_TableInvariants(t *testing.T) {
 				t.Errorf("invariant %q violated:\n%s", tc.name, strings.Join(failures, "\n"))
 			}
 		})
+	}
+}
+
+type providerPolicyCase struct {
+	provider string
+	want     ProviderPolicy
+}
+
+func TestProviderPolicies_Matrix(t *testing.T) {
+	openAIFamilyPolicy := ProviderPolicy{
+		MaxTemperature:           2.0,
+		SupportsFrequencyPenalty: true,
+		SupportsPresencePenalty:  true,
+	}
+	tests := []providerPolicyCase{
+		{
+			provider: "claude",
+			want: ProviderPolicy{
+				MaxTemperature:         1.0,
+				SupportsTopK:           true,
+				SupportsThinkingBudget: true,
+				SupportsWebSearch:      true,
+			},
+		},
+		{
+			provider: "gemini",
+			want: ProviderPolicy{
+				MaxTemperature:           2.0,
+				SupportsTopK:             true,
+				SupportsThinkingBudget:   true,
+				SupportsFrequencyPenalty: true,
+				SupportsPresencePenalty:  true,
+				SupportsGoogleSearch:     true,
+			},
+		},
+		{provider: "openai", want: openAIFamilyPolicy},
+		{provider: "azure-openai", want: openAIFamilyPolicy},
+		{provider: "grok", want: openAIFamilyPolicy},
+		{
+			provider: "local",
+			want: ProviderPolicy{
+				AllowCustomModels:        true,
+				MaxTemperature:           2.0,
+				SupportsTopK:             true,
+				SupportsThinkingBudget:   true,
+				SupportsFrequencyPenalty: true,
+				SupportsPresencePenalty:  true,
+				SupportsRepetition:       true,
+				SupportsMinP:             true,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.provider, func(t *testing.T) {
+			assertProviderPolicyCase(t, tc.provider, tc.want)
+		})
+	}
+}
+
+func assertProviderPolicyCase(t *testing.T, provider string, want ProviderPolicy) {
+	t.Helper()
+	got, ok := providerPolicies[provider]
+	if !ok {
+		t.Fatalf("providerPolicies missing provider %q", provider)
+	}
+	if got != want {
+		t.Errorf("providerPolicies[%q] = %+v, want %+v", provider, got, want)
+	}
+}
+
+func indexModelCatalog() map[string]ModelSpec {
+	index := make(map[string]ModelSpec, len(modelCatalog))
+	for _, spec := range modelCatalog {
+		index[spec.Provider+":"+spec.CanonicalID] = spec
+	}
+	return index
+}
+
+func TestModelCatalog_CoversAllCanonicalModels(t *testing.T) {
+	index := indexModelCatalog()
+	for provider, models := range canonicalRegistry {
+		assertProviderCatalogCoverage(t, index, provider, models)
+	}
+}
+
+func assertProviderCatalogCoverage(t *testing.T, index map[string]ModelSpec, provider string, models map[string]struct{}) {
+	t.Helper()
+	for id := range models {
+		if _, ok := index[provider+":"+id]; !ok {
+			t.Errorf("modelCatalog missing (%q, %q)", provider, id)
+		}
+	}
+}
+
+type catalogSpecCase struct {
+	provider string
+	model    string
+	mode     ThinkingMode
+	wantOmit bool
+	wantRej  bool
+}
+
+func TestModelCatalog_RepresentativeSpecs(t *testing.T) {
+	index := indexModelCatalog()
+	tests := []catalogSpecCase{
+		{provider: "claude", model: ModelClaude_Fable_5_2, mode: ThinkingAdaptive, wantOmit: true, wantRej: true},
+		{provider: "claude", model: ModelClaude_Opus_4_6, mode: ThinkingAdaptive, wantOmit: false, wantRej: false},
+		{provider: "claude", model: ModelClaude_Opus_4_5_20251101, mode: ThinkingManualBudget},
+		{provider: "gemini", model: ModelGemini_4_Hydrogen, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemini_4_Argon, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemini_4_Carbon, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemini_3_8_Flash, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemma_4_31B_IT, mode: ThinkingLevel},
+		{provider: "openai", model: ModelGPT_5_6_Sol, mode: ThinkingManualBudget},
+		{provider: "grok", model: ModelGrok_4_7, mode: ThinkingManualBudget},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.provider+":"+tc.model, func(t *testing.T) {
+			assertCatalogSpecCase(t, index, tc)
+		})
+	}
+}
+
+func assertCatalogSpecCase(t *testing.T, index map[string]ModelSpec, tc catalogSpecCase) {
+	t.Helper()
+	spec, ok := index[tc.provider+":"+tc.model]
+	if !ok {
+		t.Fatalf("modelCatalog missing (%q, %q)", tc.provider, tc.model)
+	}
+	if spec.Thinking.Mode != tc.mode {
+		t.Errorf("Thinking.Mode = %d, want %d", spec.Thinking.Mode, tc.mode)
+	}
+	if spec.Thinking.DefaultOmitted != tc.wantOmit {
+		t.Errorf("Thinking.DefaultOmitted = %t, want %t", spec.Thinking.DefaultOmitted, tc.wantOmit)
+	}
+	if spec.Sampling.RejectAtConstruction != tc.wantRej {
+		t.Errorf("Sampling.RejectAtConstruction = %t, want %t", spec.Sampling.RejectAtConstruction, tc.wantRej)
 	}
 }

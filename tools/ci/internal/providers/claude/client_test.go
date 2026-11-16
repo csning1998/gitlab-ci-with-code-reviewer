@@ -210,47 +210,105 @@ func TestExtractTextBlocks_ConcatenatesTextBlocksOnly(t *testing.T) {
 	}
 }
 
-func TestReview_SamplingParameters_TableDriven(t *testing.T) {
+func TestReview_SamplingParameters_Injected(t *testing.T) {
 	t.Parallel()
-	t.Run("injects sampling parameters when configured", func(t *testing.T) {
-		var gotBody map[string]any
-		c := stubCapturingClient(t, reviewerconfig.ModelOptions{
-			Provider:    "claude",
-			Model:       "claude-sonnet-5",
-			MaxTokens:   4096,
-			Temperature: testutil.Ptr(0.3),
-			TopP:        testutil.Ptr(0.9),
-			TopK:        testutil.Ptr(40),
-			Stop:        []string{"END"},
-		}, &gotBody)
+	var gotBody map[string]any
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{
+		Provider:    "claude",
+		Model:       "claude-sonnet-4-6",
+		MaxTokens:   4096,
+		Temperature: testutil.Ptr(0.3),
+		TopP:        testutil.Ptr(0.9),
+		TopK:        testutil.Ptr(40),
+		Stop:        []string{"END"},
+	}, &gotBody)
 
-		if _, err := c.Review("prompt"); err != nil {
-			t.Fatalf("Review(...) returned unexpected error: %v", err)
-		}
-		if gotBody["temperature"] != 0.3 {
-			t.Errorf("temperature = %v, want 0.3", gotBody["temperature"])
-		}
-		if gotBody["top_p"] != 0.9 {
-			t.Errorf("top_p = %v, want 0.9", gotBody["top_p"])
-		}
-		if gotBody["top_k"] != float64(40) {
-			t.Errorf("top_k = %v, want 40", gotBody["top_k"])
-		}
-		stop, _ := gotBody["stop_sequences"].([]any)
-		if len(stop) != 1 || stop[0] != "END" {
-			t.Errorf("stop_sequences = %v, want [END]", gotBody["stop_sequences"])
-		}
-	})
+	if _, err := c.Review("prompt"); err != nil {
+		t.Fatalf("Review(...) returned unexpected error: %v", err)
+	}
+	if gotBody["temperature"] != 0.3 {
+		t.Errorf("temperature = %v, want 0.3", gotBody["temperature"])
+	}
+	if gotBody["top_p"] != 0.9 {
+		t.Errorf("top_p = %v, want 0.9", gotBody["top_p"])
+	}
+	if gotBody["top_k"] != float64(40) {
+		t.Errorf("top_k = %v, want 40", gotBody["top_k"])
+	}
+	stop, _ := gotBody["stop_sequences"].([]any)
+	if len(stop) != 1 || stop[0] != "END" {
+		t.Errorf("stop_sequences = %v, want [END]", gotBody["stop_sequences"])
+	}
+}
 
-	t.Run("omits sampling parameters when unset", func(t *testing.T) {
-		var gotBody map[string]any
-		c := stubCapturingClient(t, reviewerconfig.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096}, &gotBody)
+func TestReview_SamplingParameters_RejectedOnClaude47Plus_TableDriven(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		opts      reviewerconfig.ModelOptions
+		wantError string
+	}{
+		{
+			name: "opus 4-7 rejects temperature",
+			opts: reviewerconfig.ModelOptions{
+				Model:       "claude-opus-4-7",
+				Temperature: testutil.Ptr(0.2),
+			},
+			wantError: "temperature",
+		},
+		{
+			name: "opus 4-8 rejects top_p",
+			opts: reviewerconfig.ModelOptions{
+				Model: "claude-opus-4-8",
+				TopP:  testutil.Ptr(0.9),
+			},
+			wantError: "top_p",
+		},
+		{
+			name: "sonnet 5 rejects top_k",
+			opts: reviewerconfig.ModelOptions{
+				Model: "claude-sonnet-5",
+				TopK:  testutil.Ptr(40),
+			},
+			wantError: "top_k",
+		},
+		{
+			name: "fable 5-2 rejects temperature",
+			opts: reviewerconfig.ModelOptions{
+				Model:       "claude-fable-5-2",
+				Temperature: testutil.Ptr(0.5),
+			},
+			wantError: "temperature",
+		},
+		{
+			name: "haiku 5-5 rejects top_p",
+			opts: reviewerconfig.ModelOptions{
+				Model: "claude-haiku-5-5",
+				TopP:  testutil.Ptr(0.8),
+			},
+			wantError: "top_p",
+		},
+	}
 
-		if _, err := c.Review("prompt"); err != nil {
-			t.Fatalf("Review(...) returned unexpected error: %v", err)
-		}
-		assertOmittedKeys(t, gotBody, "temperature", "top_p", "top_k", "stop_sequences", "output_config")
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := New(Config{ModelOptions: tc.opts, Tokens: tokensource.Static("test-api-key")})
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("New(...) error = %v, want error containing %q", err, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestReview_SamplingParameters_OmittedWhenUnset(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]any
+	c := stubCapturingClient(t, reviewerconfig.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096}, &gotBody)
+
+	if _, err := c.Review("prompt"); err != nil {
+		t.Fatalf("Review(...) returned unexpected error: %v", err)
+	}
+	assertOmittedKeys(t, gotBody, "temperature", "top_p", "top_k", "stop_sequences", "output_config")
 }
 
 func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
@@ -307,8 +365,15 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			assertBody func(t *testing.T, body map[string]any)
 		}{
 			{
-				name: "defaults to disabled thinking",
+				name: "omits thinking when unset on claude 5",
 				opts: reviewerconfig.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertOmittedKeys(t, body, "thinking", "output_config")
+				},
+			},
+			{
+				name: "defaults to disabled thinking on claude 4",
+				opts: reviewerconfig.ModelOptions{Model: "claude-opus-4-7", MaxTokens: 4096},
 				assertBody: func(t *testing.T, body map[string]any) {
 					assertThinkingField(t, body, "type", "disabled")
 				},
@@ -338,6 +403,30 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 			},
 			{
+				name: "adaptive generation with claude fable 5-2 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-fable-5-2",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
+				name: "adaptive generation with claude fable 5-1 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-fable-5-1",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
 				name: "adaptive generation with claude 5-5 uses effort",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-sonnet-5-5",
@@ -350,9 +439,21 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 			},
 			{
+				name: "adaptive generation with claude haiku 5-5 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-haiku-5-5",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
 				name: "thinking suppresses sampling overrides",
 				opts: reviewerconfig.ModelOptions{
-					Model:          "claude-opus-4-7",
+					Model:          "claude-sonnet-4-6",
 					MaxTokens:      8192,
 					ReasoningLevel: "high",
 					Temperature:    testutil.Ptr(0.3),
@@ -465,4 +566,44 @@ func TestReview_WebSearch_OmittedWhenFalseOrUnset(t *testing.T) {
 		}
 		assertOmittedKeys(t, gotBody, "tools")
 	})
+}
+
+func TestResolveModelSpec_Claude_TableDriven(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		model    string
+		wantMode reviewerconfig.ThinkingMode
+		wantOmit bool
+		wantRej  bool
+	}{
+		{
+			model:    "claude-fable-5-2",
+			wantMode: reviewerconfig.ThinkingAdaptive,
+			wantOmit: true,
+			wantRej:  true,
+		},
+		{
+			model:    "claude-opus-4-7",
+			wantMode: reviewerconfig.ThinkingAdaptive,
+			wantRej:  true,
+		},
+		{
+			model:    "claude-opus-4-6",
+			wantMode: reviewerconfig.ThinkingAdaptive,
+		},
+		{
+			model:    "claude-sonnet-4-5-20250929",
+			wantMode: reviewerconfig.ThinkingManualBudget,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			spec := reviewerconfig.ResolveModelSpec("claude", tc.model)
+			if spec.Thinking.Mode != tc.wantMode || spec.Thinking.DefaultOmitted != tc.wantOmit || spec.Sampling.RejectAtConstruction != tc.wantRej {
+				t.Errorf("ResolveModelSpec(\"claude\", %q) = %+v, want mode=%d omit=%t rej=%t",
+					tc.model, spec, tc.wantMode, tc.wantOmit, tc.wantRej)
+			}
+		})
+	}
 }

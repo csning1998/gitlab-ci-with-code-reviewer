@@ -23,7 +23,7 @@ func TestNew_DispatchesByProvider(t *testing.T) {
 		wantName   string
 	}{
 		{provider: "claude", model: "claude-sonnet-5", wantName: "Claude"},
-		{provider: "gemini", model: "gemini-2.5-flash", wantName: "Gemini"},
+		{provider: "gemini", model: "gemini-3.8-flash", wantName: "Gemini"},
 		{provider: "openai", model: "gpt-4o", wantName: "OpenAI"},
 		{provider: "azure-openai", model: "gpt-4o", baseURL: "https://example.openai.azure.com", apiVersion: "2026-01-01", wantName: "Azure OpenAI"},
 		{provider: "grok", model: "grok-4.6", wantName: "Grok"},

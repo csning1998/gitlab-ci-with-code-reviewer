@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -207,9 +208,11 @@ func TestCommitAndPush_Success(t *testing.T) {
 		t.Fatalf("PlainInit(%q, bare) failed: %v", remoteDir, err)
 	}
 
+	before := time.Now().Add(-time.Second)
 	if err := CommitAndPush(sourceDir, "style: gofmt", "feature-branch", remoteDir, JobTokenUsername, testutil.GitLabToken); err != nil {
 		t.Fatalf("CommitAndPush(...) returned an unexpected error: %v", err)
 	}
+	after := time.Now().Add(time.Second)
 
 	changed, err := DetectWorktreeModifications(sourceDir)
 	if err != nil {
@@ -237,6 +240,11 @@ func TestCommitAndPush_Success(t *testing.T) {
 	}
 	if commit.Author.Name != "GitLab CI" || commit.Author.Email != "gitlab-ci@noreply" {
 		t.Errorf("pushed commit author = %q <%s>, want \"GitLab CI\" <gitlab-ci@noreply>", commit.Author.Name, commit.Author.Email)
+	}
+	for role, when := range map[string]time.Time{"author": commit.Author.When, "committer": commit.Committer.When} {
+		if when.Before(before) || when.After(after) {
+			t.Errorf("pushed commit %s date = %v, want a time between %v and %v", role, when, before, after)
+		}
 	}
 }
 

@@ -425,6 +425,22 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 				wantError: "reasoning_level",
 			},
+			{
+				name: "gemini 4 argon rejects xhigh reasoningLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-argon",
+					ReasoningLevel: "xhigh",
+				},
+				wantError: "reasoning_level",
+			},
+			{
+				name: "gemini 4 hydrogen rejects minimal reasoningLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-hydrogen",
+					ReasoningLevel: "minimal",
+				},
+				wantError: "reasoning_level",
+			},
 		}
 
 		for _, tc := range tests {
@@ -463,6 +479,16 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 				wantKey:   "thinkingLevel",
 				wantValue: "high",
+				unwantKey: "thinkingBudget",
+			},
+			{
+				name: "gemini 4 hydrogen sends xhigh thinkingLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-hydrogen",
+					ReasoningLevel: "xhigh",
+				},
+				wantKey:   "thinkingLevel",
+				wantValue: "xhigh",
 				unwantKey: "thinkingBudget",
 			},
 			{

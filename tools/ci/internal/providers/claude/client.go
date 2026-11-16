@@ -70,6 +70,9 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateSampling(model, cfg.ModelOptions); err != nil {
+		return nil, err
+	}
 
 	c := &Client{
 		model:        sdk.Model(model),
@@ -190,7 +193,7 @@ func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 		}
 	}
 
-	if c.thinking.active {
+	if c.thinking.active || reviewerconfig.ResolveModelSpec("claude", string(c.model)).Sampling.RejectAtConstruction {
 		return params
 	}
 	if c.modelOptions.Temperature != nil {
@@ -203,6 +206,24 @@ func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 		params.TopK = param.NewOpt(int64(*c.modelOptions.TopK))
 	}
 	return params
+}
+
+// validateSampling rejects sampling overrides on Claude 4.7 and later models during client
+// construction before requests reach the Messages API.
+func validateSampling(model string, opts reviewerconfig.ModelOptions) error {
+	if !reviewerconfig.ResolveModelSpec("claude", model).Sampling.RejectAtConstruction {
+		return nil
+	}
+	if opts.Temperature != nil {
+		return fmt.Errorf("claude: model %q rejects temperature", model)
+	}
+	if opts.TopP != nil {
+		return fmt.Errorf("claude: model %q rejects top_p", model)
+	}
+	if opts.TopK != nil {
+		return fmt.Errorf("claude: model %q rejects top_k", model)
+	}
+	return nil
 }
 
 // newHTTPClient builds the transport shared by every request. The SDK default client is

@@ -34,7 +34,7 @@ func TestResolveReviewOptions_DerivesProviderFromModel(t *testing.T) {
 		wantProvider string
 	}{
 		{model: "claude-sonnet-5", wantProvider: "claude"},
-		{model: "gemini-2.5-flash", wantProvider: "gemini"},
+		{model: "gemini-3.8-flash", wantProvider: "gemini"},
 		{model: "grok-4.6", wantProvider: "grok"},
 		{model: "gpt-4o", wantProvider: "openai"},
 		{model: "llama-3.3-70b", wantProvider: "local"},
