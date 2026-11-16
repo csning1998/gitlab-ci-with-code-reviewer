@@ -216,7 +216,7 @@ func TestReview_SamplingParameters_TableDriven(t *testing.T) {
 		var gotBody map[string]any
 		c := stubCapturingClient(t, reviewerconfig.ModelOptions{
 			Provider:    "claude",
-			Model:       "claude-sonnet-5",
+			Model:       "claude-sonnet-4-6",
 			MaxTokens:   4096,
 			Temperature: testutil.Ptr(0.3),
 			TopP:        testutil.Ptr(0.9),
@@ -239,6 +239,64 @@ func TestReview_SamplingParameters_TableDriven(t *testing.T) {
 		stop, _ := gotBody["stop_sequences"].([]any)
 		if len(stop) != 1 || stop[0] != "END" {
 			t.Errorf("stop_sequences = %v, want [END]", gotBody["stop_sequences"])
+		}
+	})
+
+	t.Run("rejects sampling parameters on claude 4.7 and later", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			opts      reviewerconfig.ModelOptions
+			wantError string
+		}{
+			{
+				name: "opus 4-7 rejects temperature",
+				opts: reviewerconfig.ModelOptions{
+					Model:       "claude-opus-4-7",
+					Temperature: testutil.Ptr(0.2),
+				},
+				wantError: "temperature",
+			},
+			{
+				name: "opus 4-8 rejects top_p",
+				opts: reviewerconfig.ModelOptions{
+					Model: "claude-opus-4-8",
+					TopP:  testutil.Ptr(0.9),
+				},
+				wantError: "top_p",
+			},
+			{
+				name: "sonnet 5 rejects top_k",
+				opts: reviewerconfig.ModelOptions{
+					Model: "claude-sonnet-5",
+					TopK:  testutil.Ptr(40),
+				},
+				wantError: "top_k",
+			},
+			{
+				name: "fable 5-2 rejects temperature",
+				opts: reviewerconfig.ModelOptions{
+					Model:       "claude-fable-5-2",
+					Temperature: testutil.Ptr(0.5),
+				},
+				wantError: "temperature",
+			},
+			{
+				name: "haiku 5-5 rejects top_p",
+				opts: reviewerconfig.ModelOptions{
+					Model: "claude-haiku-5-5",
+					TopP:  testutil.Ptr(0.8),
+				},
+				wantError: "top_p",
+			},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := New(Config{ModelOptions: tc.opts, Tokens: tokensource.Static("test-api-key")})
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("New(...) error = %v, want error containing %q", err, tc.wantError)
+				}
+			})
 		}
 	})
 
@@ -307,8 +365,15 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 			assertBody func(t *testing.T, body map[string]any)
 		}{
 			{
-				name: "defaults to disabled thinking",
+				name: "omits thinking when unset on claude 5",
 				opts: reviewerconfig.ModelOptions{Model: "claude-sonnet-5", MaxTokens: 4096},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertOmittedKeys(t, body, "thinking", "output_config")
+				},
+			},
+			{
+				name: "defaults to disabled thinking on claude 4",
+				opts: reviewerconfig.ModelOptions{Model: "claude-opus-4-7", MaxTokens: 4096},
 				assertBody: func(t *testing.T, body map[string]any) {
 					assertThinkingField(t, body, "type", "disabled")
 				},
@@ -338,6 +403,30 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 			},
 			{
+				name: "adaptive generation with claude fable 5-2 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-fable-5-2",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
+				name: "adaptive generation with claude fable 5-1 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-fable-5-1",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
 				name: "adaptive generation with claude 5-5 uses effort",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "claude-sonnet-5-5",
@@ -350,9 +439,21 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 			},
 			{
+				name: "adaptive generation with claude haiku 5-5 uses effort",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "claude-haiku-5-5",
+					MaxTokens:      8192,
+					ReasoningLevel: "high",
+				},
+				assertBody: func(t *testing.T, body map[string]any) {
+					assertThinkingField(t, body, "type", "adaptive")
+					assertOutputConfigField(t, body, "effort", "high")
+				},
+			},
+			{
 				name: "thinking suppresses sampling overrides",
 				opts: reviewerconfig.ModelOptions{
-					Model:          "claude-opus-4-7",
+					Model:          "claude-sonnet-4-6",
 					MaxTokens:      8192,
 					ReasoningLevel: "high",
 					Temperature:    testutil.Ptr(0.3),

@@ -220,7 +220,7 @@ defaults:
   max_tokens: 4096
 models:
   fast-reviewer:
-    model: gemini-2.5-flash
+    model: gemini-3.8-flash
     temperature: 0.2
 slots:
   primary: fast-reviewer

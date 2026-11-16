@@ -86,7 +86,7 @@ models:
     model: claude-sonnet-5
   secondary-reviewer:
     provider: gemini
-    model: gemini-2.5-flash
+    model: gemini-3.8-flash
 slots:
   primary: primary-reviewer
   secondary: secondary-reviewer
@@ -97,7 +97,7 @@ slots:
 		wantModel string
 	}{
 		{slot: "primary", wantModel: "claude-sonnet-5"},
-		{slot: "secondary", wantModel: "gemini-2.5-flash"},
+		{slot: "secondary", wantModel: "gemini-3.8-flash"},
 	}
 
 	for _, tc := range tests {
@@ -123,7 +123,7 @@ models:
   a:
     model: claude-opus-4-6
   b:
-    model: gemini-3.5-flash
+    model: gemini-3.6-flash
     max_tokens: 1024
   c:
     model: grok-4.5
@@ -283,7 +283,7 @@ func TestResolveDeclaredOptions_ProviderPrecedence(t *testing.T) {
 	}{
 		{
 			name:         "defaults provider is inherited by an entry that omits it",
-			body:         "defaults:\n  provider: gemini\nmodels:\n  k:\n    model: gemini-3.5-flash\n",
+			body:         "defaults:\n  provider: gemini\nmodels:\n  k:\n    model: gemini-3.6-flash\n",
 			wantProvider: "gemini",
 		},
 		{
@@ -303,7 +303,7 @@ func TestResolveDeclaredOptions_ProviderPrecedence(t *testing.T) {
 		},
 		{
 			name:         "blank entry provider inherits defaults provider",
-			body:         "defaults:\n  provider: gemini\nmodels:\n  k:\n    provider: \"  \"\n    model: gemini-3.5-flash\n",
+			body:         "defaults:\n  provider: gemini\nmodels:\n  k:\n    provider: \"  \"\n    model: gemini-3.6-flash\n",
 			wantProvider: "gemini",
 		},
 		{
@@ -473,7 +473,7 @@ models:
 func TestResolveDeclaredOptions_NonFiniteYAMLNumbersAreRejected(t *testing.T) {
 	for _, literal := range []string{".nan", ".NaN", ".inf", "-.inf", "+.Inf"} {
 		t.Run(literal, func(t *testing.T) {
-			path := writeDeclaration(t, "models:\n  a:\n    model: gemini-3.5-flash\n    temperature: "+literal+"\n")
+			path := writeDeclaration(t, "models:\n  a:\n    model: gemini-3.6-flash\n    temperature: "+literal+"\n")
 			if opts, err := ResolveDeclaredOptions(path, "a"); err == nil {
 				t.Errorf("ResolveDeclaredOptions accepted temperature %v", *opts.Temperature)
 			}
