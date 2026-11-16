@@ -395,95 +395,109 @@ func TestRegistry_TableInvariants(t *testing.T) {
 	}
 }
 
+type providerPolicyCase struct {
+	provider string
+	want     ProviderPolicy
+}
+
 func TestProviderPolicies_Matrix(t *testing.T) {
-	tests := []struct {
-		provider string
-		check    func(t *testing.T, policy ProviderPolicy)
-	}{
+	openAIFamilyPolicy := ProviderPolicy{
+		MaxTemperature:           2.0,
+		SupportsFrequencyPenalty: true,
+		SupportsPresencePenalty:  true,
+	}
+	tests := []providerPolicyCase{
 		{
 			provider: "claude",
-			check: func(t *testing.T, policy ProviderPolicy) {
-				if policy.MaxTemperature != 1.0 || !policy.SupportsWebSearch || policy.SupportsGoogleSearch {
-					t.Errorf("unexpected claude policy: %+v", policy)
-				}
+			want: ProviderPolicy{
+				MaxTemperature:         1.0,
+				SupportsTopK:           true,
+				SupportsThinkingBudget: true,
+				SupportsWebSearch:      true,
 			},
 		},
 		{
 			provider: "gemini",
-			check: func(t *testing.T, policy ProviderPolicy) {
-				if policy.MaxTemperature != 2.0 || !policy.SupportsGoogleSearch || !policy.SupportsTopK {
-					t.Errorf("unexpected gemini policy: %+v", policy)
-				}
+			want: ProviderPolicy{
+				MaxTemperature:           2.0,
+				SupportsTopK:             true,
+				SupportsThinkingBudget:   true,
+				SupportsFrequencyPenalty: true,
+				SupportsPresencePenalty:  true,
+				SupportsGoogleSearch:     true,
 			},
 		},
-		{
-			provider: "openai",
-			check: func(t *testing.T, policy ProviderPolicy) {
-				if policy.MaxTemperature != 2.0 || policy.SupportsTopK || policy.SupportsThinkingBudget {
-					t.Errorf("unexpected openai policy: %+v", policy)
-				}
-			},
-		},
-		{
-			provider: "azure-openai",
-			check: func(t *testing.T, policy ProviderPolicy) {
-				if policy.MaxTemperature != 2.0 || policy.SupportsTopK || policy.SupportsThinkingBudget {
-					t.Errorf("unexpected azure-openai policy: %+v", policy)
-				}
-			},
-		},
-		{
-			provider: "grok",
-			check: func(t *testing.T, policy ProviderPolicy) {
-				if policy.MaxTemperature != 2.0 || policy.SupportsTopK || policy.SupportsThinkingBudget {
-					t.Errorf("unexpected grok policy: %+v", policy)
-				}
-			},
-		},
+		{provider: "openai", want: openAIFamilyPolicy},
+		{provider: "azure-openai", want: openAIFamilyPolicy},
+		{provider: "grok", want: openAIFamilyPolicy},
 		{
 			provider: "local",
-			check: func(t *testing.T, policy ProviderPolicy) {
-				if !policy.AllowCustomModels || policy.MaxTemperature != 2.0 || !policy.SupportsRepetition || !policy.SupportsMinP {
-					t.Errorf("unexpected local policy: %+v", policy)
-				}
+			want: ProviderPolicy{
+				AllowCustomModels:        true,
+				MaxTemperature:           2.0,
+				SupportsTopK:             true,
+				SupportsThinkingBudget:   true,
+				SupportsFrequencyPenalty: true,
+				SupportsPresencePenalty:  true,
+				SupportsRepetition:       true,
+				SupportsMinP:             true,
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.provider, func(t *testing.T) {
-			policy, ok := providerPolicies[tc.provider]
-			if !ok {
-				t.Fatalf("providerPolicies missing provider %q", tc.provider)
-			}
-			tc.check(t, policy)
+			assertProviderPolicyCase(t, tc.provider, tc.want)
 		})
 	}
 }
 
-func TestModelCatalog_Coverage(t *testing.T) {
+func assertProviderPolicyCase(t *testing.T, provider string, want ProviderPolicy) {
+	t.Helper()
+	got, ok := providerPolicies[provider]
+	if !ok {
+		t.Fatalf("providerPolicies missing provider %q", provider)
+	}
+	if got != want {
+		t.Errorf("providerPolicies[%q] = %+v, want %+v", provider, got, want)
+	}
+}
+
+func indexModelCatalog() map[string]ModelSpec {
 	index := make(map[string]ModelSpec, len(modelCatalog))
 	for _, spec := range modelCatalog {
 		index[spec.Provider+":"+spec.CanonicalID] = spec
 	}
+	return index
+}
 
-	t.Run("covers all canonical models", func(t *testing.T) {
-		for provider, models := range canonicalRegistry {
-			for id := range models {
-				if _, ok := index[provider+":"+id]; !ok {
-					t.Errorf("modelCatalog missing (%q, %q)", provider, id)
-				}
-			}
+func TestModelCatalog_CoversAllCanonicalModels(t *testing.T) {
+	index := indexModelCatalog()
+	for provider, models := range canonicalRegistry {
+		assertProviderCatalogCoverage(t, index, provider, models)
+	}
+}
+
+func assertProviderCatalogCoverage(t *testing.T, index map[string]ModelSpec, provider string, models map[string]struct{}) {
+	t.Helper()
+	for id := range models {
+		if _, ok := index[provider+":"+id]; !ok {
+			t.Errorf("modelCatalog missing (%q, %q)", provider, id)
 		}
-	})
+	}
+}
 
-	representative := []struct {
-		provider string
-		model    string
-		mode     ThinkingMode
-		wantOmit bool
-		wantRej  bool
-	}{
+type catalogSpecCase struct {
+	provider string
+	model    string
+	mode     ThinkingMode
+	wantOmit bool
+	wantRej  bool
+}
+
+func TestModelCatalog_RepresentativeSpecs(t *testing.T) {
+	index := indexModelCatalog()
+	tests := []catalogSpecCase{
 		{provider: "claude", model: ModelClaude_Fable_5_2, mode: ThinkingAdaptive, wantOmit: true, wantRej: true},
 		{provider: "claude", model: ModelClaude_Opus_4_6, mode: ThinkingAdaptive, wantOmit: false, wantRej: false},
 		{provider: "claude", model: ModelClaude_Opus_4_5_20251101, mode: ThinkingManualBudget},
@@ -496,21 +510,26 @@ func TestModelCatalog_Coverage(t *testing.T) {
 		{provider: "grok", model: ModelGrok_4_7, mode: ThinkingManualBudget},
 	}
 
-	for _, tc := range representative {
+	for _, tc := range tests {
 		t.Run(tc.provider+":"+tc.model, func(t *testing.T) {
-			spec, ok := index[tc.provider+":"+tc.model]
-			if !ok {
-				t.Fatalf("modelCatalog missing (%q, %q)", tc.provider, tc.model)
-			}
-			if spec.Thinking.Mode != tc.mode {
-				t.Errorf("Thinking.Mode = %d, want %d", spec.Thinking.Mode, tc.mode)
-			}
-			if spec.Thinking.DefaultOmitted != tc.wantOmit {
-				t.Errorf("Thinking.DefaultOmitted = %t, want %t", spec.Thinking.DefaultOmitted, tc.wantOmit)
-			}
-			if spec.Sampling.RejectAtConstruction != tc.wantRej {
-				t.Errorf("Sampling.RejectAtConstruction = %t, want %t", spec.Sampling.RejectAtConstruction, tc.wantRej)
-			}
+			assertCatalogSpecCase(t, index, tc)
 		})
+	}
+}
+
+func assertCatalogSpecCase(t *testing.T, index map[string]ModelSpec, tc catalogSpecCase) {
+	t.Helper()
+	spec, ok := index[tc.provider+":"+tc.model]
+	if !ok {
+		t.Fatalf("modelCatalog missing (%q, %q)", tc.provider, tc.model)
+	}
+	if spec.Thinking.Mode != tc.mode {
+		t.Errorf("Thinking.Mode = %d, want %d", spec.Thinking.Mode, tc.mode)
+	}
+	if spec.Thinking.DefaultOmitted != tc.wantOmit {
+		t.Errorf("Thinking.DefaultOmitted = %t, want %t", spec.Thinking.DefaultOmitted, tc.wantOmit)
+	}
+	if spec.Sampling.RejectAtConstruction != tc.wantRej {
+		t.Errorf("Sampling.RejectAtConstruction = %t, want %t", spec.Sampling.RejectAtConstruction, tc.wantRej)
 	}
 }
