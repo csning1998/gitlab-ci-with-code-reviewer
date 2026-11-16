@@ -15,8 +15,10 @@ const MinThinkingBudget = 1024
 // adaptiveThinkingModels lists the canonical models which accept adaptive thinking with an
 // effort level. Every other approved model takes a manual budget instead.
 var adaptiveThinkingModels = map[string]bool{
-	"claude-fable-5.1":  true,
+	"claude-fable-5-2":  true,
+	"claude-fable-5-1":  true,
 	"claude-fable-5":    true,
+	"claude-haiku-5-5":  true,
 	"claude-opus-5-5":   true,
 	"claude-sonnet-5-5": true,
 	"claude-opus-5":     true,
@@ -25,6 +27,34 @@ var adaptiveThinkingModels = map[string]bool{
 	"claude-opus-4-7":   true,
 	"claude-opus-4-6":   true,
 	"claude-sonnet-4-6": true,
+}
+
+// defaultAdaptiveModels lists Claude 5 and later models, which enable adaptive thinking
+// automatically when thinking is omitted.
+var defaultAdaptiveModels = map[string]bool{
+	"claude-fable-5-2":  true,
+	"claude-fable-5-1":  true,
+	"claude-fable-5":    true,
+	"claude-haiku-5-5":  true,
+	"claude-opus-5-5":   true,
+	"claude-sonnet-5-5": true,
+	"claude-opus-5":     true,
+	"claude-sonnet-5":   true,
+}
+
+// samplingRejectedModels lists Claude 4.7 and later models, which reject temperature, top_p,
+// and top_k.
+var samplingRejectedModels = map[string]bool{
+	"claude-fable-5-2":  true,
+	"claude-fable-5-1":  true,
+	"claude-fable-5":    true,
+	"claude-haiku-5-5":  true,
+	"claude-opus-5-5":   true,
+	"claude-sonnet-5-5": true,
+	"claude-opus-5":     true,
+	"claude-sonnet-5":   true,
+	"claude-opus-4-8":   true,
+	"claude-opus-4-7":   true,
 }
 
 // adaptiveEfforts lists the effort levels the Messages API accepts on output_config.
@@ -76,6 +106,9 @@ func planThinking(model string, opts reviewerconfig.ModelOptions) (thinkingPlan,
 			active: true,
 		}, nil
 	default:
+		if defaultAdaptiveModels[model] {
+			return thinkingPlan{}, nil
+		}
 		disabled := sdk.NewThinkingConfigDisabledParam()
 		return thinkingPlan{config: sdk.ThinkingConfigParamUnion{OfDisabled: &disabled}}, nil
 	}
