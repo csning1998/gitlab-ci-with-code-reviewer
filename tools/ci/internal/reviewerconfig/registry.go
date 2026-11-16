@@ -7,120 +7,82 @@ import (
 	"strings"
 )
 
-// Provider identifiers of the two platforms which publish an identical model catalogue.
-// A reverse lookup of a shared identifier requires the api-version to pick the owner.
-const (
-	providerOpenAI      = "openai"
-	providerAzureOpenAI = "azure-openai"
+var (
+	canonicalRegistry   = map[string]map[string]struct{}{}
+	aliasRegistry       = map[string]map[string]string{}
+	specByProviderModel = map[string]map[string]ModelSpec{}
+	specByGlobalID      = map[string]ModelSpec{}
 )
 
-var openAICanonicalModels = map[string]struct{}{
-	"gpt-4o":                 {},
-	"gpt-4-turbo":            {},
-	"gpt-5":                  {},
-	"gpt-5-mini":             {},
-	"gpt-5-nano":             {},
-	"gpt-5.2":                {}, // Retires on June 8, 2027 on Azure.
-	"gpt-5.4":                {}, // Retires on September 2, 2027 on Azure.
-	"gpt-5.4-mini":           {}, // Retires on September 21, 2027 on Azure.
-	"gpt-5.4-pro":            {}, // Retires on September 7, 2027 on Azure.
-	"gpt-5.5":                {}, // Retires on October 26, 2027 on Azure.
-	"gpt-5.6-sol":            {}, // Retires on January 11, 2028 on Azure.
-	"gpt-5.6-terra":          {}, // Retires on January 11, 2028 on Azure.
-	"gpt-5.6-luna":           {}, // Retires on January 11, 2028 on Azure.
-	"gpt-6-astra":            {},
-	"o1":                     {},
-	"o1-mini":                {},
-	"o1-preview":             {},
-	"o3":                     {},
-	"o3-mini":                {},
-	"o3-pro":                 {},
-	"gpt-4-turbo-2024-04-09": {},
-	"o1-mini-2024-09-12":     {},
-	"o1-preview-2024-09-12":  {},
+func init() {
+	for _, spec := range modelCatalog {
+		if canonicalRegistry[spec.Provider] == nil {
+			canonicalRegistry[spec.Provider] = map[string]struct{}{}
+		}
+		if aliasRegistry[spec.Provider] == nil {
+			aliasRegistry[spec.Provider] = map[string]string{}
+		}
+		if specByProviderModel[spec.Provider] == nil {
+			specByProviderModel[spec.Provider] = map[string]ModelSpec{}
+		}
+
+		canonicalRegistry[spec.Provider][spec.CanonicalID] = struct{}{}
+		specByProviderModel[spec.Provider][spec.CanonicalID] = spec
+		specByGlobalID[strings.ToLower(spec.CanonicalID)] = spec
+
+		for _, alias := range spec.Aliases {
+			aliasRegistry[spec.Provider][alias] = spec.CanonicalID
+			specByProviderModel[spec.Provider][alias] = spec
+			specByGlobalID[strings.ToLower(alias)] = spec
+		}
+	}
 }
 
-// canonicalRegistry maps provider names to the set of supported canonical model identifiers.
-var canonicalRegistry = map[string]map[string]struct{}{
-	"claude": {
-		"claude-fable-5-2":          {}, // Retires not sooner than November 9, 2027.
-		"claude-fable-5-1":          {}, // Retires not sooner than September 1, 2027.
-		"claude-fable-5":            {}, // Retires not sooner than June 9, 2027.
-		"claude-haiku-5-5":          {}, // Retires not sooner than October 7, 2027.
-		"claude-opus-5-5":           {}, // Retires not sooner than September 22, 2027.
-		"claude-sonnet-5-5":         {}, // Retires not sooner than September 28, 2027.
-		"claude-opus-5":             {}, // Retires not sooner than July 24, 2027.
-		"claude-sonnet-5":           {}, // Retires not sooner than June 30, 2027.
-		"claude-opus-4-8":           {}, // Retires not sooner than May 28, 2027.
-		"claude-opus-4-7":           {}, // Retires not sooner than April 16, 2027.
-		"claude-opus-4-6":           {}, // Retires not sooner than February 5, 2027.
-		"claude-sonnet-4-6":         {}, // Retires not sooner than February 17, 2027.
-		"claude-opus-4-5-20251101":  {}, // Retires not sooner than November 24, 2026.
-		"claude-haiku-4-5-20251001": {}, // Active despite October 15, 2026 earliest retirement date.
-	},
-	"gemini": {
-		"gemini-4-hydrogen":      {}, // Active with no announced retirement date.
-		"gemini-4-carbon":        {}, // Active with no announced retirement date.
-		"gemini-4-argon":         {}, // Active with no announced retirement date.
-		"gemini-3.8-flash":       {}, // Active with no announced retirement date.
-		"gemini-3.6-flash":       {}, // Active with no announced retirement date.
-		"gemini-3.5-flash-lite":  {}, // Active with no announced retirement date.
-		"gemini-3.1-pro-preview": {},
-		"gemini-3-flash-preview": {},
-		"gemma-4-31b-it":         {},
-		"gemma-4-26b-a4b-it":     {},
-	},
-	"openai":       openAICanonicalModels,
-	"azure-openai": openAICanonicalModels,
-	"grok": {
-		"grok-4.7":              {}, // Active with no announced retirement date.
-		"grok-4.6":              {}, // Active with no announced retirement date.
-		"grok-4.5":              {}, // Active with no announced retirement date.
-		"grok-4.3":              {}, // Active with no announced retirement date.
-		"grok-4.20-multi-agent": {},
-	},
-	"local": {
-		"gemma-2-9b":      {},
-		"gemma-2-27b":     {},
-		"gemma-4-31b":     {},
-		"gemma-4-26b-a4b": {},
-		"llama-3.3-70b":   {},
-		"llama-3.1-8b":    {},
-		"codellama-70b":   {},
-		"mistral-large":   {},
-	},
+// LookupProviderPolicy returns the capability policy declared for provider.
+func LookupProviderPolicy(provider string) (ProviderPolicy, bool) {
+	policy, ok := providerPolicies[strings.TrimSpace(provider)]
+	return policy, ok
 }
 
-// aliasRegistry maps known provider-specific model aliases and snapshot formats to their canonical identifiers.
-var aliasRegistry = map[string]map[string]string{
-	"claude": {
-		"claude-fable-5.2":  "claude-fable-5-2",
-		"claude-fable-5.1":  "claude-fable-5-1",
-		"claude-haiku-5.5":  "claude-haiku-5-5",
-		"claude-opus-5.5":   "claude-opus-5-5",
-		"claude-sonnet-5.5": "claude-sonnet-5-5",
-		"claude-opus-4.7":   "claude-opus-4-7",
-		"claude-opus-4-5":   "claude-opus-4-5-20251101",
-		"claude-haiku-4-5":  "claude-haiku-4-5-20251001",
-	},
-	"gemini": {
-		"gemini-3-flash": "gemini-3-flash-preview",
-		"gemini-3-pro":   "gemini-3.1-pro-preview",
-	},
-	"openai": {
-		"gpt-5.6":                 "gpt-5.6-sol",
-		"gpt-5.4-mini-2026-03-17": "gpt-5.4-mini",
-	},
-	"azure-openai": {
-		"gpt-5.6":                 "gpt-5.6-sol",
-		"gpt-5.4-mini-2026-03-17": "gpt-5.4-mini",
-	},
-	"grok": {
-		"grok-4.7-latest":            "grok-4.7",
-		"grok-4-7":                   "grok-4.7",
-		"grok-4.6-latest":            "grok-4.6",
-		"grok-4.20-multi-agent-0309": "grok-4.20-multi-agent",
-	},
+// LookupModelSpec returns the declared ModelSpec for a cataloged canonical or alias model.
+func LookupModelSpec(provider, model string) (ModelSpec, bool) {
+	trimmedProvider := strings.TrimSpace(provider)
+	trimmedModel := strings.TrimSpace(model)
+	if trimmedModel == "" {
+		return ModelSpec{}, false
+	}
+
+	if trimmedProvider != "" {
+		if specs, ok := specByProviderModel[trimmedProvider]; ok {
+			if spec, found := specs[trimmedModel]; found {
+				return spec, true
+			}
+		}
+		return ModelSpec{}, false
+	}
+
+	spec, ok := specByGlobalID[strings.ToLower(trimmedModel)]
+	return spec, ok
+}
+
+// ResolveModelSpec resolves the runtime ModelSpec for provider and model, falling back to
+// generation prefix defaults when a direct caller uses an uncataloged or custom model.
+func ResolveModelSpec(provider, model string) ModelSpec {
+	if spec, ok := LookupModelSpec(provider, model); ok {
+		return spec
+	}
+
+	trimmedProvider := strings.TrimSpace(provider)
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+	for _, fb := range prefixFallbacks {
+		if fb.provider != "" && trimmedProvider != "" && fb.provider != trimmedProvider {
+			continue
+		}
+		if strings.HasPrefix(lowerModel, fb.prefix) {
+			return fb.spec
+		}
+	}
+	return ModelSpec{Provider: trimmedProvider, CanonicalID: strings.TrimSpace(model)}
 }
 
 // NormalizeModel validates and maps a model string to its canonical identifier.

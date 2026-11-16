@@ -394,3 +394,123 @@ func TestRegistry_TableInvariants(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderPolicies_Matrix(t *testing.T) {
+	tests := []struct {
+		provider string
+		check    func(t *testing.T, policy ProviderPolicy)
+	}{
+		{
+			provider: "claude",
+			check: func(t *testing.T, policy ProviderPolicy) {
+				if policy.MaxTemperature != 1.0 || !policy.SupportsWebSearch || policy.SupportsGoogleSearch {
+					t.Errorf("unexpected claude policy: %+v", policy)
+				}
+			},
+		},
+		{
+			provider: "gemini",
+			check: func(t *testing.T, policy ProviderPolicy) {
+				if policy.MaxTemperature != 2.0 || !policy.SupportsGoogleSearch || !policy.SupportsTopK {
+					t.Errorf("unexpected gemini policy: %+v", policy)
+				}
+			},
+		},
+		{
+			provider: "openai",
+			check: func(t *testing.T, policy ProviderPolicy) {
+				if policy.MaxTemperature != 2.0 || policy.SupportsTopK || policy.SupportsThinkingBudget {
+					t.Errorf("unexpected openai policy: %+v", policy)
+				}
+			},
+		},
+		{
+			provider: "azure-openai",
+			check: func(t *testing.T, policy ProviderPolicy) {
+				if policy.MaxTemperature != 2.0 || policy.SupportsTopK || policy.SupportsThinkingBudget {
+					t.Errorf("unexpected azure-openai policy: %+v", policy)
+				}
+			},
+		},
+		{
+			provider: "grok",
+			check: func(t *testing.T, policy ProviderPolicy) {
+				if policy.MaxTemperature != 2.0 || policy.SupportsTopK || policy.SupportsThinkingBudget {
+					t.Errorf("unexpected grok policy: %+v", policy)
+				}
+			},
+		},
+		{
+			provider: "local",
+			check: func(t *testing.T, policy ProviderPolicy) {
+				if !policy.AllowCustomModels || policy.MaxTemperature != 2.0 || !policy.SupportsRepetition || !policy.SupportsMinP {
+					t.Errorf("unexpected local policy: %+v", policy)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.provider, func(t *testing.T) {
+			policy, ok := providerPolicies[tc.provider]
+			if !ok {
+				t.Fatalf("providerPolicies missing provider %q", tc.provider)
+			}
+			tc.check(t, policy)
+		})
+	}
+}
+
+func TestModelCatalog_Coverage(t *testing.T) {
+	index := make(map[string]ModelSpec, len(modelCatalog))
+	for _, spec := range modelCatalog {
+		index[spec.Provider+":"+spec.CanonicalID] = spec
+	}
+
+	t.Run("covers all canonical models", func(t *testing.T) {
+		for provider, models := range canonicalRegistry {
+			for id := range models {
+				if _, ok := index[provider+":"+id]; !ok {
+					t.Errorf("modelCatalog missing (%q, %q)", provider, id)
+				}
+			}
+		}
+	})
+
+	representative := []struct {
+		provider string
+		model    string
+		mode     ThinkingMode
+		wantOmit bool
+		wantRej  bool
+	}{
+		{provider: "claude", model: ModelClaude_Fable_5_2, mode: ThinkingAdaptive, wantOmit: true, wantRej: true},
+		{provider: "claude", model: ModelClaude_Opus_4_6, mode: ThinkingAdaptive, wantOmit: false, wantRej: false},
+		{provider: "claude", model: ModelClaude_Opus_4_5_20251101, mode: ThinkingManualBudget},
+		{provider: "gemini", model: ModelGemini_4_Hydrogen, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemini_4_Argon, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemini_4_Carbon, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemini_3_8_Flash, mode: ThinkingLevel},
+		{provider: "gemini", model: ModelGemma_4_31B_IT, mode: ThinkingLevel},
+		{provider: "openai", model: ModelGPT_5_6_Sol, mode: ThinkingManualBudget},
+		{provider: "grok", model: ModelGrok_4_7, mode: ThinkingManualBudget},
+	}
+
+	for _, tc := range representative {
+		t.Run(tc.provider+":"+tc.model, func(t *testing.T) {
+			spec, ok := index[tc.provider+":"+tc.model]
+			if !ok {
+				t.Fatalf("modelCatalog missing (%q, %q)", tc.provider, tc.model)
+			}
+			if spec.Thinking.Mode != tc.mode {
+				t.Errorf("Thinking.Mode = %d, want %d", spec.Thinking.Mode, tc.mode)
+			}
+			if spec.Thinking.DefaultOmitted != tc.wantOmit {
+				t.Errorf("Thinking.DefaultOmitted = %t, want %t", spec.Thinking.DefaultOmitted, tc.wantOmit)
+			}
+			if spec.Sampling.RejectAtConstruction != tc.wantRej {
+				t.Errorf("Sampling.RejectAtConstruction = %t, want %t", spec.Sampling.RejectAtConstruction, tc.wantRej)
+			}
+		})
+	}
+}

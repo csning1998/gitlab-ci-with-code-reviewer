@@ -439,8 +439,8 @@ func validateTemperature(temperature *float64, provider string) error {
 	if *temperature < 0.0 || *temperature > 2.0 {
 		return fmt.Errorf("temperature %v out of range [0.0, 2.0]", *temperature)
 	}
-	if provider == "claude" && *temperature > 1.0 {
-		return fmt.Errorf("temperature %v exceeds claude limit of 1.0", *temperature)
+	if policy, ok := LookupProviderPolicy(provider); ok && policy.MaxTemperature > 0 && *temperature > policy.MaxTemperature {
+		return fmt.Errorf("temperature %v exceeds %s limit of %.1f", *temperature, provider, policy.MaxTemperature)
 	}
 	return nil
 }
@@ -494,48 +494,34 @@ func validateEnumOptions(opts ModelOptions) error {
 }
 
 func validateSearchOptions(opts ModelOptions) error {
-	if opts.GoogleSearch != nil && *opts.GoogleSearch && opts.Provider != "gemini" {
+	policy, hasPolicy := LookupProviderPolicy(opts.Provider)
+	if opts.GoogleSearch != nil && *opts.GoogleSearch && (!hasPolicy || !policy.SupportsGoogleSearch) {
 		return fmt.Errorf("google_search is not supported by %s", opts.Provider)
 	}
-	if opts.WebSearch != nil && *opts.WebSearch && opts.Provider != "claude" {
+	if opts.WebSearch != nil && *opts.WebSearch && (!hasPolicy || !policy.SupportsWebSearch) {
 		return fmt.Errorf("web_search is not supported by %s", opts.Provider)
 	}
 	return nil
 }
 
-func validateClaudeOptions(opts ModelOptions) error {
-	if opts.FrequencyPenalty != nil || opts.PresencePenalty != nil {
-		return errors.New("frequency_penalty and presence_penalty are not supported by claude")
+func validateProviderCompatibility(opts ModelOptions) error {
+	policy, ok := LookupProviderPolicy(opts.Provider)
+	if !ok {
+		return nil
 	}
-	if opts.RepetitionPenalty != nil || opts.MinP != nil {
-		return errors.New("repetition_penalty and min_p are not supported by claude")
-	}
-	return nil
-}
-
-func validateOpenAICompatOptions(opts ModelOptions) error {
-	if opts.TopK != nil {
+	if opts.TopK != nil && !policy.SupportsTopK {
 		return fmt.Errorf("top_k is not supported by %s", opts.Provider)
 	}
-	if opts.ThinkingBudget != nil {
+	if opts.ThinkingBudget != nil && !policy.SupportsThinkingBudget {
 		return fmt.Errorf("thinking_budget is not supported by %s; use reasoning_level", opts.Provider)
 	}
-	if opts.RepetitionPenalty != nil || opts.MinP != nil {
-		return fmt.Errorf("repetition_penalty and min_p are not supported by %s", opts.Provider)
+	if (opts.FrequencyPenalty != nil && !policy.SupportsFrequencyPenalty) ||
+		(opts.PresencePenalty != nil && !policy.SupportsPresencePenalty) {
+		return fmt.Errorf("frequency_penalty and presence_penalty are not supported by %s", opts.Provider)
 	}
-	return nil
-}
-
-func validateProviderCompatibility(opts ModelOptions) error {
-	switch opts.Provider {
-	case "claude":
-		return validateClaudeOptions(opts)
-	case "gemini":
-		if opts.RepetitionPenalty != nil || opts.MinP != nil {
-			return errors.New("repetition_penalty and min_p are not supported by gemini")
-		}
-	case "openai", "azure-openai", "grok":
-		return validateOpenAICompatOptions(opts)
+	if (opts.RepetitionPenalty != nil && !policy.SupportsRepetition) ||
+		(opts.MinP != nil && !policy.SupportsMinP) {
+		return fmt.Errorf("repetition_penalty and min_p are not supported by %s", opts.Provider)
 	}
 	return nil
 }
