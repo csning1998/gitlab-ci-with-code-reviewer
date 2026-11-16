@@ -2,49 +2,27 @@ package gemini
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ci-tools/internal/reviewerconfig"
 )
 
-// gemmaThinkingLevels lists the two switch positions Gemma 4 accepts on the Gemini API.
-var gemmaThinkingLevels = map[string]bool{"high": true, "minimal": true}
-
-// gemini4ThinkingLevels lists the levels the Gemini 4 generation accepts.
-var gemini4ThinkingLevels = map[string]bool{"low": true, "medium": true, "high": true}
-
-// thinkingLevels lists the levels the 3.x generation accepts.
-var thinkingLevels = map[string]bool{"minimal": true, "low": true, "medium": true, "high": true}
-
-// supportsThinkingLevel reports whether model accepts thinkingLevel over thinkingBudget.
-func supportsThinkingLevel(model string) bool {
-	return strings.HasPrefix(model, "gemini-4") || strings.HasPrefix(model, "gemini-3") || strings.HasPrefix(model, "gemma-")
-}
-
-// isGemini4Model reports whether model represents Gemini 4.
-func isGemini4Model(model string) bool {
-	return strings.HasPrefix(model, "gemini-4")
-}
-
-// isGemmaModel reports whether model represents open-weights Gemma hosted on Gemini API.
-func isGemmaModel(model string) bool {
-	return strings.HasPrefix(model, "gemma-")
-}
-
 // validateGeneration MUST reject cross-generation thinking parameters at construction to prevent upstream HTTP 400 errors.
 func validateGeneration(model string, opts reviewerconfig.ModelOptions) error {
-	if opts.GoogleSearch != nil && *opts.GoogleSearch && isGemmaModel(model) {
+	spec := reviewerconfig.ResolveModelSpec("gemini", model)
+	if opts.GoogleSearch != nil && *opts.GoogleSearch && spec.DisallowGoogleSearch {
 		return fmt.Errorf("gemini: model %q does not support google_search grounding", model)
 	}
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	hasBudget := opts.ThinkingBudget != nil && *opts.ThinkingBudget > 0
 
-	if supportsThinkingLevel(model) {
+	if spec.Thinking.Mode == reviewerconfig.ThinkingLevel {
 		if hasBudget {
 			return fmt.Errorf(
 				"gemini: model %q carries thinking_level and rejects thinking_budget", model)
 		}
-		return validateThinkingLevel(model, level)
+		return validateThinkingLevel(model, level, spec.Thinking.AllowedLevels)
 	}
 
 	if level != "" && level != "none" {
@@ -55,57 +33,40 @@ func validateGeneration(model string, opts reviewerconfig.ModelOptions) error {
 }
 
 // validateThinkingLevel MUST verify level against the allowed set of the model generation.
-func validateThinkingLevel(model, level string) error {
+func validateThinkingLevel(model, level string, allowed []string) error {
 	if level == "" || level == "none" {
 		return nil
 	}
-	if isGemmaModel(model) {
-		if !gemmaThinkingLevels[level] {
-			return fmt.Errorf(
-				"gemini: model %q accepts reasoning_level high or minimal only, got %q", model, level)
-		}
-		return nil
-	}
-	if isGemini4Model(model) {
-		if model == "gemini-4-hydrogen" {
-			if !gemini4ThinkingLevels[level] && level != "xhigh" {
-				return fmt.Errorf(
-					"gemini: model %q accepts reasoning_level low, medium, high, or xhigh only, got %q", model, level)
-			}
-			return nil
-		}
-		if !gemini4ThinkingLevels[level] {
-			return fmt.Errorf(
-				"gemini: model %q accepts reasoning_level low, medium, or high only, got %q", model, level)
-		}
-		return nil
-	}
-	if !thinkingLevels[level] {
+	if !slices.Contains(allowed, level) {
 		return fmt.Errorf(
-			"gemini: reasoning_level %q is unsupported; want minimal, low, medium, or high", level)
+			"gemini: model %q accepts reasoning_level %s only, got %q", model, formatLevelList(allowed), level)
 	}
 	return nil
+}
+
+func formatLevelList(levels []string) string {
+	switch len(levels) {
+	case 0:
+		return ""
+	case 1:
+		return levels[0]
+	case 2:
+		return levels[0] + " or " + levels[1]
+	default:
+		return strings.Join(levels[:len(levels)-1], ", ") + ", or " + levels[len(levels)-1]
+	}
 }
 
 // buildGenerationConfig assembles generationConfig from opts. A field left unset stays absent,
 // which preserves the default the model publishes.
 func buildGenerationConfig(model string, opts reviewerconfig.ModelOptions) map[string]any {
+	spec := reviewerconfig.ResolveModelSpec("gemini", model)
 	generationConfig := map[string]any{"responseMimeType": "application/json"}
 	if mimeType := strings.TrimSpace(opts.ResponseMIMEType); mimeType != "" {
 		generationConfig["responseMimeType"] = mimeType
 	}
 
-	if !isGemini4Model(model) {
-		if opts.Temperature != nil {
-			generationConfig["temperature"] = *opts.Temperature
-		}
-		if opts.TopP != nil {
-			generationConfig["topP"] = *opts.TopP
-		}
-		if opts.TopK != nil {
-			generationConfig["topK"] = *opts.TopK
-		}
-	}
+	applySamplingConfig(generationConfig, spec.Sampling.OmitInPayload, opts)
 	if opts.MaxTokens > 0 {
 		generationConfig["maxOutputTokens"] = opts.MaxTokens
 	}
@@ -127,17 +88,33 @@ func buildGenerationConfig(model string, opts reviewerconfig.ModelOptions) map[s
 	if mediaResolution := strings.TrimSpace(opts.MediaResolution); mediaResolution != "" {
 		generationConfig["mediaResolution"] = mediaResolution
 	}
-	if thinking := buildThinkingConfig(model, opts); thinking != nil {
+	if thinking := buildThinkingConfig(spec.Thinking.Mode == reviewerconfig.ThinkingLevel, opts); thinking != nil {
 		generationConfig["thinkingConfig"] = thinking
 	}
 
 	return generationConfig
 }
 
+// applySamplingConfig omits sampling overrides for generations governed by the matrix policy.
+func applySamplingConfig(generationConfig map[string]any, omitSampling bool, opts reviewerconfig.ModelOptions) {
+	if omitSampling {
+		return
+	}
+	if opts.Temperature != nil {
+		generationConfig["temperature"] = *opts.Temperature
+	}
+	if opts.TopP != nil {
+		generationConfig["topP"] = *opts.TopP
+	}
+	if opts.TopK != nil {
+		generationConfig["topK"] = *opts.TopK
+	}
+}
+
 // buildThinkingConfig emits the single thinking control the generation of model accepts.
-func buildThinkingConfig(model string, opts reviewerconfig.ModelOptions) map[string]any {
+func buildThinkingConfig(usesThinkingLevel bool, opts reviewerconfig.ModelOptions) map[string]any {
 	level := strings.TrimSpace(opts.ReasoningLevel)
-	if supportsThinkingLevel(model) {
+	if usesThinkingLevel {
 		if level == "" || level == "none" {
 			return nil
 		}
