@@ -2,6 +2,7 @@ package claude
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
@@ -11,60 +12,6 @@ import (
 
 // MinThinkingBudget is the floor the Messages API enforces on a manual thinking budget.
 const MinThinkingBudget = 1024
-
-// adaptiveThinkingModels lists the canonical models which accept adaptive thinking with an
-// effort level. Every other approved model takes a manual budget instead.
-var adaptiveThinkingModels = map[string]bool{
-	"claude-fable-5-2":  true,
-	"claude-fable-5-1":  true,
-	"claude-fable-5":    true,
-	"claude-haiku-5-5":  true,
-	"claude-opus-5-5":   true,
-	"claude-sonnet-5-5": true,
-	"claude-opus-5":     true,
-	"claude-sonnet-5":   true,
-	"claude-opus-4-8":   true,
-	"claude-opus-4-7":   true,
-	"claude-opus-4-6":   true,
-	"claude-sonnet-4-6": true,
-}
-
-// defaultAdaptiveModels lists Claude 5 and later models, which enable adaptive thinking
-// automatically when thinking is omitted.
-var defaultAdaptiveModels = map[string]bool{
-	"claude-fable-5-2":  true,
-	"claude-fable-5-1":  true,
-	"claude-fable-5":    true,
-	"claude-haiku-5-5":  true,
-	"claude-opus-5-5":   true,
-	"claude-sonnet-5-5": true,
-	"claude-opus-5":     true,
-	"claude-sonnet-5":   true,
-}
-
-// samplingRejectedModels lists Claude 4.7 and later models, which reject temperature, top_p,
-// and top_k.
-var samplingRejectedModels = map[string]bool{
-	"claude-fable-5-2":  true,
-	"claude-fable-5-1":  true,
-	"claude-fable-5":    true,
-	"claude-haiku-5-5":  true,
-	"claude-opus-5-5":   true,
-	"claude-sonnet-5-5": true,
-	"claude-opus-5":     true,
-	"claude-sonnet-5":   true,
-	"claude-opus-4-8":   true,
-	"claude-opus-4-7":   true,
-}
-
-// adaptiveEfforts lists the effort levels the Messages API accepts on output_config.
-var adaptiveEfforts = map[string]bool{
-	"low":    true,
-	"medium": true,
-	"high":   true,
-	"xhigh":  true,
-	"max":    true,
-}
 
 // thinkingPlan holds the request shape derived from the thinking fields of ModelOptions.
 // An active plan suppresses sampling overrides, which the API rejects while thinking runs.
@@ -76,7 +23,8 @@ type thinkingPlan struct {
 
 // planThinking MUST reject cross-generation thinking parameters to ensure Anthropic API compatibility.
 func planThinking(model string, opts reviewerconfig.ModelOptions) (thinkingPlan, error) {
-	adaptive := adaptiveThinkingModels[model]
+	spec := reviewerconfig.ResolveModelSpec("claude", model)
+	adaptive := spec.Thinking.Mode == reviewerconfig.ThinkingAdaptive
 	level := strings.TrimSpace(opts.ReasoningLevel)
 	budget := 0
 	if opts.ThinkingBudget != nil {
@@ -96,7 +44,7 @@ func planThinking(model string, opts reviewerconfig.ModelOptions) (thinkingPlan,
 	case budget > 0:
 		return planManualThinking(model, budget, opts.MaxTokens)
 	case level != "" && level != "none":
-		if !adaptiveEfforts[level] {
+		if !slices.Contains(spec.Thinking.AllowedLevels, level) {
 			return thinkingPlan{}, fmt.Errorf(
 				"claude: reasoning_level %q is unsupported; want low, medium, high, xhigh, or max", level)
 		}
@@ -106,7 +54,7 @@ func planThinking(model string, opts reviewerconfig.ModelOptions) (thinkingPlan,
 			active: true,
 		}, nil
 	default:
-		if defaultAdaptiveModels[model] {
+		if spec.Thinking.DefaultOmitted {
 			return thinkingPlan{}, nil
 		}
 		disabled := sdk.NewThinkingConfigDisabledParam()

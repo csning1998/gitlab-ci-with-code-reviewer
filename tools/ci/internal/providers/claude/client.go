@@ -193,7 +193,7 @@ func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 		}
 	}
 
-	if c.thinking.active || samplingRejectedModels[string(c.model)] {
+	if c.thinking.active || reviewerconfig.ResolveModelSpec("claude", string(c.model)).Sampling.RejectAtConstruction {
 		return params
 	}
 	if c.modelOptions.Temperature != nil {
@@ -211,7 +211,7 @@ func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 // validateSampling rejects sampling overrides on Claude 4.7 and later models during client
 // construction before requests reach the Messages API.
 func validateSampling(model string, opts reviewerconfig.ModelOptions) error {
-	if !samplingRejectedModels[model] {
+	if !reviewerconfig.ResolveModelSpec("claude", model).Sampling.RejectAtConstruction {
 		return nil
 	}
 	if opts.Temperature != nil {
