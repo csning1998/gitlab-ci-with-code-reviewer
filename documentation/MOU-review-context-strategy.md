@@ -36,7 +36,7 @@ Supplying full repository content as context requires new logic to enumerate and
 
 ## Section 5. Recommendation
 
-The diff based design SHOULD be retained. The whole repository context design is technically feasible under the cache anchor described in Section 4. Task B, but its economic viability depends on unmeasured request volume, and its implementation cost is nontrivial. Streaming SHOULD be adopted for the existing diff based design independently of this decision, to resolve request timeout and output truncation risk on large diffs, and does not affect token cost in either direction.
+The diff based design SHOULD be retained. The whole repository context design is technically feasible under the cache anchor described in Section 4. Task B, but its economic viability depends on unmeasured request volume, and its implementation cost is nontrivial. Streaming SHOULD be adopted for the existing diff based design independently of this decision, to resolve request timeout and output truncation risk on large diffs, and leaves the token cost unchanged.
 
 ## Section 6. Prerequisites Before Implementation
 
