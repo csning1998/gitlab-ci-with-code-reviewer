@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Names of the environment variables which carry GitLab tokens.
+// Names of the environment variables which contain GitLab tokens.
 const (
 	ReviewTokenEnvName       = "REVIEW_MR_REVIEWER"
 	ClaudeReviewTokenEnvName = "CLAUDE_MR_REVIEWER"
@@ -19,7 +19,7 @@ const (
 var gitLabTokenEnvNames = []string{ReviewTokenEnvName, ClaudeReviewTokenEnvName, GeminiReviewTokenEnvName}
 
 // ResolveGitLabToken returns the first configured merge request API credential, or an empty
-// string when no candidate variable carries a value.
+// string when every candidate variable is empty.
 func ResolveGitLabToken() string {
 	for _, name := range gitLabTokenEnvNames {
 		if value := strings.TrimSpace(os.Getenv(name)); value != "" {

@@ -73,7 +73,7 @@ func parseComponent(component string) (int, error) {
 	}
 	for _, r := range component {
 		if r < '0' || r > '9' {
-			return 0, fmt.Errorf("component %q holds a non digit character", component)
+			return 0, fmt.Errorf("component %q contains a non digit character", component)
 		}
 	}
 	if len(component) > 1 && component[0] == '0' {

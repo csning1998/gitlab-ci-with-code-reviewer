@@ -127,7 +127,7 @@ func TestResolveTokenProvider_IncompleteFederationConfigIsRejected(t *testing.T)
 }
 
 func TestResolveTokenProvider_AppliesDefaultMountAndField(t *testing.T) {
-	// One KV secret holds one field per provider, which lets every matrix job share a single
+	// One KV secret contains one field per provider, which lets every matrix job share a single
 	// VAULT_SECRET_PATH while reading its own credential.
 	tests := []struct {
 		provider  string

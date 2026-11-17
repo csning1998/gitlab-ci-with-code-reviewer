@@ -172,13 +172,13 @@ func openAndReadDeclarationFile(path string) (data []byte, err error) {
 	return data, nil
 }
 
-// integerFieldNames lists the YAML keys of ModelOptions which hold an integer. The decoder
+// integerFieldNames lists the YAML keys of ModelOptions which contain an integer. The decoder
 // truncates a fractional scalar for these fields without an error.
 var integerFieldNames = map[string]bool{
 	"max_tokens": true, "top_k": true, "n": true, "seed": true, "thinking_budget": true, "top_logprobs": true,
 }
 
-// rejectFractionalIntegers reports an integer field which carries a float scalar such as 1.5.
+// rejectFractionalIntegers reports an integer field which contains a float scalar such as 1.5.
 func rejectFractionalIntegers(data []byte) error {
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil || len(root.Content) == 0 {

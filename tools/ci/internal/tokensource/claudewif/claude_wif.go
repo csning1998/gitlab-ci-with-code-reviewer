@@ -18,7 +18,7 @@ type ClaudeWIFConfig struct {
 	WorkspaceID      string
 }
 
-// ClaudeWIF holds parameters for Anthropic Claude Workload Identity Federation.
+// ClaudeWIF contains parameters for Anthropic Claude Workload Identity Federation.
 type ClaudeWIF struct {
 	cfg ClaudeWIFConfig
 }

@@ -319,7 +319,7 @@ func TestAddLabels_EmptySlice(t *testing.T) {
 	}
 }
 
-func TestExecuteHTTPRequest_RequestHeaderCarriesToken(t *testing.T) {
+func TestExecuteHTTPRequest_RequestHeaderContainsToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("PRIVATE-TOKEN"); got != testutil.SecretGitLabToken {
 			t.Errorf("PRIVATE-TOKEN header = %q, want %q", got, testutil.SecretGitLabToken)
@@ -369,7 +369,7 @@ func TestExecuteHTTPRequest_ErrorStatusIncludesResponseBodyVerbatim(t *testing.T
 	}
 }
 
-// A redirect to a different host MUST NOT carry the PRIVATE-TOKEN header. The standard library
+// A redirect to a different host MUST NOT forward the PRIVATE-TOKEN header. The standard library
 // strips Authorization on a host change and forwards every other header.
 func TestExecuteHTTPRequest_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value

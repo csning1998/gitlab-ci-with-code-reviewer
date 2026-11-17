@@ -13,7 +13,7 @@ import (
 // MinThinkingBudget is the floor the Messages API enforces on a manual thinking budget.
 const MinThinkingBudget = 1024
 
-// thinkingPlan holds the request shape derived from the thinking fields of ModelOptions.
+// thinkingPlan contains the request shape derived from the thinking fields of ModelOptions.
 // An active plan suppresses sampling overrides, which the API rejects while thinking runs.
 type thinkingPlan struct {
 	config sdk.ThinkingConfigParamUnion
@@ -70,7 +70,7 @@ func planManualThinking(model string, budget, maxTokens int) (thinkingPlan, erro
 	}
 	if maxTokens > 0 && budget >= maxTokens {
 		return thinkingPlan{}, fmt.Errorf(
-			"claude: thinking_budget %d must stay below max_tokens %d", budget, maxTokens)
+			"claude: thinking_budget %d must remain below max_tokens %d", budget, maxTokens)
 	}
 	enabled := sdk.ThinkingConfigEnabledParam{BudgetTokens: int64(budget)}
 	return thinkingPlan{

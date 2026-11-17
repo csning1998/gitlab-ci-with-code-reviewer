@@ -203,7 +203,7 @@ func TestNew_UnreachableServer(t *testing.T) {
 	}
 }
 
-// A redirect to a different host MUST NOT carry the PRIVATE-TOKEN header.
+// A redirect to a different host MUST NOT forward the PRIVATE-TOKEN header.
 func TestNew_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +252,7 @@ func TestNew_ReusesTheConnectionAfterAnUnparsedResponse(t *testing.T) {
 	}
 }
 
-func TestFineGrainedToken_ZeroValueCarriesNoToken(t *testing.T) {
+func TestFineGrainedToken_ZeroValueLacksAToken(t *testing.T) {
 	var token gitlabtoken.FineGrainedToken
 	if token.Value() != "" {
 		t.Errorf("zero FineGrainedToken.Value() = %q, want empty", token.Value())

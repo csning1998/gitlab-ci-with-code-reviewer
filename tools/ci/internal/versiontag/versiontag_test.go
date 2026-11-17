@@ -269,7 +269,7 @@ func TestModule_Prefix(t *testing.T) {
 }
 
 // TestLatestTag_TagSelection covers LatestTag's prefix matching, semver parsing, and version
-// comparison rules against a single-commit repository carrying the listed tags. Cases needing a
+// comparison rules against a single-commit repository containing the listed tags. Cases needing a
 // distinct commit topology (TestLatestTag_OrdersByVersionNotCommitAncestry) are kept separate.
 func TestLatestTag_TagSelection(t *testing.T) {
 	cases := []struct {

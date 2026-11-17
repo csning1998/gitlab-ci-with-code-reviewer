@@ -445,7 +445,7 @@ func newCrossHostRedirector(t *testing.T, leaked *atomic.Value) *httptest.Server
 	return redirector
 }
 
-// A redirect to a different host MUST NOT carry the PRIVATE-TOKEN header.
+// A redirect to a different host MUST NOT forward the PRIVATE-TOKEN header.
 func TestCreateTag_CrossHostRedirectDoesNotForwardToken(t *testing.T) {
 	var leaked atomic.Value
 	redirector := newCrossHostRedirector(t, &leaked)
@@ -575,7 +575,7 @@ func TestCreateTag_OversizedErrorBodyIsBounded(t *testing.T) {
 		t.Fatal("CreateTag succeeded unexpectedly")
 	}
 	if len(err.Error()) > 8192 {
-		t.Errorf("error message holds %d bytes, want a bounded excerpt", len(err.Error()))
+		t.Errorf("error message contains %d bytes, want a bounded excerpt", len(err.Error()))
 	}
 }
 

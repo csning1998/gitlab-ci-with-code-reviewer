@@ -15,7 +15,7 @@ type Config struct {
 	MRIID       string
 	GeminiToken string
 	ClaudeToken string
-	// GitLabToken holds whichever of GeminiToken/ClaudeToken is configured, for binaries that
+	// GitLabToken contains whichever of GeminiToken/ClaudeToken is configured, for binaries that
 	// only need GitLab API access (mr-gate, mr-labeler) and are indifferent to LLM provider.
 	GitLabToken          string
 	GeminiModel          string

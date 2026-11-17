@@ -36,7 +36,7 @@ type GoogleWIFConfig struct {
 	HTTPClient               *http.Client
 }
 
-// GoogleWIF holds state and cached access token for GCP STS and IAM Credentials token exchange.
+// GoogleWIF contains state and cached access token for GCP STS and IAM Credentials token exchange.
 type GoogleWIF struct {
 	cfg        GoogleWIFConfig
 	httpClient *http.Client

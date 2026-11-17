@@ -115,7 +115,7 @@ func TestRefuseCrossHostRedirect_BounceViaForeignHostNeverReachesIt(t *testing.T
 	}
 }
 
-// Ports of one host share a hostname. A chain across ports of that host stays allowed.
+// Ports of one host share a hostname. A chain across ports of the host remains allowed.
 func TestRefuseCrossHostRedirect_BounceAcrossPortsOfOneHostIsAllowed(t *testing.T) {
 	var hitsOrigin, hitsSibling atomic.Int64
 	var originURL, siblingURL string

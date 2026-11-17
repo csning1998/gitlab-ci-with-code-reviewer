@@ -20,7 +20,7 @@ func main() {
 	}
 	token, err := gitlabtoken.New(context.Background(), cfg.APIURL, cfg.GitLabToken)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to confirm that %s or %s carries a fine-grained personal access token: %v\n", config.ClaudeReviewTokenEnvName, config.GeminiReviewTokenEnvName, err)
+		fmt.Fprintf(os.Stderr, "Error: failed to confirm that %s or %s contains a fine-grained personal access token: %v\n", config.ClaudeReviewTokenEnvName, config.GeminiReviewTokenEnvName, err)
 		os.Exit(1)
 	}
 	if err := labeler.ExecuteLabeling(cfg.APIURL, cfg.ProjectID, cfg.MRIID, token); err != nil {

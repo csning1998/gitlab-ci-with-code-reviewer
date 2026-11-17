@@ -114,7 +114,7 @@ slots:
 }
 
 func TestResolveDeclaredOptions_MultipleEntriesResolveIndependently(t *testing.T) {
-	// A declaration carries an unbounded number of named models. Each key MUST resolve without
+	// A declaration contains an unbounded number of named models. Each key MUST resolve without
 	// interference from any sibling entry.
 	path := writeDeclaration(t, `
 defaults:

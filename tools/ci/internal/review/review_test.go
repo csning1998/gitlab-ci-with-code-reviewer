@@ -1062,7 +1062,7 @@ func TestExtractJSONArray_PrefersObjectArrayOverProseArrays(t *testing.T) {
 	}
 }
 
-func TestExtractJSONArray_BracketFloodStaysLinear(t *testing.T) {
+func TestExtractJSONArray_BracketFloodRemainsLinear(t *testing.T) {
 	inputs := map[string]string{
 		"open brackets":     strings.Repeat("[", 20000),
 		"open brackets sep": strings.Repeat("[1,", 8000),
@@ -1115,7 +1115,7 @@ func TestFormatMRIntent_DescriptionNeverExceedsRuneBudget(t *testing.T) {
 				}
 				body = strings.TrimSuffix(body, "\n\n")
 				if got := utf8.RuneCountInString(body); got > limit {
-					t.Errorf("limit %d: description block holds %d runes", limit, got)
+					t.Errorf("limit %d: description block contains %d runes", limit, got)
 				}
 			})
 		}
@@ -1239,7 +1239,7 @@ func FuzzFormatMRIntent(f *testing.F) {
 		}
 		body = strings.TrimSuffix(body, "\n\n")
 		if got := utf8.RuneCountInString(body); got > limit {
-			t.Fatalf("limit %d: description block holds %d runes", limit, got)
+			t.Fatalf("limit %d: description block contains %d runes", limit, got)
 		}
 	})
 }

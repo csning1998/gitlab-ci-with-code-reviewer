@@ -820,7 +820,7 @@ func TestReview_ResponseBoundaries(t *testing.T) {
 	}
 }
 
-func TestReview_ErrorBodyExcerptStaysValidUTF8(t *testing.T) {
+func TestReview_ErrorBodyExcerptRemainsValidUTF8(t *testing.T) {
 	// The excerpt limit is 512 bytes. A two byte rune straddling the limit MUST NOT be split.
 	body := strings.Repeat("a", 511) + "é" + strings.Repeat("b", 100)
 	client := newBoundaryClient(t, 5*time.Second, tokensource.Static("token"), func(w http.ResponseWriter, _ *http.Request) {

@@ -11,7 +11,7 @@ import (
 // colon MUST be followed by whitespace, which matches the header rule of commitlint.
 var headerPattern = regexp.MustCompile(`^([a-z]+)(\([^)]*\))?(!)?:\s`)
 
-// Header holds the parts of a Conventional Commit header which drive release and label decisions.
+// Header contains the parts of a Conventional Commit header which drive release and label decisions.
 type Header struct {
 	Type     string
 	Breaking bool

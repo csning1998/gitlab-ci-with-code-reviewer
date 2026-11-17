@@ -20,14 +20,14 @@ func validateGeneration(model string, opts reviewerconfig.ModelOptions) error {
 	if spec.Thinking.Mode == reviewerconfig.ThinkingLevel {
 		if hasBudget {
 			return fmt.Errorf(
-				"gemini: model %q carries thinking_level and rejects thinking_budget", model)
+				"gemini: model %q uses thinking_level and rejects thinking_budget", model)
 		}
 		return validateThinkingLevel(model, level, spec.Thinking.AllowedLevels)
 	}
 
 	if level != "" && level != "none" {
 		return fmt.Errorf(
-			"gemini: model %q carries thinking_budget and rejects reasoning_level", model)
+			"gemini: model %q uses thinking_budget and rejects reasoning_level", model)
 	}
 	return nil
 }
@@ -57,7 +57,7 @@ func formatLevelList(levels []string) string {
 	}
 }
 
-// buildGenerationConfig assembles generationConfig from opts. A field left unset stays absent,
+// buildGenerationConfig assembles generationConfig from opts. A field left unset remains absent,
 // which preserves the default the model publishes.
 func buildGenerationConfig(model string, opts reviewerconfig.ModelOptions) map[string]any {
 	spec := reviewerconfig.ResolveModelSpec("gemini", model)

@@ -16,7 +16,7 @@ import (
 	"ci-tools/internal/tokensource"
 )
 
-// streamBody provides a minimal server-sent event stream carrying one text block.
+// streamBody provides a minimal server-sent event stream containing one text block.
 const streamBody = `event: message_start
 data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":1}}}
 
@@ -344,7 +344,7 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 					MaxTokens:      2048,
 					ThinkingBudget: testutil.Ptr(2048),
 				},
-				wantError: "stay below max_tokens",
+				wantError: "remain below max_tokens",
 			},
 		}
 

@@ -270,7 +270,7 @@ func TestParseDiff_FullFileDeletionHunk_ZeroNewStart(t *testing.T) {
 }
 
 func TestParseDiff_MidFileZeroCountDeletionHunk(t *testing.T) {
-	// A hunk can carry a zero new-side count mid-file (not only for whole-file deletion), e.g.
+	// A hunk can contain a zero new-side count mid-file (not only for whole-file deletion), e.g.
 	// "@@ -12,3 +12,0 @@" when a block is removed without any replacement lines.
 	diff := "@@ -12,3 +12,0 @@\n-a\n-b\n-c\n@@ -20,1 +17,1 @@\n context\n"
 	lines := parseDiff(diff)
@@ -330,7 +330,7 @@ func TestParseDiff_BinaryFileDiffPlaceholder_NoHunk(t *testing.T) {
 }
 
 func TestParseDiff_RenameOnlyDiff_NoContentHunk(t *testing.T) {
-	// A pure rename (100% similarity, no content change) carries only metadata lines and never an
+	// A pure rename (100% similarity, no content change) contains only metadata lines and never an
 	// "@@" hunk, so no line can be anchored despite the Diff field being non-empty.
 	diff := "diff --git a/old_name.go b/new_name.go\nsimilarity index 100%\nrename from old_name.go\nrename to new_name.go\n"
 	if lines := parseDiff(diff); len(lines) != 0 {
@@ -400,7 +400,7 @@ func TestParseDiff_CRLFLineEndings_CarriageReturnLeaksIntoContent(t *testing.T) 
 	// parseDiff splits solely on "\n"; a diff sourced from a CRLF-authored file (common on
 	// Windows-originated branches) leaves a trailing "\r" attached to each split segment. This is
 	// the current, documented behavior rather than a normative requirement: it does not corrupt
-	// line-number bookkeeping, but it does mean rendered content carries a stray "\r".
+	// line-number bookkeeping, but it does mean rendered content contains a stray "\r".
 	diff := "@@ -1,1 +1,1 @@\r\n+added\r\n"
 	lines := parseDiff(diff)
 	if len(lines) != 2 {

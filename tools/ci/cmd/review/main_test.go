@@ -260,7 +260,7 @@ models:
 
 func TestReview_MalformedDeclarationFailsFastWithoutFallback(t *testing.T) {
 	// A raw model id MUST NOT bypass a broken declaration, because the fallback would drop the
-	// per-model parameters the declaration carries.
+	// per-model parameters of the declaration.
 	dir := writeDeclarationDir(t, "models: [unclosed\n")
 
 	code, _, stderr := executeReviewSubprocessInDir(t, dir,
@@ -428,7 +428,7 @@ func TestReview_DeclaredPromptReachesLanguageModel(t *testing.T) {
 }
 
 // assertDeclaredPromptReachesLanguageModel fails the test unless a review subprocess run against
-// declaration (and, when promptFile is non-empty, a prompt.md file holding promptFile) exits 0
+// declaration (and, when promptFile is non-empty, a prompt.md file containing promptFile) exits 0
 // and the request recorded by the fixture language model contains marker.
 func assertDeclaredPromptReachesLanguageModel(t *testing.T, declaration, promptFile, marker string) {
 	t.Helper()

@@ -1,4 +1,4 @@
-// Package httpguard holds the outbound HTTP checks shared by every client which sends a credential.
+// Package httpguard contains the outbound HTTP checks shared by every client which sends a credential.
 package httpguard
 
 import (
@@ -12,7 +12,7 @@ import (
 // maxRedirects matches the net/http default hop limit.
 const maxRedirects = 10
 
-// ErrEmptyCredential reports a credential which is empty or holds only whitespace.
+// ErrEmptyCredential reports a credential which is empty or contains only whitespace.
 var ErrEmptyCredential = errors.New("credential is empty")
 
 // RefuseCrossHostRedirect is an http.Client CheckRedirect function. net/http forwards custom

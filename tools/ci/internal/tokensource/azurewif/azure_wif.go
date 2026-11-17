@@ -29,7 +29,7 @@ type AzureWIFConfig struct {
 	HTTPClient     *http.Client
 }
 
-// AzureWIF holds state and cached access token for Azure Entra ID token exchange.
+// AzureWIF contains state and cached access token for Azure Entra ID token exchange.
 type AzureWIF struct {
 	cfg        AzureWIFConfig
 	httpClient *http.Client

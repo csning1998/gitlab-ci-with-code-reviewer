@@ -53,7 +53,7 @@ const (
 	KindBearer CredentialKind = "bearer"  // KindBearer indicates a bearer access token.
 )
 
-// Credential holds a resolved credential and its kind.
+// Credential contains a resolved credential and its kind.
 type Credential struct {
 	Value string
 	Kind  CredentialKind
@@ -64,7 +64,7 @@ type Provider interface {
 	FetchCredential(ctx context.Context) (Credential, error)
 }
 
-// Static holds a credential supplied verbatim by the environment.
+// Static contains a credential supplied verbatim by the environment.
 type Static string
 
 // ErrEmptyStatic is returned when a Static credential is empty.

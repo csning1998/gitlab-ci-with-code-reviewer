@@ -20,8 +20,8 @@ import (
 	"ci-tools/internal/tokensource/resolver"
 )
 
-// resolvePrompt reads the review prompt declared for the model. A prompt_file MUST stay inside
-// the working directory, since the declaration comes from the repository under review.
+// resolvePrompt reads the review prompt declared for the model. A prompt_file MUST reside inside
+// the working directory because the declaration comes from the repository under review.
 func resolvePrompt(opts reviewerconfig.ModelOptions) (string, error) {
 	file := strings.TrimSpace(opts.PromptFile)
 	if file != "" {
@@ -38,7 +38,7 @@ func resolvePrompt(opts reviewerconfig.ModelOptions) (string, error) {
 // working directory can point at any file of the runner.
 func confinePromptFile(path string) (string, error) {
 	if !filepath.IsLocal(path) {
-		return "", errors.New("path must be relative and stay inside the working directory")
+		return "", errors.New("path must be relative and reside inside the working directory")
 	}
 	workDir, err := os.Getwd()
 	if err != nil {
@@ -71,7 +71,7 @@ func confinePromptFile(path string) (string, error) {
 }
 
 // resolveOptions reads REVIEW_MODEL as a declaration key first and as a model id second. The
-// declaration carries per-model parameters which a CI input cannot express.
+// declaration contains per-model parameters which a CI input cannot express.
 func resolveOptions() (reviewerconfig.ModelOptions, error) {
 	key := os.Getenv("REVIEW_MODEL")
 	opts, err := reviewerconfig.ResolveDeclaredOptions(os.Getenv("REVIEW_CONFIG_FILE"), key)
@@ -125,7 +125,7 @@ func main() {
 	// The token check runs after the local configuration checks, which report a configuration error without a network call.
 	gitLabToken, err := gitlabtoken.New(context.Background(), cfg.APIURL, rawGitLabToken)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to confirm that %s carries a fine-grained personal access token: %v\n", config.ReviewTokenEnvName, err)
+		fmt.Fprintf(os.Stderr, "Error: failed to confirm that %s contains a fine-grained personal access token: %v\n", config.ReviewTokenEnvName, err)
 		os.Exit(1)
 	}
 

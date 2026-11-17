@@ -51,7 +51,7 @@ func resolveFirstParentSHA(ctx context.Context, repo *git.Repository, sha string
 	return commit.ParentHashes[0].String(), true, nil
 }
 
-// autoTagRequest holds the inputs of one auto-tag run.
+// autoTagRequest contains the inputs of one auto-tag run.
 type autoTagRequest struct {
 	repoPath   string
 	configPath string
@@ -72,7 +72,7 @@ func (r autoTagRequest) validate() error {
 	return nil
 }
 
-// tagRun carries the state shared by the module evaluations of one commit.
+// tagRun contains the state shared by the module evaluations of one commit.
 type tagRun struct {
 	req       autoTagRequest
 	repo      *git.Repository

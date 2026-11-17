@@ -106,7 +106,7 @@ func annotateDiff(lines []diffLine) string {
 	return strings.Join(out, "\n")
 }
 
-// containsControlCharacter reports whether path holds a character which could end a file header line.
+// containsControlCharacter reports whether path contains a character which could end a file header line.
 func containsControlCharacter(path string) bool {
 	return strings.IndexFunc(path, unicode.IsControl) >= 0
 }

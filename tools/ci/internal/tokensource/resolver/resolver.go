@@ -187,7 +187,7 @@ func DeriveVaultKVConfig(provider string) tokensource.VaultKVConfig {
 	}
 }
 
-// DeriveVaultSecretField derives the KV-v2 field holding the credential of provider.
+// DeriveVaultSecretField derives the KV-v2 field storing the credential of provider.
 func DeriveVaultSecretField(provider string) string {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(provider), "-", "_"))
 	if normalized == "" {

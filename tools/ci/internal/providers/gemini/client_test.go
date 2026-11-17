@@ -750,7 +750,7 @@ func TestReview_OversizedErrorBodyIsBounded(t *testing.T) {
 		t.Fatal("Review succeeded unexpectedly")
 	}
 	if len(err.Error()) > 8192 {
-		t.Errorf("error message holds %d bytes, want a bounded excerpt", len(err.Error()))
+		t.Errorf("error message contains %d bytes, want a bounded excerpt", len(err.Error()))
 	}
 }
 

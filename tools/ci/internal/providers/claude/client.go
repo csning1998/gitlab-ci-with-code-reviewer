@@ -130,7 +130,7 @@ func (c *Client) openWithAPIKey(ctx context.Context) (sdk.Client, error) {
 func (c *Client) Name() string { return "Claude" }
 
 // Review executes a streaming Messages API request guarded by c.timeout.
-// Thinking stays disabled because thinking tokens share the max_tokens budget with text
+// Thinking remains disabled because thinking tokens share the max_tokens budget with text
 // and can exhaust that budget on large prompts, yielding an empty TextBlock.
 func (c *Client) Review(prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -164,8 +164,8 @@ func (c *Client) Review(prompt string) (string, error) {
 	return text, nil
 }
 
-// buildParams assembles the Messages API request. Sampling overrides stay out of the payload
-// while thinking is active, since the API rejects a non default value in that mode.
+// buildParams assembles the Messages API request. Sampling overrides are omitted from the payload
+// while thinking is active because the API rejects a non default value in that mode.
 func (c *Client) buildParams(prompt string) sdk.MessageNewParams {
 	params := sdk.MessageNewParams{
 		Model:     c.model,

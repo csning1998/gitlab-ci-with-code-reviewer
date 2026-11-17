@@ -104,7 +104,7 @@ func TestHasBreakingChange_BangAfterScope(t *testing.T) {
 
 func TestHasBreakingChange_FooterInDescription(t *testing.T) {
 	if !hasBreakingChange("feat: add thing", "Some notes.\n\nBREAKING CHANGE: removes old API") {
-		t.Error("hasBreakingChange(...) = false, want true when the description carries a BREAKING CHANGE footer")
+		t.Error("hasBreakingChange(...) = false, want true when the description contains a BREAKING CHANGE footer")
 	}
 }
 

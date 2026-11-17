@@ -103,7 +103,7 @@ func rejectLegacyToken(ctx context.Context, apiBaseURL, raw string) (err error) 
 			return fmt.Errorf("failed to decode response from /personal_access_tokens/self: %w", err)
 		}
 		if len(self.GranularScopes) == 0 {
-			return fmt.Errorf("token carries legacy scopes %v, which are prohibited; a fine-grained personal access token is required", self.Scopes)
+			return fmt.Errorf("token has legacy scopes %v, which are prohibited; a fine-grained personal access token is required", self.Scopes)
 		}
 		return nil
 	case http.StatusUnauthorized:

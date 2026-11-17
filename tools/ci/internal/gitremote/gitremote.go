@@ -49,19 +49,19 @@ func ConfigureOriginRemoteURL(repo *git.Repository, remoteURL string) (*git.Remo
 	return git.NewRemote(repo.Storer, remoteConfig), nil
 }
 
-// validateRemoteURL rejects a URL which the configuration file cannot carry verbatim.
+// validateRemoteURL rejects a URL which the configuration file cannot store verbatim.
 func validateRemoteURL(remoteURL string) error {
 	if strings.TrimSpace(remoteURL) != remoteURL {
 		return fmt.Errorf("remote URL %q has leading or trailing whitespace", remoteURL)
 	}
 	if strings.IndexFunc(remoteURL, unicode.IsControl) >= 0 {
-		return fmt.Errorf("remote URL %q holds a control character", remoteURL)
+		return fmt.Errorf("remote URL %q contains a control character", remoteURL)
 	}
 	return nil
 }
 
 // fallbackConfigMu serializes updateConfig writers for a storer other than *filesystem.Storage,
-// since such a storer holds configuration in process memory with no file to lock.
+// because such a storer keeps configuration in process memory without a file to lock.
 var fallbackConfigMu sync.Mutex
 
 // updateConfig applies mutate to the repository configuration under config.lock and replaces
@@ -90,7 +90,7 @@ func updateConfig(repo *git.Repository, mutate func(*config.Config)) error {
 		case !errors.Is(err, os.ErrExist):
 			return err
 		case time.Now().After(deadline):
-			return fmt.Errorf("%s is held by another writer", configLockName)
+			return fmt.Errorf("%s is locked by another writer", configLockName)
 		default:
 			time.Sleep(5 * time.Millisecond)
 		}
