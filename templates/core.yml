@@ -13,7 +13,7 @@ spec:
     review_config_file:
       default: ''
       description: >-
-        Path to the reviewer declaration carrying per-model parameters.
+        Path to the reviewer declaration containing per-model parameters.
         Defaults to .gitlab/reviewer.yml when left empty.
     review_vault_addr:
       default: ''
@@ -37,7 +37,7 @@ spec:
     review_vault_secret_path:
       default: ''
       description: >-
-        Vault KV-v2 secret path holding one field per provider, for example claude_api_key.
+        Vault KV-v2 secret path containing one field per provider, for example claude_api_key.
         Required when review_vault_addr is set.
     review_anthropic_audience:
       default: 'https://api.anthropic.com'

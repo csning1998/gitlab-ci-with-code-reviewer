@@ -77,7 +77,7 @@ verify:c-cpp-tooling:
       clang-format --style=file --dry-run --Werror src/canary.c src/canary.cpp
       cd negative
       if cpplint style_violation.c; then
-        echo "cpplint reported no finding against a file carrying three known violations"
+        echo "cpplint reported no finding against a file containing three known violations"
         exit 1
       fi
       if clang-format --style=file --dry-run --Werror format_violation.c; then
