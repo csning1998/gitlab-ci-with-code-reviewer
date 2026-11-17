@@ -42,8 +42,8 @@ const DefaultPromptTemplate = `Perform automated code review on the provided mer
 Review Context:
 - Annotated diff of modified files follows below.
 - File boundaries are marked by: === File: <path> ===
-- Added lines carry line numbers formatted as [L   N].
-- Deleted lines carry empty line markers [     ].
+- Added lines are prefixed with line numbers formatted as [L   N].
+- Deleted lines are prefixed with empty line markers [     ].
 
 Merge Request Intent:
 - An optional "=== Merge Request Intent ===" section precedes the diff containing author title and description.
@@ -274,7 +274,7 @@ func extractJSONArray(raw string) ([]json.RawMessage, error) {
 		if fallback == nil {
 			fallback = arr
 		}
-		if arrayHoldsOnlyObjects(arr) {
+		if arrayContainsOnlyObjects(arr) {
 			return arr, nil
 		}
 	}
@@ -293,10 +293,10 @@ func decodeJSONArray(s string) ([]json.RawMessage, error) {
 	return arr, nil
 }
 
-// arrayHoldsOnlyObjects reports whether every element of arr is a JSON object. A finding is
+// arrayContainsOnlyObjects reports whether every element of arr is a JSON object. A finding is
 // always an object, which distinguishes the intended array from an unrelated numbered list
 // present in surrounding prose text.
-func arrayHoldsOnlyObjects(arr []json.RawMessage) bool {
+func arrayContainsOnlyObjects(arr []json.RawMessage) bool {
 	if len(arr) == 0 {
 		return false
 	}
