@@ -24,7 +24,7 @@ ephemeral "vault_kv_secret_v2" "state_backend" {
   name     = "${var.gitlab_token_owner_code}/terraform/state-backend"
 }
 
-# parent-group-governance/ai-provider-console/anthropic MUST hold the Anthropic Admin API key and an org:admin OAuth token.
+# parent-group-governance/ai-provider-console/anthropic MUST contain the Anthropic Admin API key and an org:admin OAuth token.
 # The ephemeral block retrieves the credential in memory for provider authentication.
 ephemeral "vault_kv_secret_v2" "anthropic_console" {
   provider = vault.bastion
