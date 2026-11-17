@@ -1,7 +1,7 @@
 # GitLab CI with Code Reviewer
 
 > [!CAUTION]
-> **CRITICAL**: Any GitLab token carrying legacy scopes, including `api` and `read_api`, is prohibited in this repository.
+> **CRITICAL**: Any GitLab token with legacy scopes, including `api` and `read_api`, is prohibited in this repository.
 
 ## Section 1. Overview and Architecture
 
@@ -114,7 +114,7 @@ The review binary communicates with GitLab REST APIs to read merge request diffs
 The review engine operates as a decoupled, state-agnostic consumer:
 
 - **Key Name**: The environment MUST provide `REVIEW_MR_REVIEWER` (or backwards-compatible aliases `CLAUDE_MR_REVIEWER` / `GEMINI_MR_REVIEWER`).
-- **Token Type**: The token MUST carry fine-grained permissions limited to the set below.
+- **Token Type**: The token MUST have fine-grained permissions limited to the set below.
 - **Required Privileges**: The token MUST grant Merge Request Create, Read, and Update and Work Item Create. The token owner MUST possess at least the **`Developer`** role on the repository. (The `Reporter` role lacks permissions to resolve or update MR discussion threads).
 
 #### Provisioning Options
@@ -163,10 +163,10 @@ The review engine operates as a decoupled, state-agnostic consumer:
 2. The GitLab API clients in `internal/gitlab` and `internal/gitlabapi` accept a `gitlabtoken.FineGrainedToken` alone. A raw token string therefore fails to compile at every call site, since the type has no exported constructor other than `gitlabtoken.New`.
 3. `gitlabtoken.New` reads `/personal_access_tokens/self` with the token and classifies the response:
     - HTTP 403 with the error `insufficient_granular_scope` identifies a fine-grained token lacking Personal Access Token Read, and the token passes.
-    - HTTP 200 with a non-empty `granular_scopes` identifies a fine-grained token holding Personal Access Token Read, and the token passes.
+    - HTTP 200 with a non-empty `granular_scopes` identifies a fine-grained token with Personal Access Token Read, and the token passes.
     - Every other response, including HTTP 200 without `granular_scopes`, fails the job.
 4. The check fails closed. A change of the `insufficient_granular_scope` error code on GitLab fails every job until the check follows the change, and each job spends one additional request.
-5. The check covers the GitLab personal access tokens in `REVIEW_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_MR_REVIEWER`, and `TAG_PUSH_TOKEN`. `CI_JOB_TOKEN`, which `fmt-commit-pusher` uses for Git pushes, carries no scopes and stays outside the check. The Terraform provider tokens which the `administration-gitlab-project` layer reads from Bastion Vault stay outside the check, and the fine-grained token matrix of `parent-group-governance` governs those tokens.
+5. The check covers the GitLab personal access tokens in `REVIEW_MR_REVIEWER`, `CLAUDE_MR_REVIEWER`, `GEMINI_MR_REVIEWER`, and `TAG_PUSH_TOKEN`. `CI_JOB_TOKEN`, which `fmt-commit-pusher` uses for Git pushes, lacks scopes and is excluded from the check. The Terraform provider tokens which the `administration-gitlab-project` layer reads from Bastion Vault are excluded from the check, and the fine-grained token matrix of `parent-group-governance` governs those tokens.
 
 ### Step C. Runner Setup and Network Topology
 
@@ -423,7 +423,7 @@ Release management enforces strict Semantic Versioning (SemVer) aligning contain
         - `fix` or `perf`: Patch version bump (`X.Y.Z`).
         - Breaking changes (`!`): Major version bump (`X.0.0`).
         - Other commit types (`chore`, `docs`, `refactor`, `adhoc`, `test`): Suppress release generation.
-    - Creates the resulting SemVer tag through the GitLab REST API with `TAG_PUSH_TOKEN`. The token MUST carry fine-grained permissions limited to Repository Tag Create and Read.
+    - Creates the resulting SemVer tag through the GitLab REST API with `TAG_PUSH_TOKEN`. The token MUST have fine-grained permissions limited to Repository Tag Create and Read.
     - The `auto-tag:verify-token` job rejects a legacy `TAG_PUSH_TOKEN` and then reads the repository tags with the token in MR pipelines. The read detects an invalid token before merge. The read detects a missing Repository Tag Read permission on a private project alone, and no read detects a missing Repository Tag Create permission.
 2. **Tag Pipeline and Catalog Publication**:
     - The tag pipeline triggers `build:reviewer-image` to produce `reviewer:<tag>`.

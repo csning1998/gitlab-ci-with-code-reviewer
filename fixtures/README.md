@@ -37,7 +37,7 @@ the executable project only. The assertion reads `runtimeTarget.name` from the
 produced `Canary.deps.json` and compares process stdout against `canary`.
 
 `negative/GenericViolation.cs` uses C# 2 generics and is compiled only by
-`verify:csharp-langversion-level`. `fixtures/csharp-negative` holds misformatted
+`verify:csharp-langversion-level`. `fixtures/csharp-negative` contains misformatted
 input for `dotnet format --verify-no-changes`.
 
 ## Section 3. Verified Toolchain Versions
@@ -100,17 +100,17 @@ Editions 2015, 2018, 2021, and 2024 all build and test successfully on rustc 1.9
 
 The jobs encode `net8.0`, `net9.0`, and `net10.0` on `mcr.microsoft.com/dotnet/sdk:10.0`,
 and a matching TFM on each of the three SDK images. Microsoft documents that an SDK
-supports a fixed set of frameworks capped at the runtime it ships
+supports a fixed set of frameworks capped at the runtime it bundles
 ([Select which .NET version to use](https://learn.microsoft.com/en-us/dotnet/core/versions/selection)).
 `net11.0` on SDK 10 is the encoded floor. Outcomes await the Draft MR pipeline.
 
 ## Section 5. Toolchain Installation Paths
 
-The `gcc:12` image ships neither `clang-format` nor `cpplint`. The `apt` and `pip`
+The `gcc:12` image includes neither `clang-format` nor `cpplint`. The `apt` and `pip`
 installation fallbacks declared within `lang-c-cpp` were confirmed to resolve
 `clang-format` 14.0.6 and the `cpplint` fork.
 
-The `rust:1.97-slim` image ships `cargo`, `rust-std`, and `rustc` only, which reflects
+The `rust:1.97-slim` image includes `cargo`, `rust-std`, and `rustc` only, which reflects
 the rustup minimal profile. The image provides `cc` and `gcc`, therefore `cargo build`
 links without additional packages.
 

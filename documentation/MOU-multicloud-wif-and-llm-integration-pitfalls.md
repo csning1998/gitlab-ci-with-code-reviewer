@@ -96,7 +96,7 @@ The chosen path mandates explicit registration of required cloud services before
 
 - Google Cloud Platform: The project MUST enable `aiplatform.googleapis.com`, `generativelanguage.googleapis.com`, `iam.googleapis.com`, `iamcredentials.googleapis.com`, and `sts.googleapis.com`.
 - Microsoft Azure: The subscription MUST register `Microsoft.CognitiveServices`. Infrastructure automation MUST verify registration state (`Registered`) before provisioning cognitive accounts.
-- Azure IAM: The federated application service principal MUST hold `Cognitive Services OpenAI User` on the provisioned Cognitive Services account.
+- Azure IAM: The federated application service principal MUST be assigned `Cognitive Services OpenAI User` on the provisioned Cognitive Services account.
 
 The associated cost introduces subscription-level administrative prerequisites prior to workspace provisioning.
 

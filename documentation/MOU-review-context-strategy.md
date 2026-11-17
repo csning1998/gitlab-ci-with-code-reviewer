@@ -6,7 +6,7 @@ This document records an architectural decision that remains deferred. No implem
 
 ## Section 2. Current Architecture
 
-The `claude-review` and `gemini-review` jobs construct their prompt from the annotated diff of changed files in the merge request under review, not from the full repository content. The prompt template in `internal/review/review.go` states this explicitly, each file section carries only the diff hunk with line number annotations, and the total diff is capped at 300000 characters (`maxTotalDiff`).
+The `claude-review` and `gemini-review` jobs construct their prompt from the annotated diff of changed files in the merge request under review, not from the full repository content. The prompt template in `internal/review/review.go` states this explicitly, each file section contains only the diff hunk with line number annotations, and the total diff is capped at 300000 characters (`maxTotalDiff`).
 
 ## Section 3. Considered Alternative
 
@@ -36,7 +36,7 @@ Supplying full repository content as context requires new logic to enumerate and
 
 ## Section 5. Recommendation
 
-The diff based design SHOULD be retained. The whole repository context design is technically feasible under the cache anchor described in Section 4. Task B, but its economic viability depends on unmeasured request volume, and its implementation cost is nontrivial. Streaming SHOULD be adopted for the existing diff based design independently of this decision, to resolve request timeout and output truncation risk on large diffs, and carries no token cost implication either direction.
+The diff based design SHOULD be retained. The whole repository context design is technically feasible under the cache anchor described in Section 4. Task B, but its economic viability depends on unmeasured request volume, and its implementation cost is nontrivial. Streaming SHOULD be adopted for the existing diff based design independently of this decision, to resolve request timeout and output truncation risk on large diffs, and does not affect token cost in either direction.
 
 ## Section 6. Prerequisites Before Implementation
 
