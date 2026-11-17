@@ -12,7 +12,7 @@ spec:
       default: '.gitlab/versioning.yml'
       description: >-
         Path, relative to the repository root, to the versioning configuration declaring the
-        modules this job tags. See tools/ci/internal/versiontag for the file's schema; a module
+        modules this job tags. Refer to tools/ci/internal/versiontag for the file's schema; a module
         with an empty name and dir "." reproduces single, whole-repository tagging.
 ---
 # Creates Semantic Version tags from Conventional Commit headers through the GitLab REST API (gitlab-org/gitlab#569187).
