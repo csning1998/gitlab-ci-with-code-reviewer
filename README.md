@@ -240,6 +240,7 @@ Model selection within `gitlab-ci-with-code-reviewer` is governed by the compile
 
 | Model Identifier        | Context Window | Max Output Tokens                       | Input Price (per 1M)               | Output Price (per 1M)                | Cached Read (per 1M)               | Capabilities and Lifecycle                                                                            |
 | :---------------------- | :------------- | :-------------------------------------- | :--------------------------------- | :----------------------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------- |
+| `gemini-4-neon`         | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$3.00                             | \$15.00                              | \$0.15 (Implicit)                  | Active GA; default high, supports low, medium, high, xhigh; balanced reasoning, speed, and cost       |
 | `gemini-4-hydrogen`     | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$1.50                             | \$7.50                               | \$0.075 (Implicit)                 | Active GA; default high, supports low, medium, high, xhigh; recommended upgrade from gemini-3.8-flash |
 | `gemini-4-carbon`       | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$2.00 (Promo) / \$4.00 (Standard) | \$10.00 (Promo) / \$20.00 (Standard) | \$0.10 (Promo) / \$0.20 (Implicit) | Active Stable, most capable Gemini 4, more tokens and latency than `gemini-4-argon`                   |
 | `gemini-4-argon`        | 1,048,576      | 65,536 (Sync) / 1,048,576 (Long decode) | \$2.00 (Promo) / \$4.00 (Standard) | \$10.00 (Promo) / \$20.00 (Standard) | \$0.10 (Promo) / \$0.20 (Implicit) | Active GA, faster Gemini 4, fewer tokens per turn than `gemini-4-carbon`                              |
@@ -247,7 +248,7 @@ Model selection within `gitlab-ci-with-code-reviewer` is governed by the compile
 | `gemini-3.6-flash`      | 1,048,576      | 65,536                                  | \$0.50 (≤ 128k) / \$1.00 (> 128k)  | \$2.00 (≤ 128k) / \$4.00 (> 128k)    | \$0.05 + storage                   | Active GA; High-throughput reasoning model; supersedes `gemini-3.5-flash`                             |
 | `gemini-3.5-flash-lite` | 1,048,576      | 65,536                                  | \$0.075 (≤ 128k) / \$0.15 (> 128k) | \$0.30 (≤ 128k) / \$0.60 (> 128k)    | \$0.01875 + storage                | Active GA; High-efficiency lightweight model; supersedes `gemini-3.1-flash-lite`                      |
 
-`gemini-4-hydrogen`, `gemini-4-carbon`, and `gemini-4-argon` are distinct Gemini 4 models which omit `temperature`, `top_p`, and `top_k`. `gemini-4-carbon` and `gemini-4-argon` accept `reasoning_level` values `low`, `medium`, and `high`. `gemini-4-hydrogen` accepts `low`, `medium`, `high`, and `xhigh`.
+`gemini-4-neon`, `gemini-4-hydrogen`, `gemini-4-carbon`, and `gemini-4-argon` are distinct Gemini 4 models which omit `temperature`, `top_p`, and `top_k`. `gemini-4-carbon` and `gemini-4-argon` accept `reasoning_level` values `low`, `medium`, and `high`. `gemini-4-neon` and `gemini-4-hydrogen` accept `low`, `medium`, `high`, and `xhigh`.
 
 ##### Deprecated and Legacy Gemini Models Reference
 

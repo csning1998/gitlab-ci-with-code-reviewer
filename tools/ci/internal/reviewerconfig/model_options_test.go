@@ -445,6 +445,7 @@ func TestNormalizeAndValidateModel_ApprovedModelsAccepted(t *testing.T) {
 			"claude-haiku-4-5-20251001",
 		},
 		"gemini": {
+			"gemini-4-neon",
 			"gemini-4-hydrogen",
 			"gemini-4-carbon",
 			"gemini-4-argon",
