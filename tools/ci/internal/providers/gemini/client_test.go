@@ -339,7 +339,7 @@ func TestReview_OmitsGenerationFieldsWhenUnset(t *testing.T) {
 }
 
 func TestReview_Gemini4OmitsDeprecatedSamplingParameters(t *testing.T) {
-	for _, model := range []string{"gemini-4-argon", "gemini-4-carbon"} {
+	for _, model := range []string{"gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-neon"} {
 		t.Run(model, func(t *testing.T) {
 			var gotBody map[string]any
 			c := stubCapturingClient(t, reviewerconfig.ModelOptions{
@@ -441,6 +441,22 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				},
 				wantError: "reasoning_level",
 			},
+			{
+				name: "gemini 4 neon rejects thinkingBudget",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-neon",
+					ThinkingBudget: testutil.Ptr(4096),
+				},
+				wantError: "thinking_budget",
+			},
+			{
+				name: "gemini 4 neon rejects minimal reasoningLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-neon",
+					ReasoningLevel: "minimal",
+				},
+				wantError: "reasoning_level",
+			},
 		}
 
 		for _, tc := range tests {
@@ -485,6 +501,16 @@ func TestReview_ThinkingGeneration_TableDriven(t *testing.T) {
 				name: "gemini 4 hydrogen sends xhigh thinkingLevel",
 				opts: reviewerconfig.ModelOptions{
 					Model:          "gemini-4-hydrogen",
+					ReasoningLevel: "xhigh",
+				},
+				wantKey:   "thinkingLevel",
+				wantValue: "xhigh",
+				unwantKey: "thinkingBudget",
+			},
+			{
+				name: "gemini 4 neon sends xhigh thinkingLevel",
+				opts: reviewerconfig.ModelOptions{
+					Model:          "gemini-4-neon",
 					ReasoningLevel: "xhigh",
 				},
 				wantKey:   "thinkingLevel",

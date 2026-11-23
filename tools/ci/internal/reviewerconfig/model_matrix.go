@@ -76,6 +76,7 @@ const (
 
 // Approved Gemini and Gemma model identifiers served via the Gemini API.
 const (
+	ModelGemini_4_Neon          = "gemini-4-neon"
 	ModelGemini_4_Hydrogen      = "gemini-4-hydrogen"
 	ModelGemini_4_Carbon        = "gemini-4-carbon"
 	ModelGemini_4_Argon         = "gemini-4-argon"
@@ -200,7 +201,7 @@ var (
 		Mode:          ThinkingLevel,
 		AllowedLevels: []string{"low", "medium", "high"},
 	}
-	gemini4HydrogenThinking = ThinkingSpec{
+	gemini4ExtendedThinking = ThinkingSpec{
 		Mode:          ThinkingLevel,
 		AllowedLevels: []string{"low", "medium", "high", "xhigh"},
 	}
@@ -268,7 +269,8 @@ func buildModelCatalog() []ModelSpec {
 		{Provider: "claude", CanonicalID: ModelClaude_Haiku_4_5_20251001, Aliases: []string{"claude-haiku-4-5"}, Thinking: claudeManualThinking},
 
 		// Gemini & Gemma
-		{Provider: "gemini", CanonicalID: ModelGemini_4_Hydrogen, Thinking: gemini4HydrogenThinking, Sampling: SamplingSpec{OmitInPayload: true}},
+		{Provider: "gemini", CanonicalID: ModelGemini_4_Neon, Thinking: gemini4ExtendedThinking, Sampling: SamplingSpec{OmitInPayload: true}},
+		{Provider: "gemini", CanonicalID: ModelGemini_4_Hydrogen, Thinking: gemini4ExtendedThinking, Sampling: SamplingSpec{OmitInPayload: true}},
 		{Provider: "gemini", CanonicalID: ModelGemini_4_Carbon, Thinking: gemini4StandardThinking, Sampling: SamplingSpec{OmitInPayload: true}},
 		{Provider: "gemini", CanonicalID: ModelGemini_4_Argon, Thinking: gemini4StandardThinking, Sampling: SamplingSpec{OmitInPayload: true}},
 		{Provider: "gemini", CanonicalID: ModelGemini_3_8_Flash, Thinking: gemini3Thinking},
